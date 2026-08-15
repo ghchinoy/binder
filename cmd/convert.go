@@ -14,11 +14,15 @@ import (
 
 func newConvertCmd(codec okf.Codec) *cobra.Command {
 	var (
-		output      string
-		defaultType string
-		typeMapRaw  string
-		dryRun      bool
-		reportPath  string
+		output       string
+		defaultType  string
+		typeMapRaw   string
+		fmRefKeysRaw string
+		dryRun       bool
+		reportPath   string
+		mapCitations bool
+		sourceKeys   string
+		mapDraft     bool
 	)
 
 	cmd := &cobra.Command{
@@ -39,12 +43,16 @@ func newConvertCmd(codec okf.Codec) *cobra.Command {
 			}
 
 			opts := convert.Options{
-				Codec:       codec,
-				DefaultType: defaultType,
-				TypeMap:     typeMap,
-				Version:     Version,
-				Now:         resolveNow(),
-				DryRun:      dryRun,
+				Codec:        codec,
+				DefaultType:  defaultType,
+				TypeMap:      typeMap,
+				FMRefKeys:    convert.ParseFMRefKeys(fmRefKeysRaw),
+				Version:      Version,
+				Now:          resolveNow(),
+				DryRun:       dryRun,
+				MapCitations: mapCitations,
+				SourceKeys:   convert.ParseFMRefKeys(sourceKeys),
+				MapDraft:     mapDraft,
 			}
 			report, err := convert.Convert(args[0], output, opts)
 			if err != nil {
@@ -64,8 +72,12 @@ func newConvertCmd(codec okf.Codec) *cobra.Command {
 	cmd.Flags().StringVarP(&output, "output", "o", "", "output bundle directory")
 	cmd.Flags().StringVar(&defaultType, "default-type", "Note", "type applied when none is present or mapped")
 	cmd.Flags().StringVar(&typeMapRaw, "type-map", "", "per-directory type overrides, e.g. \"docs=Guide,adr=Decision\"")
+	cmd.Flags().StringVar(&fmRefKeysRaw, "fm-ref-keys", "", "frontmatter keys treated as relationship edges, e.g. \"related,parent\"")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "report what would be written without writing anything")
 	cmd.Flags().StringVar(&reportPath, "report", "", "also write the run report to this file")
+	cmd.Flags().BoolVar(&mapCitations, "map-citations", false, "map a body \"# Citations\" list into sources entries")
+	cmd.Flags().StringVar(&sourceKeys, "source-keys", "", "frontmatter keys to map into sources entries, e.g. \"source,author\"")
+	cmd.Flags().BoolVar(&mapDraft, "map-draft", false, "map a draft:true marker to status:draft when status is absent")
 	return cmd
 }
 

@@ -28,6 +28,9 @@ func NewRootCmd() *cobra.Command {
 	}
 	root.AddCommand(newConvertCmd(codec))
 	root.AddCommand(newValidateCmd(codec))
+	root.AddCommand(newIndexCmd(codec))
+	root.AddCommand(newReviewCmd(codec))
+	root.AddCommand(newGraphCmd(codec))
 	return root
 }
 

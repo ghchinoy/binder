@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/ghchinoy/binder/internal/okf"
 )
 
 // Report summarizes a conversion run. It is returned by Convert and is the
@@ -13,11 +15,20 @@ type Report struct {
 	Out           string
 	Concepts      []ConceptReport
 	Warnings      []string
+	Unresolved    []UnresolvedLink
 	NumConcepts   int
 	NumLinks      int
 	NumResolved   int
 	NumUnresolved int
 	DryRun        bool
+}
+
+// UnresolvedLink is one link whose target is not a concept in the bundle. It is
+// left in place (spec §6) and reported so the user can fix or accept it (§4.2).
+type UnresolvedLink struct {
+	From      string // source concept rel path
+	RawTarget string // target exactly as written
+	Text      string // link text / relationship label
 }
 
 // ConceptReport describes one converted concept.
@@ -31,6 +42,17 @@ type ConceptReport struct {
 
 func (r *Report) addWarning(format string, args ...any) {
 	r.Warnings = append(r.Warnings, fmt.Sprintf(format, args...))
+}
+
+// addUnresolved records every unresolved edge of a concept for the report.
+func (r *Report) addUnresolved(c *okf.Concept) {
+	for _, l := range c.Links {
+		if !l.Resolved {
+			r.Unresolved = append(r.Unresolved, UnresolvedLink{
+				From: c.RelPath, RawTarget: l.RawTarget, Text: l.Text,
+			})
+		}
+	}
 }
 
 // String renders a human-readable, deterministic report.
@@ -56,6 +78,19 @@ func (r *Report) String() string {
 				fmt.Fprintf(&b, "  (%d unresolved links)", c.NumUnresolved)
 			}
 			b.WriteString("\n")
+		}
+	}
+	if len(r.Unresolved) > 0 {
+		unresolved := append([]UnresolvedLink(nil), r.Unresolved...)
+		sort.Slice(unresolved, func(i, j int) bool {
+			if unresolved[i].From != unresolved[j].From {
+				return unresolved[i].From < unresolved[j].From
+			}
+			return unresolved[i].RawTarget < unresolved[j].RawTarget
+		})
+		b.WriteString("\nUnresolved links:\n")
+		for _, u := range unresolved {
+			fmt.Fprintf(&b, "  %s -> %s\n", u.From, u.RawTarget)
 		}
 	}
 	if len(r.Warnings) > 0 {

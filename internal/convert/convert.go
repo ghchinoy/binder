@@ -26,9 +26,16 @@ type Options struct {
 	Codec       okf.Codec         // required
 	DefaultType string            // fallback type; defaults to "Note"
 	TypeMap     map[string]string // per-directory type overrides
+	FMRefKeys   []string          // frontmatter keys treated as relationship edges (§4.2)
 	Version     string            // binder version, used in generated.by
 	Now         time.Time         // clock for generated.at; controls determinism
 	DryRun      bool              // when true, write nothing
+
+	// Trust-mapping options (design-v2 §3.2 / Phase-2 point 7). All are OFF by
+	// default and deterministic; binder never fabricates provenance.
+	MapCitations bool     // map a body "# Citations" list to sources entries
+	SourceKeys   []string // frontmatter keys to map into sources entries
+	MapDraft     bool     // map a `draft: true` marker to status: draft
 }
 
 // Convert runs the corpus→bundle conversion. It never mutates the source. With
@@ -70,33 +77,64 @@ func Convert(src, out string, opts Options) (*Report, error) {
 		report.addWarning("%s", w)
 	}
 
-	var concepts []*okf.Concept
+	// Pass 1: parse every file, apply type/title defaulting, and record its
+	// identity. Titles must be resolved for ALL files before any body is rewritten
+	// because wikilinks resolve against the corpus's titles (design-v2 §4.2).
+	type staged struct {
+		src string // source-relative path (for relative link resolution)
+		out string // output-relative path
+		c   *okf.Concept
+	}
+	var items []staged
+	entries := make([]indexEntry, 0, len(files))
 	for _, f := range files {
 		outRel := srcToOut[f.rel]
 		raw, err := os.ReadFile(f.abs)
 		if err != nil {
 			return nil, fmt.Errorf("convert: reading %q: %w", f.rel, err)
 		}
-
 		c, err := toConcept(opts.Codec, outRel, raw)
 		if err != nil {
 			return nil, fmt.Errorf("convert: parsing %q: %w", f.rel, err)
 		}
-
 		typ := ensureType(c.Frontmatter, outRel, opts.TypeMap, opts.DefaultType)
 		ensureTitle(c.Frontmatter, outRel, c.Body)
+		c.Type = typ
 
-		newBody, links := rewriteLinks(c.Body, f.rel, srcToOut)
-		c.Body = newBody
+		items = append(items, staged{src: f.rel, out: outRel, c: c})
+		entries = append(entries, indexEntry{srcRel: f.rel, outRel: outRel, title: conceptTitle(c)})
+	}
+	index := buildCorpusIndex(entries)
+
+	// Pass 2: extract every relationship signal, merge tags, map trust where
+	// configured, stamp provenance, and project the typed trust view.
+	var concepts []*okf.Concept
+	for _, it := range items {
+		c := it.c
+
+		// Standard markdown links (P1) + wikilinks (P2), both rewritten to
+		// bundle-relative-absolute form; unresolved links left in place.
+		body, links := rewriteLinks(c.Body, it.src, srcToOut)
+		body, wlinks := rewriteWikilinks(body, path.Dir(it.out), index)
+		c.Body = body
+		links = append(links, wlinks...)
+
+		// Frontmatter-ref edges (§4.2): additive, original keys preserved.
+		links = append(links, frontmatterRefEdges(c.Frontmatter, it.out, opts.FMRefKeys, index)...)
 		c.Links = links
 
-		stampGenerated(c.Frontmatter, opts.Version, opts.Now)
+		// Hashtags + frontmatter tags merge/dedupe (spec §4).
+		mergeTags(c.Frontmatter, extractHashtags(c.Body))
 
-		c.Type = typ
-		c.Trust = okf.ProjectTrust(c.Frontmatter, typ)
+		// Corpus-native provenance → trust signals, where configured (§3.2).
+		mapTrust(c, opts)
+
+		stampGenerated(c.Frontmatter, opts.Version, opts.Now)
+		c.Trust = okf.ProjectTrust(c.Frontmatter, c.Type)
 
 		concepts = append(concepts, c)
 		report.Concepts = append(report.Concepts, conceptReport(c))
+		report.addUnresolved(c)
 	}
 
 	// Tally.
@@ -195,9 +233,14 @@ func writeBundle(out string, concepts []*okf.Concept, codec okf.Codec) error {
 			return fmt.Errorf("convert: writing %q: %w", c.RelPath, err)
 		}
 	}
-	index := buildRootIndex(concepts, okf.DefaultSpecVersion)
-	if err := os.WriteFile(filepath.Join(out, "index.md"), index, 0o644); err != nil {
-		return fmt.Errorf("convert: writing root index.md: %w", err)
+	for rel, data := range GenerateIndexes(concepts, okf.DefaultSpecVersion) {
+		dst := filepath.Join(out, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+			return fmt.Errorf("convert: creating dir for %q: %w", rel, err)
+		}
+		if err := os.WriteFile(dst, data, 0o644); err != nil {
+			return fmt.Errorf("convert: writing %q: %w", rel, err)
+		}
 	}
 	return nil
 }
