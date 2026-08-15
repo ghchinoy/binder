@@ -94,6 +94,50 @@ func cliJSON(t *testing.T, args ...string) string {
 	return string(out)
 }
 
+// TestListTools asserts the server advertises exactly the five additive tools,
+// each with a non-empty input schema — and NOT the deferred Non-Goals
+// (enrich/emit_concept/read/search).
+func TestListTools(t *testing.T) {
+	ctx := context.Background()
+	server := newServer(native.New(), testVersion)
+	client := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "v0"}, nil)
+	st, ct := mcp.NewInMemoryTransports()
+	if _, err := server.Connect(ctx, st, nil); err != nil {
+		t.Fatalf("server connect: %v", err)
+	}
+	cs, err := client.Connect(ctx, ct, nil)
+	if err != nil {
+		t.Fatalf("client connect: %v", err)
+	}
+	t.Cleanup(func() { cs.Close() })
+
+	res, err := cs.ListTools(ctx, nil)
+	if err != nil {
+		t.Fatalf("list tools: %v", err)
+	}
+	got := map[string]bool{}
+	for _, tool := range res.Tools {
+		got[tool.Name] = true
+		if tool.InputSchema == nil {
+			t.Errorf("tool %q has no input schema", tool.Name)
+		}
+	}
+	want := []string{"convert", "validate", "review", "lint", "graph"}
+	for _, name := range want {
+		if !got[name] {
+			t.Errorf("tool %q not advertised", name)
+		}
+	}
+	if len(res.Tools) != len(want) {
+		t.Errorf("advertised %d tools, want exactly %d (%v); got %v", len(res.Tools), len(want), want, got)
+	}
+	for _, ng := range []string{"enrich", "emit_concept", "read", "search"} {
+		if got[ng] {
+			t.Errorf("Non-Goal tool %q must not be exposed", ng)
+		}
+	}
+}
+
 // TestValidateRoundTrip is the Phase-1 gate: a validate call over the SDK
 // transport returns a well-formed binder.report/v1 envelope in-band (findings,
 // if any, are in the payload — not an MCP error).
