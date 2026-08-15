@@ -11,7 +11,10 @@ import (
 )
 
 func newValidateCmd(codec okf.Codec) *cobra.Command {
-	var jsonOut bool
+	var (
+		jsonOut bool
+		strict  bool
+	)
 	cmd := &cobra.Command{
 		Use:   "validate <bundle>",
 		Short: "Check a bundle for OKF v0.2 conformance (spec §11)",
@@ -29,10 +32,15 @@ func newValidateCmd(codec okf.Codec) *cobra.Command {
 			errs := result.Errors()
 			// The exit code is about the run, not the output format: identical in
 			// prose and --json. Non-conformance is a hard §11 violation (not an
-			// advisory) and always gates (exit 1). Advisories never gate until #7
-			// wires --strict — the strict arg is hardwired false here (the seam).
-			gate := clijson.Gate(false, !result.Conformant(), len(result.Advisories()) > 0,
-				fmt.Sprintf("bundle is not conformant (%d violation(s))", len(errs)))
+			// advisory) and always gates (exit 1). Trust well-formedness advisories
+			// gate only under --strict (#7): the flag flips the clijson.Gate seam.
+			hard := !result.Conformant()
+			adv := len(result.Advisories()) > 0
+			msg := fmt.Sprintf("bundle is not conformant (%d violation(s))", len(errs))
+			if !hard && strict && adv {
+				msg = fmt.Sprintf("bundle has %d advisory finding(s) (--strict)", len(result.Advisories()))
+			}
+			gate := clijson.Gate(strict, hard, adv, msg)
 
 			out := cmd.OutOrStdout()
 			if jsonOut {
@@ -59,5 +67,6 @@ func newValidateCmd(codec okf.Codec) *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "emit the validation result as deterministic JSON (schema "+clijson.SchemaVersion+") instead of prose")
+	cmd.Flags().BoolVar(&strict, "strict", false, "gate (exit 1) on trust well-formedness advisories, not just hard non-conformance")
 	return cmd
 }

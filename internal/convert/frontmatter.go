@@ -48,24 +48,25 @@ func ensureType(fm *okf.OrderedMap, relPath string, typeMap map[string]string, d
 		}
 	}
 	typ := defaultType
-	if mapped := lookupTypeMap(typeMap, relPath); mapped != "" {
+	if mapped := lookupPrefixMap(typeMap, relPath); mapped != "" {
 		typ = mapped
 	}
 	fm.Set("type", typ)
 	return typ
 }
 
-// lookupTypeMap matches relPath against directory keys in typeMap. A key matches
-// when it equals any ancestor directory segment path of the file. The
-// longest (most specific) matching key wins; ties break lexicographically for
-// determinism.
-func lookupTypeMap(typeMap map[string]string, relPath string) string {
-	if len(typeMap) == 0 {
+// lookupPrefixMap matches relPath against directory-prefix keys in m. A key
+// matches when it equals the file's directory or is an ancestor directory of it.
+// The longest (most specific) matching key wins; ties break lexicographically
+// for determinism. Keys are trimmed of surrounding "/". Empty keys are ignored.
+// It is the shared matcher behind --type-map, --status-map, and --stale-after-map.
+func lookupPrefixMap(m map[string]string, relPath string) string {
+	if len(m) == 0 {
 		return ""
 	}
 	dir := path.Dir(relPath)
 	best, bestKey := "", ""
-	for key, val := range typeMap {
+	for key, val := range m {
 		k := strings.Trim(key, "/")
 		if k == "" {
 			continue

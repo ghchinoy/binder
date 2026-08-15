@@ -13,7 +13,10 @@ bundle, extracts every relationship signal (wikilinks, anchor links, frontmatter
 refs, hashtags), maps corpus-native provenance into the trust vocabulary,
 generates per-directory index navigation, validates bundles against the spec's
 §11 conformance rules, and preserves trust frontmatter byte-for-byte on
-round-trip. It also reports and visualizes a bundle (`review`, `graph`).
+round-trip. It also reports and visualizes a bundle (`review`, `graph`),
+declaratively stamps trust/lifecycle metadata (`--status-map`,
+`--stale-after-map`, `--verified-by`), is configurable via `binder config`, and
+supports `--strict` CI gating.
 
 ## Table of Contents
 
@@ -43,6 +46,14 @@ round-trip. It also reports and visualizes a bundle (`review`, `graph`).
   stale/attested, orphans, and unresolved links.
 - **`graph`** exports the concept graph (edges = resolved links) as
   dot/json/graphml/html.
+- **`config`** shows the resolved effective configuration (viper-backed) and
+  where each value came from (flag/env/file/default).
+
+`convert` can also declaratively stamp trust and lifecycle metadata across
+directory sections — `--status-map`, `--stale-after-map`, and `--verified-by`
+(#7) — and every command supports `--strict` to gate advisories in CI (see
+[Declarative trust & lifecycle flags](#declarative-trust--lifecycle-flags-convert)
+and [Strict mode](#strict-mode)).
 
 Two properties make it trustworthy for pipelines:
 
@@ -161,8 +172,8 @@ prose and `--json` mode):
 
 | Code | Meaning |
 |---|---|
-| `0` | Success. Advisories (broken links, orphans, staleness, recovered frontmatter, missing trust) may be present — they are reported but never gate. |
-| `1` | Gating findings. Today: `validate` spec §11 non-conformance. (Reserved: advisories under a future `--strict` flag.) |
+| `0` | Success. Advisories (broken links, orphans, staleness, recovered frontmatter, missing trust) may be present — they are reported but never gate unless `--strict` is set. |
+| `1` | Gating findings: `validate` spec §11 non-conformance (always), or, under `--strict`, the per-command advisory/finding set (see [Strict mode](#strict-mode)). |
 | `2` | Usage error — unknown flag, missing/extra argument, or conflicting `--json`/`--format`. |
 | `3` | I/O or internal error — unreadable corpus/bundle, write failure. |
 
@@ -176,8 +187,12 @@ field lists, the discovery surface (`--version`/`--help`), and a CI example.
 |---|---|---|
 | `-o`, `--output` | — | Output bundle directory (required unless `--dry-run`). |
 | `--dry-run` | `false` | Report what would be written without writing anything. |
-| `--default-type` | `Note` | Concept type applied when none is present or mapped. |
+| `--default-type` | `Note` (or config `default_type`) | Concept type applied when none is present or mapped. |
 | `--type-map` | — | Per-directory type overrides, e.g. `"docs=Guide,adr=Decision"`. |
+| `--status-map` | — | Per-directory `status`, e.g. `"archive=deprecated,drafts=draft,default=active"`; a `default=` key applies when no prefix matches. Set only when `status` is absent. |
+| `--stale-after-map` | — | Per-directory `stale_after` relative to the run clock, e.g. `"07-benchmarks=+6m,legacy=+0d"` (grammar `+Nd`/`+Nm`/`+Ny`). Set only when absent. Malformed → exit 2. |
+| `--verified-by` | config `verified_by` | Actor to append as a `verified` stamp, e.g. `"human:ghchinoy"` or `"binder/0.1.0"`. Invalid actor → exit 2. |
+| `--strict` | `false` | Gate (exit 1) on unresolved links or recovery warnings (see [Strict mode](#strict-mode)). |
 | `--workspace-root` | `<src>` root | Boundary within which `file://` links resolve to internal edges (see below). |
 | `--report` | — | Also write the run report to this file. |
 | `--json` | `false` | Emit the run report as deterministic JSON (schema `binder.report/v1`) instead of prose. Composes with `--report`. |
@@ -239,6 +254,79 @@ in place **and** reported (spec §6/§11). These flags opt into the rest:
 
 Trust mapping is **off by default** and never fabricates provenance: with no
 mapping flags, frontmatter round-trips byte-for-byte.
+
+### Declarative trust & lifecycle flags (`convert`)
+
+For CI/agentic bulk runs, `convert` can stamp trust and lifecycle metadata
+declaratively across directory sections. All are **off by default** (byte-identical
+output), all **set only when the field is absent** (never clobber authored values),
+and all are deterministic. They share the same longest-prefix directory matcher as
+`--type-map` (most-specific key wins; ties break lexicographically; keys are
+trimmed of `/`).
+
+| Flag | Effect |
+|---|---|
+| `--status-map "archive=deprecated,drafts=draft,default=active"` | set `status` per directory prefix; the special `default=` key applies when no prefix matches. Set only when `status` is absent. Unknown status values are not rejected (they surface as a `validate` advisory). |
+| `--stale-after-map "07-benchmarks=+6m,03-transcription=+1y,legacy=+0d"` | set `stale_after` per directory prefix, computed relative to the run clock. Set only when absent. |
+| `--verified-by "human:ghchinoy"` | append a `verified` actorstamp `{by, at}` to every concept. |
+
+**Relative-date grammar** (`--stale-after-map`): `+<N><unit>` where unit is
+`d` (days), `m` (months), or `y` (years) — e.g. `+6m`, `+1y`, `+0d` (today).
+Dates are computed with UTC calendar arithmetic against the run clock
+(`SOURCE_DATE_EPOCH`-aware, so reproducible) and written as `YYYY-MM-DD`. A
+malformed map or date is a **usage error (exit 2)**.
+
+**`--verified-by`** appends an actorstamp `{by: <actor>, at: <now, RFC3339 UTC>}`
+to each concept's `verified` list, deduplicated by `(by, at)` so a re-run with a
+fixed clock is idempotent. The actor comes from the flag, or from the config
+`verified_by` default when the flag is absent; when **neither** is set, no
+`verified` stamp is written (binder never auto-stamps). The trust **tier** stays
+derived (`human:` → human-reviewed, else machine-confirmed) — no tier or score is
+stored. The actor must follow the actor convention — valid forms are
+`human:<id>`, `process:<id>`, `team:<id>`, or `<producer>/<version>` (e.g.
+`binder/0.1.0`); an invalid value is a **usage error (exit 2)**.
+
+### `binder config`
+
+`binder config` shows the resolved effective configuration and, where cheap, the
+source of each value. Configuration is resolved with the precedence **flag > env
+> config file > built-in default**:
+
+- **Config file** (first found wins): `./.binder.yaml`, then
+  `$XDG_CONFIG_HOME/binder/config.yaml` (fallback
+  `$HOME/.config/binder/config.yaml`). A missing config file is normal — defaults
+  apply and it is never an error.
+- **Environment:** prefix `BINDER_`, e.g. `BINDER_VERIFIED_BY`, `BINDER_DEFAULT_TYPE`.
+- **Keys:** `verified_by` (default actor for `--verified-by`) and `default_type`
+  (default for `--default-type`). The structure is namespaced and extensible.
+
+A config `verified_by` must itself be a valid actor; a malformed value fails fast
+at config-load with a **usage error (exit 2)**. `binder config` ships `--json`
+(enveloped, schema `binder.config/v1`):
+
+```bash
+binder config
+binder config --json | jq '.result.values.verified_by'
+```
+
+```yaml
+# .binder.yaml
+verified_by: human:ghchinoy
+default_type: Guide
+```
+
+### Strict mode
+
+Every command is **never-reject by default**: advisories (broken links, orphans,
+staleness, recovered frontmatter, trust well-formedness) are reported but exit
+`0`. `--strict` opts into gating them at exit `1` for CI. Hard `validate` spec §11
+non-conformance always gates regardless of `--strict`.
+
+| Command | What `--strict` gates |
+|---|---|
+| `validate --strict` | trust well-formedness advisories (in addition to hard non-conformance, which always gates) |
+| `review --strict` | any review finding — orphans, stale, unresolved/broken edges, unparsed-frontmatter recoveries |
+| `convert --strict` | unresolved links + recovery warnings |
 
 **`file://` links.** IDE- and assistant-generated `file:///abs/path/doc.md` links
 that point inside the workspace root resolve to internal edges rewritten to
@@ -315,13 +403,14 @@ The following are **planned, not yet shipped**:
 - **Phase 5 — an Agent Skill** and **Phase 6 — an Agent-Plugin bundle**, layering
   agent tooling over the same OKF core.
 
-Near-term `convert`/CLI enhancements are tracked as open issues (in-place
-enrichment, a standalone `lint`, declarative trust/lifecycle flags,
-grouped/backlink indexes, and `binder config`); the
+Declarative trust/lifecycle flags (`--status-map`, `--stale-after-map`,
+`--verified-by`; #7), `binder config` (#10), and `--strict` mode have **shipped**
+(see above). Remaining near-term `convert`/CLI enhancements are tracked as open
+issues (in-place enrichment and a standalone `lint`); the
 [user guide](docs/user_guide.md#roadmap--planned-features) maps each to its issue.
 
-Today's shipped surface is the `convert`, `validate`, `index`, `review`, and
-`graph` CLI described above.
+Today's shipped surface is the `convert`, `validate`, `index`, `review`, `graph`,
+and `config` CLI described above.
 
 ## Contributing
 

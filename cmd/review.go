@@ -15,6 +15,7 @@ func newReviewCmd(codec okf.Codec) *cobra.Command {
 	var (
 		today   string
 		jsonOut bool
+		strict  bool
 	)
 	cmd := &cobra.Command{
 		Use:   "review <bundle>",
@@ -33,17 +34,25 @@ func newReviewCmd(codec okf.Codec) *cobra.Command {
 				today = resolveNow().Format("2006-01-02")
 			}
 			rep := review.Review(b, today)
+			// review has no hard non-conformance; under --strict any review finding
+			// (orphans, stale, unresolved/broken edges, unparsed-frontmatter
+			// recoveries) gates at exit 1. Without --strict it never gates (exit 0).
+			findings := len(rep.Orphans) + len(rep.Stale) + len(rep.Unresolved) + len(rep.UnparsedFrontmatter)
+			gate := clijson.Gate(strict, false, findings > 0,
+				fmt.Sprintf("review found %d gating finding(s) (--strict)", findings))
+
 			if jsonOut {
 				if err := clijson.Encode(cmd.OutOrStdout(), Version, "review", rep); err != nil {
 					return fmt.Errorf("encoding json report: %w", err)
 				}
-				return nil
+				return gate
 			}
 			fmt.Fprint(cmd.OutOrStdout(), rep.String())
-			return nil
+			return gate
 		},
 	}
 	cmd.Flags().StringVar(&today, "today", "", "date (YYYY-MM-DD) used for staleness; defaults to now")
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "emit the review report as deterministic JSON (schema "+clijson.SchemaVersion+") instead of prose")
+	cmd.Flags().BoolVar(&strict, "strict", false, "gate (exit 1) when any review finding is present (orphans, stale, unresolved, unparsed)")
 	return cmd
 }

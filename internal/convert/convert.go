@@ -43,6 +43,14 @@ type Options struct {
 	SourceKeys   []string // frontmatter keys to map into sources entries
 	MapDraft     bool     // map a `draft: true` marker to status: draft
 
+	// Declarative lifecycle/trust flags (issues #7). All OFF by default and
+	// deterministic; each sets a value ONLY when the frontmatter key is absent
+	// (never clobbers authored values). See ParseStatusMap / ParseStaleAfterMap.
+	StatusMap     map[string]string // directory-prefix → status value
+	StatusDefault string            // status for files matching no prefix (the special default= key)
+	StaleAfterMap map[string]string // directory-prefix → validated relative-date spec (+Nd/+Nm/+Ny)
+	VerifiedBy    string            // actor to append as a verified actorstamp (empty = no stamp)
+
 	// Index-catalog options (issue #9). All OFF by default → generated index.md
 	// output is byte-identical to before. See IndexOptions.
 	GroupByType      bool // append the additive "# Catalog" to the root index.md
@@ -195,6 +203,13 @@ func Convert(src, out string, opts Options) (*Report, error) {
 
 		// Corpus-native provenance → trust signals, where configured (§3.2).
 		mapTrust(c, opts)
+
+		// Declarative lifecycle stamps (issue #7): status/stale_after per directory
+		// prefix, additive and set-when-absent; off by default → byte-identical.
+		applyLifecycleMaps(c, it.out, opts)
+		// Optional verified actorstamp (issue #7): appended (dedup by by,at) only
+		// when a --verified-by / config verified_by actor is configured.
+		applyVerifiedBy(c, opts)
 
 		stampGenerated(c.Frontmatter, opts.Version, opts.Now)
 		c.Trust = okf.ProjectTrust(c.Frontmatter, c.Type)
