@@ -24,6 +24,7 @@ via `binder config`, and supports `--strict` CI gating.
 - [Installation](#installation)
 - [Usage](#usage)
 - [Agent Skill / Plugin](#agent-skill--plugin)
+- [MCP server (`binder mcp`)](#mcp-server-binder-mcp)
 - [How it works](#how-it-works)
 - [Development](#development)
 - [Roadmap](#roadmap)
@@ -545,6 +546,57 @@ is validated in CI against Agent Plugins 1.0.0 by
 [`scripts/validate-plugin.sh`](scripts/validate-plugin.sh) (the `plugin-validate`
 job), independent of the Go gate.
 
+## MCP server (`binder mcp`)
+
+`binder mcp` runs binder as a stdio [Model Context Protocol](https://modelcontextprotocol.io)
+server, exposing binder's **additive** verbs as MCP **tools** to an MCP-capable
+agent harness (Claude Code, Cursor, Zed). Each tool returns the **same**
+deterministic `binder.report/v1` payload as the corresponding `binder <cmd>
+--json` — the handlers reuse the same internal functions and the same JSON
+encoder, so there is no second serialization path and no drift from the CLI.
+
+It is a transport, not a report-producing command: it has no `--json` flag (its
+*outputs* are the structured tool payloads). It serves over stdio until the
+client disconnects.
+
+**Wire it into a harness** (Claude Code):
+
+```bash
+claude mcp add binder -- binder mcp
+```
+
+…or add an `.mcp.json` entry:
+
+```json
+{ "mcpServers": { "binder": { "command": "binder", "args": ["mcp"] } } }
+```
+
+**Tools** (each parameter mirrors the corresponding CLI flag 1:1):
+
+| Tool | Key params | Returns |
+|---|---|---|
+| `convert` | `src` (req), `out` (req unless `dry_run`), `dry_run`, `default_type`, `type_map`, `fm_ref_keys`, `source_keys`, `map_citations`, `map_draft`, `status_map`, `stale_after_map`, `verified_by`, `workspace_root`, `group_by_type`, `include_backlinks`, `include_graph`, `strict` | `convert` report envelope (`dry_run:true` → the ingestion-analysis preview, writes nothing) |
+| `validate` | `bundle` (req), `strict` | `validate` report envelope |
+| `review` | `bundle` (req), `today`, `strict` | `review` report envelope |
+| `lint` | `src` (req), `today`, `strict` | `lint` report envelope |
+| `graph` | `bundle` (req), `format` (`dot`\|`json`\|`graphml`\|`html`, default `json`), `today` | raw export bytes — `format:json` is the raw `{nodes,edges}`, **not** the report envelope |
+
+The surface is deliberately additive (produce/validate). Source-mutating verbs
+(`enrich`, `emit_concept`) and read/search tools are **not** exposed — the read
+surface belongs to the knowledge store, and authoring over MCP is a later
+concern. Invariants are preserved end to end: findings are returned **in** the
+payload (a tool with findings is not an MCP error), `verified_by` is applied
+**only** when explicitly passed (never auto-stamped; an invalid actor is a
+usage error), and payloads honor `SOURCE_DATE_EPOCH`/`today` for determinism.
+
+The [`okf-convert` plugin](#agent-skill--plugin) also ships a
+[`.mcp.json`](plugins/okf-convert/.mcp.json) that registers this server, so a
+plugin-aware host wires up `binder mcp` on install (the `binder` binary must be
+on `PATH`).
+
+See the [user guide](docs/user_guide.md#mcp-server-binder-mcp) for the full tool
+schemas and examples.
+
 ## How it works
 
 - `internal/okf` — the OKF domain model plus two small interfaces, `Codec`
@@ -563,6 +615,9 @@ job), independent of the Go gate.
   broken links).
 - `internal/graph` — concept-graph export in dot/json/graphml/html.
 - `internal/validate` — the §11 conformance checker.
+- `internal/mcp` — the stdio MCP server (`binder mcp`): tool handlers that reuse
+  the internal functions above + `internal/clijson`, returning the same
+  `binder.report/v1` payloads as `--json`. The MCP SDK is confined here.
 - `cmd` — the [Cobra](https://github.com/spf13/cobra) CLI; the concrete codec is
   injected once at the composition root (`cmd/root.go`) — every other package
   depends only on the `okf` interfaces.
@@ -592,25 +647,26 @@ verdicts in both directions and fails on any unexpected disagreement.
 
 ## Roadmap
 
-The following are **planned, not yet shipped**:
+The following is **planned, not yet shipped**:
 
-- **Phase 3 — a community-core codec adapter** (e.g. `--okf-impl=community`): a
-  second `Codec` behind the existing interface, slotted in only after it is
-  confirmed byte-complete against the golden bundles.
-- **Phase 4 — an MCP** (Model Context Protocol) server mode (`binder mcp`),
-  exposing binder's *additive* convert/author/emit tools only (no read/search
-  re-implementation).
-- **Phase 5 — an Agent Skill** and **Phase 6 — an Agent-Plugin bundle**, layering
-  agent tooling over the same OKF core.
+- **A community-core codec adapter** (e.g. `--okf-impl=community`): a second
+  `Codec` behind the existing interface, slotted in only after it is confirmed
+  byte-complete against the golden bundles.
 
-Declarative trust/lifecycle flags (`--status-map`, `--stale-after-map`,
-`--verified-by`; #7), `binder config` (#10), the standalone `binder lint` (#8),
-and `--strict` mode have **shipped** (see above). Remaining near-term
-`convert`/CLI enhancements are tracked as open issues (in-place enrichment); the
+**Shipped, layered over the settled CLI contract:** the
+[Agent Skill and Agent-Plugin bundle](#agent-skill--plugin) (`okf-convert`, #14),
+then the [MCP server mode](#mcp-server-binder-mcp) (`binder mcp`, #15) — the
+additive convert/validate/review/lint/graph tools over the same OKF core. (These
+were sequenced Skill/Plugin **before** MCP, so MCP builds on already-settled
+`--json` payloads.) Declarative trust/lifecycle flags (`--status-map`,
+`--stale-after-map`, `--verified-by`; #7), `binder config` (#10), the standalone
+`binder lint` (#8), in-place `binder enrich` (#5), and `--strict` mode have also
+shipped (see above). The
 [user guide](docs/user_guide.md#roadmap--planned-features) maps each to its issue.
 
 Today's shipped surface is the `convert`, `validate`, `index`, `review`, `lint`,
-`graph`, and `config` CLI described above.
+`graph`, `config`, `enrich`, and `mcp` CLI described above, plus the
+`okf-convert` Agent Skill/Plugin.
 
 ## Contributing
 

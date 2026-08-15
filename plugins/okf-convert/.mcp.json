@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "binder": {
+      "command": "binder",
+      "args": ["mcp"]
+    }
+  }
+}
