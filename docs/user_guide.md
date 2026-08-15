@@ -29,6 +29,7 @@ bundle and reports on OKF bundles. It is **Phase 2 complete**.
 - [JSON output (`--json`) and the exit-code contract](#json-output---json-and-the-exit-code-contract)
   - [Strict mode](#strict-mode)
 - [Discovery surface (`--version` / `--help`)](#discovery-surface---version----help)
+- [MCP server (`binder mcp`)](#mcp-server-binder-mcp)
 - [OKF v0.2 output structure](#okf-v02-output-structure)
 - [Relationship extraction](#relationship-extraction)
 - [The trust vocabulary](#the-trust-vocabulary)
@@ -829,8 +830,73 @@ An agent or script can enumerate binder's surface without parsing prose reports:
   including `--json`.
 
 A structured tool/flag catalog (a machine-readable command manifest) is not part
-of this surface; it is delivered natively by the planned MCP server mode
-(`binder mcp`).
+of this surface; it is delivered natively by the [MCP server mode](#mcp-server-binder-mcp)
+(`binder mcp`), whose tools advertise typed input schemas.
+
+## MCP server (`binder mcp`)
+
+`binder mcp` runs binder as a stdio [Model Context Protocol](https://modelcontextprotocol.io)
+server, exposing binder's **additive** verbs as MCP **tools** to an MCP-capable
+harness (Claude Code, Cursor, Zed). Each tool returns the **same** deterministic
+[`binder.report/v1` envelope](#the-envelope-schema-binderreportv1) as the
+corresponding `binder <cmd> --json`: the handlers call the same internal
+functions and the same JSON encoder the CLI uses, so the payloads are
+byte-identical and can never drift from `--json`.
+
+`binder mcp` is a **transport, not a report-producing command** — it takes no
+positional args and has no `--json` flag (its *outputs* are the structured tool
+payloads). It serves over stdio until the client disconnects.
+
+### Wiring it into a harness
+
+Claude Code:
+
+```bash
+claude mcp add binder -- binder mcp
+```
+
+…or an `.mcp.json` entry:
+
+```json
+{ "mcpServers": { "binder": { "command": "binder", "args": ["mcp"] } } }
+```
+
+### Tools and input schemas
+
+Every tool parameter mirrors the corresponding CLI flag 1:1. Map/list params
+(`type_map`, `fm_ref_keys`, …) use the same `"k=v,k=v"` / `"a,b"` grammar as the
+flags. Required params are marked **(req)**.
+
+| Tool | Params | Result |
+|---|---|---|
+| `convert` | `src` **(req)**, `out` (req unless `dry_run`), `dry_run`, `default_type`, `type_map`, `fm_ref_keys`, `source_keys`, `map_citations`, `map_draft`, `status_map`, `stale_after_map`, `verified_by`, `workspace_root`, `group_by_type`, `include_backlinks`, `include_graph`, `strict` | `convert` report envelope. `dry_run:true` → `convert.Analyze`, the ingestion-analysis preview (writes nothing); `dry_run:false` → writes the bundle to `out`. |
+| `validate` | `bundle` **(req)**, `strict` | `validate` report envelope. |
+| `review` | `bundle` **(req)**, `today`, `strict` | `review` report envelope. |
+| `lint` | `src` **(req)**, `today`, `strict` | `lint` report envelope (read-only source-corpus health). |
+| `graph` | `bundle` **(req)**, `format` (`dot`\|`json`\|`graphml`\|`html`, default `json`), `today` | The **raw** export bytes. `format:json` is the raw `{nodes,edges}` object — **not** the report envelope (see [graph JSON](#graph-json--a-raw-export-not-the-envelope)). |
+
+`strict` is accepted for parity with the CLI flag, but since a tool call has no
+exit code it does **not** change the payload (the report is returned either way).
+`today`/`SOURCE_DATE_EPOCH` default the staleness date exactly as on the CLI.
+
+### Behavior and invariants
+
+The server adds **no business logic** — it is a thin, invariant-preserving
+transport over the existing internal functions:
+
+- **Never-reject.** Findings (non-conformance, broken links, orphans, stale, …)
+  are returned **in** the payload. A tool that produces findings is **not** an
+  MCP error. Tool errors are reserved for **usage** (bad/missing params, an
+  invalid `verified_by`, an unknown `graph` format) and **IO** (an unreadable
+  path).
+- **Never-fabricate-trust.** `verified_by` is applied **only** when explicitly
+  passed; the server never auto-stamps `verified` and never invents `sources`.
+  An invalid actor is a usage-class tool error.
+- **Determinism.** Payloads honor `SOURCE_DATE_EPOCH` / `today` the same as the
+  CLI, so identical inputs yield identical bytes.
+- **Additive only.** Source-mutating verbs (`enrich`, `emit_concept`) and
+  read/search tools are deliberately **not** exposed: the read surface belongs to
+  the knowledge store, and authoring over MCP is a later concern.
 
 ## OKF v0.2 output structure
 
@@ -1269,17 +1335,24 @@ section for each as it lands; today each links to its tracking issue.
   every run. See [`config`](#config).
   [#10](https://github.com/ghchinoy/binder/issues/10)
 
-### Phases 3–6 — codec adapter and the reachability layer
+### Codec adapter and the reachability layer
 
-- **Phase 3 — community-core codec adapter** (`--okf-impl=community`): a second
-  `Codec` behind the existing interface, slotted in only after it is confirmed
-  byte-complete against the golden bundles.
-- **Phase 4 — MCP server mode** (`binder mcp`): binder's *additive*
-  convert/author/emit tools over stdio (no read/search re-implementation).
-- **Phase 5 — Agent Skill**: an `agentskills.io`-conformant skill driving the
-  convert → validate → review workflow.
-- **Phase 6 — Agent-Plugin bundle**: an isolated, optional `plugin/` (plugin
-  manifest + skill + MCP manifest); deleting it leaves binder fully functional.
+The reachability layer was sequenced **Skill/Plugin before MCP**, so MCP builds
+on already-settled `--json` payloads rather than the reverse.
+
+- **Community-core codec adapter** (`--okf-impl=community`): a second `Codec`
+  behind the existing interface, slotted in only after it is confirmed
+  byte-complete against the golden bundles. *Planned.*
+- **Agent Skill + Agent-Plugin bundle** (`okf-convert`): — ✅ shipped
+  ([#14](https://github.com/ghchinoy/binder/issues/14)). An isolated, optional
+  plugin (plugin manifest + skill) driving the convert → validate → review
+  workflow; deleting it leaves binder fully functional. See
+  [Agent Skill / Plugin](../README.md#agent-skill--plugin).
+- **MCP server mode** (`binder mcp`): — ✅ shipped
+  ([#15](https://github.com/ghchinoy/binder/issues/15)). binder's *additive*
+  convert/validate/review/lint/graph tools over stdio (no read/search
+  re-implementation), returning the same `binder.report/v1` payloads as `--json`.
+  See [MCP server (`binder mcp`)](#mcp-server-binder-mcp).
 
 This guide is seeded per [issue #11](https://github.com/ghchinoy/binder/issues/11)
 and grows alongside each feature above.

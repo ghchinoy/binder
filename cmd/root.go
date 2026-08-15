@@ -55,6 +55,7 @@ func NewRootCmd() *cobra.Command {
 	root.AddCommand(newReviewCmd(codec))
 	root.AddCommand(newLintCmd(codec))
 	root.AddCommand(newGraphCmd(codec))
+	root.AddCommand(newMCPCmd(codec))
 	root.AddCommand(newConfigCmd(cfg))
 	return root
 }
