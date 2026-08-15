@@ -32,9 +32,9 @@ const (
 
 // Finding is one validation result.
 type Finding struct {
-	ConceptID string
-	Severity  Severity
-	Message   string
+	ConceptID string   `json:"concept_id"`
+	Severity  Severity `json:"severity"`
+	Message   string   `json:"message"`
 }
 
 func (f Finding) String() string {

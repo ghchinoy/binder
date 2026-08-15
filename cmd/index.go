@@ -23,7 +23,7 @@ func newIndexCmd(codec okf.Codec) *cobra.Command {
 			"bundle-root index.md declares okf_version (spec §12). log.md files are\n" +
 			"never touched. Existing index.md files are regenerated; each write is\n" +
 			"reported so nothing is overwritten silently.",
-		Args: cobra.ExactArgs(1),
+		Args: exactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root := args[0]
 			b, err := bundle.Load(root, codec)

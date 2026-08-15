@@ -22,40 +22,40 @@ var wikilinkRE = regexp.MustCompile(`\[\[([^\[\]]+)\]\]`)
 
 // Edge is one unresolved link, reported with its source concept (§4.2).
 type Edge struct {
-	From      string
-	RawTarget string
-	Text      string
+	From      string `json:"from"`
+	RawTarget string `json:"raw_target"`
+	Text      string `json:"text"`
 }
 
 // ConceptView is the per-concept derived summary.
 type ConceptView struct {
-	ID       string
-	Type     string
-	Tier     okf.Tier
-	Stale    bool
-	Attested bool
-	Orphan   bool
+	ID       string   `json:"id"`
+	Type     string   `json:"type"`
+	Tier     okf.Tier `json:"tier"`
+	Stale    bool     `json:"stale"`
+	Attested bool     `json:"attested"`
+	Orphan   bool     `json:"orphan"`
 }
 
 // Report is the outcome of reviewing a bundle.
 type Report struct {
-	Root        string
-	Today       string
-	NumConcepts int
-	ByType      map[string]int
-	Tiers       map[okf.Tier]int
-	Orphans     []string
-	Stale       []string
-	Attested    []string
-	Unresolved  []Edge
+	Root        string           `json:"root"`
+	Today       string           `json:"today"`
+	NumConcepts int              `json:"num_concepts"`
+	ByType      map[string]int   `json:"by_type"`
+	Tiers       map[okf.Tier]int `json:"tiers"`
+	Orphans     []string         `json:"orphans"`
+	Stale       []string         `json:"stale"`
+	Attested    []string         `json:"attested"`
+	Unresolved  []Edge           `json:"unresolved"`
 	// UnparsedFrontmatter lists concepts carrying the binder recovery marker
 	// (okf.RecoveryMarkerKey) — a file whose original frontmatter would not parse
 	// and was preserved as body by `binder convert` (never-reject, design-v2 §4.6).
 	// review reads the same persisted marker the converter stamped and warned
 	// about, so the two surfaces can never disagree and no body-shape heuristic
 	// (which cannot tell a recovered fence from a legit thematic break) is needed.
-	UnparsedFrontmatter []string
-	Concepts            []ConceptView
+	UnparsedFrontmatter []string      `json:"unparsed_frontmatter"`
+	Concepts            []ConceptView `json:"concepts"`
 }
 
 // Review computes the review report for a loaded bundle as of `today`
@@ -63,12 +63,19 @@ type Report struct {
 // links to (no inbound resolved edge); it is reported for the user to wire up or
 // accept, never removed.
 func Review(b *okf.Bundle, today string) *Report {
+	// Slices are initialized so an empty review serializes to [] not null (#13).
 	r := &Report{
-		Root:        b.Root,
-		Today:       today,
-		NumConcepts: len(b.Concepts),
-		ByType:      map[string]int{},
-		Tiers:       map[okf.Tier]int{},
+		Root:                b.Root,
+		Today:               today,
+		NumConcepts:         len(b.Concepts),
+		ByType:              map[string]int{},
+		Tiers:               map[okf.Tier]int{},
+		Orphans:             []string{},
+		Stale:               []string{},
+		Attested:            []string{},
+		Unresolved:          []Edge{},
+		UnparsedFrontmatter: []string{},
+		Concepts:            []ConceptView{},
 	}
 
 	// The set of concept IDs that actually exist. A link the codec marks
