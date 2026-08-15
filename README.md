@@ -174,6 +174,7 @@ field lists, the discovery surface (`--version`/`--help`), and a CI example.
 | `--dry-run` | `false` | Report what would be written without writing anything. |
 | `--default-type` | `Note` | Concept type applied when none is present or mapped. |
 | `--type-map` | — | Per-directory type overrides, e.g. `"docs=Guide,adr=Decision"`. |
+| `--workspace-root` | `<src>` root | Boundary within which `file://` links resolve to internal edges (see below). |
 | `--report` | — | Also write the run report to this file. |
 | `--json` | `false` | Emit the run report as deterministic JSON (schema `binder.report/v1`) instead of prose. Composes with `--report`. |
 
@@ -181,7 +182,8 @@ field lists, the discovery surface (`--version`/`--help`), and a CI example.
 
 Relationship extraction that is always on: `[[wikilinks]]` / `[[Target|alias]]`
 (resolved by path → filename → title-slug), standard `[text](a.md#anchor)`
-links, and `#hashtags` merged into frontmatter `tags`. Unresolved links are left
+links, in-workspace `file://` URIs (resolved to the same internal edge; see
+below), and `#hashtags` merged into frontmatter `tags`. Unresolved links are left
 in place **and** reported (spec §6/§11). These flags opt into the rest:
 
 | Flag | Effect |
@@ -193,6 +195,15 @@ in place **and** reported (spec §6/§11). These flags opt into the rest:
 
 Trust mapping is **off by default** and never fabricates provenance: with no
 mapping flags, frontmatter round-trips byte-for-byte.
+
+**`file://` links.** IDE- and assistant-generated `file:///abs/path/doc.md` links
+that point inside the workspace root resolve to internal edges rewritten to
+`/<outRel>` — no absolute machine path leaks into the output and runs stay
+byte-identical. The root defaults to the corpus `<src>` and can be widened with
+`--workspace-root`. Paths are percent-decoded; an empty authority and
+`file://localhost/…` are local while any other host stays external; `..`/symlink
+escapes and out-of-root targets stay external. Unresolved `file://` links are
+tolerated (recorded as advisories, exit code stays `0`), never fatal.
 
 `convert` never rejects: a source file whose frontmatter will not parse (invalid
 YAML or an unterminated fence) is preserved losslessly as a plain-markdown concept
@@ -261,8 +272,8 @@ The following are **planned, not yet shipped**:
   agent tooling over the same OKF core.
 
 Near-term `convert`/CLI enhancements are tracked as open issues (in-place
-enrichment, a standalone `lint`, declarative trust/lifecycle flags, `file://`
-edge resolution, grouped/backlink indexes, and `binder config`); the
+enrichment, a standalone `lint`, declarative trust/lifecycle flags,
+grouped/backlink indexes, and `binder config`); the
 [user guide](docs/user_guide.md#roadmap--planned-features) maps each to its issue.
 
 Today's shipped surface is the `convert`, `validate`, `index`, `review`, and

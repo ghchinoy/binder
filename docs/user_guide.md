@@ -11,8 +11,8 @@ usage, and worked end-to-end examples.
 bundle and reports on OKF bundles. It is **Phase 2 complete**.
 
 > This guide grows alongside each Phase 2.x feature. Sections for planned work
-> (`enrich`/`--in-place`, `lint`, declarative trust flags, `config`, `file://`
-> edges, grouped/backlink indexes) are stubbed under
+> (`enrich`/`--in-place`, `lint`, declarative trust flags, `config`,
+> grouped/backlink indexes) are stubbed under
 > [Roadmap & planned features](#roadmap--planned-features) and reference their
 > tracking issues.
 
@@ -104,7 +104,8 @@ For each non-reserved `.md` it emits one concept with:
 - `type` ensured (precedence: existing frontmatter → `--type-map` per-directory →
   `--default-type`, default `Note`);
 - `title` ensured (precedence: existing → first `# H1` → humanized filename);
-- standard markdown links and `[[wikilinks]]` rewritten to bundle-relative form;
+- standard markdown links, `[[wikilinks]]`, and in-workspace `file://` URIs
+  rewritten to bundle-relative form (see [`file://` link resolution](#file-link-resolution));
 - `#hashtags` merged into frontmatter `tags`;
 - frontmatter-ref edges materialized (when `--fm-ref-keys` is set);
 - a `generated` provenance stamp added **only if absent**;
@@ -122,6 +123,7 @@ Output is required unless you pass `--dry-run`.
 | `--default-type` | `Note` | Concept type applied when none is present or mapped. |
 | `--type-map` | — | Per-directory type overrides, e.g. `"docs=Guide,adr=Decision"`. The longest (most specific) matching directory key wins. |
 | `--fm-ref-keys` | — | Frontmatter keys treated as relationship edges, e.g. `"related,parent"`. |
+| `--workspace-root` | `<src>` root | Boundary within which `file://` links resolve to internal edges. See [`file://` link resolution](#file-link-resolution). |
 | `--map-citations` | `false` | Map a body `# Citations` list into `sources` entries. |
 | `--source-keys` | — | Frontmatter keys to map into `sources` entries, e.g. `"source,author"`. |
 | `--map-draft` | `false` | Map a `draft: true` marker to `status: draft` (only when `status` is absent). |
@@ -147,6 +149,36 @@ binder convert
 Concepts:
   metrics/revenue.md  [type=Metric]
   overview.md  [type=Note]
+```
+
+#### `file://` link resolution
+
+IDEs (VS Code), OS tools, and AI coding assistants often emit clickable
+`file:///absolute/path/to/project/doc.md` links. `convert` resolves a `file://`
+URI that points **inside the workspace root** to the same internal, bundle-
+relative edge a plain relative link would produce, so those links populate the
+link graph instead of being dropped as external (`links: 0`).
+
+Resolution rules:
+
+- The URI is parsed with `net/url`; the path is **percent-decoded** (`%20` → space).
+- **Authority/host:** an empty authority (`file:///path`) and `file://localhost/path`
+  are local. Any other host (`file://otherhost/path`) is remote and left external.
+- **Boundary:** the absolute path must fall inside `--workspace-root` (default: the
+  corpus `<src>` root). Targets that escape the root — via `..` or a symlink — stay
+  external. Set `--workspace-root` to a parent directory when the corpus is a
+  subdirectory of a larger workspace.
+- Only `.md` targets resolve; `#fragments` are preserved. A resolved edge is
+  rewritten to `/<outRel>`, so **no absolute machine path leaks into the output**
+  and runs stay byte-identical.
+- A `file://` link that is remote, outside the root, or otherwise unresolved is
+  **tolerated**, never fatal: it is recorded as an advisory/unresolved edge and the
+  exit code stays `0`.
+
+```text
+# corpus at /home/me/notes, intro.md links to file:///home/me/notes/docs/doc.md
+binder convert /home/me/notes -o /tmp/bundle
+# → intro.md body now contains [doc](/docs/doc.md); links: 1 (resolved 1)
 ```
 
 ### `validate`
@@ -797,9 +829,10 @@ section for each as it lands; today each links to its tracking issue.
   that injects missing required frontmatter into existing files without an
   out-of-place output directory.
   [#5](https://github.com/ghchinoy/binder/issues/5)
-- **`file://` edge resolution** — resolve workspace-relative `file://` URIs that
-  point inside the corpus as internal concept edges (today they are treated as
-  external and skipped). [#6](https://github.com/ghchinoy/binder/issues/6)
+- **`file://` edge resolution** — ✅ shipped: workspace-relative `file://` URIs
+  that point inside the workspace root now resolve to internal concept edges. See
+  [`file://` link resolution](#file-link-resolution).
+  [#6](https://github.com/ghchinoy/binder/issues/6)
 - **Declarative trust & lifecycle flags** — `--stale-after-map`, `--verified-by`,
   `--status-map` for stamping provenance and freshness across directories.
   [#7](https://github.com/ghchinoy/binder/issues/7)
