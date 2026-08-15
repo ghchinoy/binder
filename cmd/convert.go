@@ -10,11 +10,12 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/ghchinoy/binder/internal/clijson"
+	"github.com/ghchinoy/binder/internal/config"
 	"github.com/ghchinoy/binder/internal/convert"
 	"github.com/ghchinoy/binder/internal/okf"
 )
 
-func newConvertCmd(codec okf.Codec) *cobra.Command {
+func newConvertCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 	var (
 		output        string
 		defaultType   string
@@ -49,6 +50,12 @@ func newConvertCmd(codec okf.Codec) *cobra.Command {
 			if err != nil {
 				return err
 			}
+
+			// Resolve default_type through config precedence (flag > env > file >
+			// default). Binding the flag lets an explicit --default-type win over a
+			// configured value while a configured value still overrides the built-in.
+			cfg.BindFlag(config.KeyDefaultType, cmd.Flags().Lookup("default-type"))
+			defaultType = cfg.GetString(config.KeyDefaultType)
 
 			opts := convert.Options{
 				Codec:         codec,

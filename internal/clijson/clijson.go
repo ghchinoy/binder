@@ -41,10 +41,19 @@ type Envelope struct {
 // default), and a trailing newline. binderVersion is the bare version string
 // (e.g. "0.1.0"); it is prefixed with "binder/" for the envelope.
 func Encode(w io.Writer, binderVersion, command string, result any) error {
+	return EncodeSchema(w, binderVersion, command, SchemaVersion, result)
+}
+
+// EncodeSchema is Encode with a caller-supplied schema tag. Commands whose
+// report has its own contract (e.g. `binder config` → "binder.config/v1") use
+// this so their envelope carries the right schema while sharing the identical
+// deterministic encoding (2-space indent, HTML escaping off, sorted keys,
+// trailing newline).
+func EncodeSchema(w io.Writer, binderVersion, command, schema string, result any) error {
 	env := Envelope{
 		Binder:  "binder/" + binderVersion,
 		Command: command,
-		Schema:  SchemaVersion,
+		Schema:  schema,
 		Result:  result,
 	}
 	enc := json.NewEncoder(w)

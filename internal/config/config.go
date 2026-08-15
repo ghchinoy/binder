@@ -1,0 +1,189 @@
+// Package config is binder's viper-backed configuration substrate (issue #10).
+// It resolves configurable defaults (the actor identity for --verified-by, the
+// default concept type) once, with the precedence flag > env > config file >
+// built-in default, and exposes the resolved values (and, where cheap, the
+// source of each) to the command tree. It underpins the #7 --verified-by stamp:
+// the default actor is an explicit, user-configured assertion, never invented.
+//
+// Absence of any config file is normal — defaults apply and loading NEVER errors
+// for a missing file. A malformed config `verified_by` fails fast at load with a
+// usage error (exit 2), not deferred to first use (design §3.1 / option (a)).
+package config
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/spf13/pflag"
+	"github.com/spf13/viper"
+
+	"github.com/ghchinoy/binder/internal/clijson"
+	"github.com/ghchinoy/binder/internal/okf"
+)
+
+// SchemaVersion identifies the `binder config` JSON report contract. It is
+// distinct from clijson.SchemaVersion (the report envelope): config has its own
+// shape, versioned independently (design §4.2 forward-compat).
+const SchemaVersion = "binder.config/v1"
+
+// Config keys (namespaced, extensible). New defaults are added here without
+// breaking the envelope shape.
+const (
+	KeyVerifiedBy  = "verified_by"
+	KeyDefaultType = "default_type"
+)
+
+// EnvPrefix is prepended (with an underscore) to an upper-cased key to form the
+// environment variable name, e.g. verified_by → BINDER_VERIFIED_BY.
+const EnvPrefix = "BINDER"
+
+// defaultType is the built-in default for the default_type key; it mirrors the
+// convert command's historical --default-type default so behavior is unchanged.
+const defaultType = "Note"
+
+// ActorFormsHint lists the valid actor forms for --verified-by / verified_by.
+// It is shared by the flag validator and the config-load validator so the two
+// surfaces emit an identical, helpful message (design option (a)).
+const ActorFormsHint = "valid forms: human:<id>, process:<id>, team:<id>, or <producer>/<version> (e.g. binder/0.1.0)"
+
+// InvalidActorError returns a usage error (exit 2) for an actor value that does
+// not satisfy okf.IsValidActor, listing the valid forms.
+func InvalidActorError(actor string) error {
+	return clijson.Usage(fmt.Errorf("invalid actor %q; %s", actor, ActorFormsHint))
+}
+
+// Config holds a resolved viper instance and the config file it read (if any).
+// It is created empty and populated by Load, which the root command runs in its
+// PersistentPreRunE so every subcommand shares the same resolved configuration.
+type Config struct {
+	v          *viper.Viper
+	configFile string                 // path of the config file read, "" if none
+	boundFlags map[string]*pflag.Flag // key → flag bound via BindFlag (for source attribution)
+}
+
+// Load resolves configuration from (in precedence order) env and config file
+// over built-in defaults. Flag binding is layered on later, per command, via
+// BindFlag. A missing config file is not an error. A malformed `verified_by`
+// coming from env/file is a usage error (exit 2), surfaced here so it fails fast
+// at config-load rather than at first use.
+func (c *Config) Load() error {
+	v := viper.New()
+	v.SetDefault(KeyVerifiedBy, "")
+	v.SetDefault(KeyDefaultType, defaultType)
+
+	v.SetEnvPrefix(EnvPrefix)
+	v.AutomaticEnv()
+
+	if path := findConfigFile(); path != "" {
+		v.SetConfigFile(path)
+		if err := v.ReadInConfig(); err != nil {
+			// A file we located but cannot read/parse is a real problem (IO/parse),
+			// distinct from "no file present" which is normal. Report it.
+			return fmt.Errorf("reading config file %q: %w", path, err)
+		}
+		c.configFile = path
+	}
+	c.v = v
+
+	// Fail fast: a config-supplied default actor must itself be well-formed
+	// (design option (a)). Flag values are validated separately at use.
+	if vb := strings.TrimSpace(v.GetString(KeyVerifiedBy)); vb != "" && !okf.IsValidActor(vb) {
+		return InvalidActorError(vb)
+	}
+	return nil
+}
+
+// findConfigFile returns the first existing config file in the documented search
+// order, or "" if none is found:
+//  1. ./.binder.yaml
+//  2. $XDG_CONFIG_HOME/binder/config.yaml (fallback $HOME/.config/binder/config.yaml)
+func findConfigFile() string {
+	candidates := []string{filepath.Join(".", ".binder.yaml")}
+	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
+		candidates = append(candidates, filepath.Join(xdg, "binder", "config.yaml"))
+	} else if home, err := os.UserHomeDir(); err == nil && home != "" {
+		candidates = append(candidates, filepath.Join(home, ".config", "binder", "config.yaml"))
+	}
+	for _, p := range candidates {
+		if info, err := os.Stat(p); err == nil && !info.IsDir() {
+			return p
+		}
+	}
+	return ""
+}
+
+// BindFlag ties a command flag to a config key so a flag that was explicitly set
+// takes precedence over env/file/default (viper honors flag.Changed). A nil flag
+// is ignored. Must be called after Load.
+func (c *Config) BindFlag(key string, flag *pflag.Flag) {
+	if c.v == nil || flag == nil {
+		return
+	}
+	if c.boundFlags == nil {
+		c.boundFlags = map[string]*pflag.Flag{}
+	}
+	c.boundFlags[key] = flag
+	_ = c.v.BindPFlag(key, flag)
+}
+
+// GetString returns the resolved string value for key (flag > env > file >
+// default). It is safe to call before Load (returns "").
+func (c *Config) GetString(key string) string {
+	if c.v == nil {
+		return ""
+	}
+	return c.v.GetString(key)
+}
+
+// ConfigFile returns the config file path that was read, or "" if none.
+func (c *Config) ConfigFile() string { return c.configFile }
+
+// Source reports where the resolved value for key came from: "flag", "env",
+// "file", or "default". It is a best-effort attribution used by `binder config`.
+func (c *Config) Source(key string) string {
+	if c.v == nil {
+		return "default"
+	}
+	// A bound flag that was explicitly set on the command line takes precedence.
+	if f, ok := c.boundFlags[key]; ok && f != nil && f.Changed {
+		return "flag"
+	}
+	if _, ok := os.LookupEnv(envKey(key)); ok {
+		return "env"
+	}
+	if c.v.InConfig(key) {
+		return "file"
+	}
+	return "default"
+}
+
+func envKey(key string) string {
+	return EnvPrefix + "_" + strings.ToUpper(key)
+}
+
+// ResolvedValue is one key's resolved value plus its source, for `binder config`.
+type ResolvedValue struct {
+	Value  string `json:"value"`
+	Source string `json:"source"`
+}
+
+// Resolved is the `binder config` report: the file that was read (if any) and
+// each configuration key's resolved value and source.
+type Resolved struct {
+	ConfigFile string                   `json:"config_file"`
+	Values     map[string]ResolvedValue `json:"values"`
+}
+
+// Keys is the stable, ordered list of configuration keys `binder config` prints.
+func Keys() []string { return []string{KeyDefaultType, KeyVerifiedBy} }
+
+// Resolve builds the Resolved view for `binder config`.
+func (c *Config) Resolve() Resolved {
+	vals := make(map[string]ResolvedValue, len(Keys()))
+	for _, k := range Keys() {
+		vals[k] = ResolvedValue{Value: c.GetString(k), Source: c.Source(k)}
+	}
+	return Resolved{ConfigFile: c.configFile, Values: vals}
+}
