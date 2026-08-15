@@ -236,9 +236,11 @@ subheaders:
   passes (the root index remains the sole `okf_version` carrier).
 
 `--include-backlinks` and `--include-graph` add, under each entry, a bounded,
-sorted sub-list of inbound / outbound edges. These annotations derive from the
-**same resolved-edge set** `binder graph` uses (resolved links only), so the
-catalog and the graph can never disagree:
+sorted sub-list of inbound / outbound edges. The list is capped at **20 edges
+per entry**; when an entry has more, exactly 20 are rendered followed by a single
+`… and N more` line (the full edge set is always available via `binder graph`).
+These annotations derive from the **same resolved-edge set** `binder graph` uses
+(resolved links only), so the catalog and the graph can never disagree:
 
 ```markdown
 # Catalog
@@ -558,6 +560,14 @@ encoder, so there is no second serialization path and no drift from the CLI.
 It is a transport, not a report-producing command: it has no `--json` flag (its
 *outputs* are the structured tool payloads). It serves over stdio until the
 client disconnects.
+
+> **Output-routing flags are the deliberate 1:1 exception.** Every tool
+> parameter mirrors its CLI flag one-to-one *except* the output-routing flags
+> `--report` / `--output` / `--json`, which the tools do not expose: over MCP the
+> transport **is** the JSON channel, so there is nothing to route and no `--json`
+> flag to toggle. The tool payloads are byte-identical to the corresponding
+> `binder <cmd> --json`. (`convert`'s `out`/`dry_run` and `graph`'s `format`
+> select *what* is produced, not how the report is routed, so they remain.)
 
 **Wire it into a harness** (Claude Code):
 

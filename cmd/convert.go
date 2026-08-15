@@ -50,6 +50,9 @@ func newConvertCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 			if output == "" && !dryRun {
 				return clijson.Usage(fmt.Errorf("--output/-o is required (or use --dry-run)"))
 			}
+			// --include-backlinks/--include-graph only annotate the --group-by-type
+			// catalog; warn (stderr only) if passed without it. Never gates.
+			hintCatalogFlags(cmd, groupByType, includeBacklinks, includeGraph)
 			typeMap, err := convert.ParseTypeMap(typeMapRaw)
 			if err != nil {
 				return err

@@ -393,7 +393,10 @@ subheaders:
 `--include-backlinks` and `--include-graph` add, under each catalog entry, a
 bounded, sorted sub-list of **inbound** (who links to it) and **outbound** (its
 dependency links) edges. Both are opt-in and compose with `--group-by-type`;
-empty edge sets render nothing. Crucially, these annotations derive from the
+empty edge sets render nothing. The list is capped at **20 edges per entry**:
+when an entry has more, exactly 20 are rendered followed by a single `… and N
+more` line, keeping the catalog navigable (the complete edge set is always
+available via `binder graph`). Crucially, these annotations derive from the
 **same resolved-edge set** `binder graph` builds (resolved links only,
 `From=concept → To=target`), via a single shared helper — so the catalog and the
 graph can never drift apart.
@@ -846,6 +849,14 @@ byte-identical and can never drift from `--json`.
 `binder mcp` is a **transport, not a report-producing command** — it takes no
 positional args and has no `--json` flag (its *outputs* are the structured tool
 payloads). It serves over stdio until the client disconnects.
+
+> **Output-routing flags are the deliberate 1:1 exception.** Every tool
+> parameter mirrors its CLI flag one-to-one *except* the output-routing flags
+> `--report` / `--output` / `--json`, which the tools do not expose: over MCP the
+> transport **is** the JSON channel, so there is nothing to route and no `--json`
+> flag to toggle. The tool payloads are byte-identical to the corresponding
+> `binder <cmd> --json`. (`convert`'s `out`/`dry_run` and `graph`'s `format`
+> select *what* is produced, not how the report is routed, so they remain.)
 
 ### Wiring it into a harness
 

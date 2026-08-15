@@ -2,7 +2,9 @@ package convert
 
 import (
 	"bytes"
+	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/ghchinoy/binder/internal/graph"
@@ -112,6 +114,44 @@ func TestRenderCatalogAllFlags(t *testing.T) {
 		"* [misc/notes](/misc/notes.md)\n"
 	if got != want {
 		t.Errorf("catalog+all mismatch:\n--- want ---\n%q\n--- got ---\n%q", want, got)
+	}
+}
+
+// TestRenderCatalogEdgeCap exercises the maxCatalogEdges truncation branch: an
+// entry with more than maxCatalogEdges outbound edges renders exactly
+// maxCatalogEdges annotation lines followed by a single "… and N more" overflow
+// line carrying the correct remainder.
+func TestRenderCatalogEdgeCap(t *testing.T) {
+	const extra = 5
+	total := maxCatalogEdges + extra
+
+	title := func(s string) *okf.OrderedMap {
+		fm := okf.NewOrderedMap()
+		fm.Set("title", s)
+		return fm
+	}
+	hub := &okf.Concept{ID: "hub", RelPath: "hub.md", Type: "Pattern", Frontmatter: title("Hub")}
+	concepts := []*okf.Concept{hub}
+	// hub links to `total` distinct concepts, so every link resolves to an edge.
+	for i := 0; i < total; i++ {
+		id := fmt.Sprintf("t/%02d", i)
+		hub.Links = append(hub.Links, okf.Link{TargetID: id, Resolved: true})
+		concepts = append(concepts, &okf.Concept{
+			ID: id, RelPath: id + ".md", Type: "Target", Frontmatter: title("T" + id),
+		})
+	}
+
+	got := string(renderCatalog(concepts, IndexOptions{GroupByType: true, IncludeGraph: true}))
+
+	if n := strings.Count(got, "  * link: "); n != maxCatalogEdges {
+		t.Errorf("rendered %d edge annotations, want exactly %d", n, maxCatalogEdges)
+	}
+	overflow := fmt.Sprintf("  * … and %d more\n", extra)
+	if !strings.Contains(got, overflow) {
+		t.Errorf("missing overflow line %q in:\n%s", overflow, got)
+	}
+	if n := strings.Count(got, "… and "); n != 1 {
+		t.Errorf("want exactly one overflow line, got %d", n)
 	}
 }
 
