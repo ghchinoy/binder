@@ -1,0 +1,328 @@
+// Package enrich implements `binder enrich <src>`: in-place, FRONTMATTER-ONLY
+// enrichment of a source markdown tree (issue #5). It injects the missing
+// required OKF frontmatter (type/title/generated, plus the optional #7 lifecycle
+// stamps) into existing files, preserving the body and every pre-existing
+// frontmatter key byte-for-byte.
+//
+// enrich is NOT `convert --in-place`. It does NO link rewriting, NO index
+// generation, NO "## Related" section, NO tag merge — frontmatter only. It
+// reuses convert's tested injection helpers (EnsureType/EnsureTitle/
+// StampGenerated and the codec's byte-faithful Serialize) but deliberately does
+// not run convert's body pipeline. `binder convert` is unchanged.
+//
+// Safety model (load-bearing — enrich mutates the source):
+//   - Additive / never-clobber: only ABSENT keys are added.
+//   - Idempotent: a second run adds nothing → no write.
+//   - Body + pre-existing keys byte-faithful (codec Serialize).
+//   - Skip-unchanged: a file needing no key is never rewritten (no git churn).
+//   - Never mutate the unparseable: a file whose frontmatter will not parse is
+//     skipped and reported, never rewritten.
+//   - Reserved files (index.md/log.md) are skipped.
+//   - Atomic write: temp file in the target's dir → fsync → rename, preserving
+//     the file mode; an interrupt never leaves a partial/corrupt source file.
+//   - Deterministic: generated.at from opts.Now (SOURCE_DATE_EPOCH-aware).
+package enrich
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"reflect"
+	"sort"
+	"time"
+
+	"github.com/ghchinoy/binder/internal/convert"
+	"github.com/ghchinoy/binder/internal/okf"
+)
+
+// Status values for a FileResult.
+const (
+	StatusEnriched    = "enriched"     // keys were injected and the file was written
+	StatusUnchanged   = "unchanged"    // every key already present → no write
+	StatusWouldEnrich = "would-enrich" // --dry-run: keys would be injected
+	StatusSkipped     = "skipped"      // not mutated (unparseable frontmatter, etc.)
+)
+
+// Options configures an enrichment run. All injectors are set-when-absent.
+type Options struct {
+	Codec       okf.Codec         // required
+	DefaultType string            // fallback type; defaults to "Note"
+	TypeMap     map[string]string // per-directory type overrides
+	Version     string            // binder version, used in generated.by
+	Now         time.Time         // clock for generated.at; controls determinism
+	DryRun      bool              // when true, compute + report but write nothing
+
+	// #7 declarative injectors (Phase 4), OFF by default and set-when-absent.
+	StatusMap     map[string]string
+	StatusDefault string
+	StaleAfterMap map[string]string
+	VerifiedBy    string
+}
+
+// FileResult is the per-file outcome of an enrichment run.
+type FileResult struct {
+	Path   string   `json:"path"`             // source-relative
+	Status string   `json:"status"`           // enriched | unchanged | would-enrich | skipped
+	Added  []string `json:"added,omitempty"`  // keys injected, sorted
+	Reason string   `json:"reason,omitempty"` // for skipped, e.g. "unparseable frontmatter: <err>"
+}
+
+// Report summarizes an enrichment run. Slices are always initialized so --json
+// serializes an empty run to [] rather than null. Files is sorted by path.
+type Report struct {
+	Src          string       `json:"src"`
+	DryRun       bool         `json:"dry_run"`
+	NumFiles     int          `json:"num_files"`
+	NumEnriched  int          `json:"num_enriched"` // would-enrich under --dry-run
+	NumUnchanged int          `json:"num_unchanged"`
+	NumSkipped   int          `json:"num_skipped"`
+	Files        []FileResult `json:"files"`
+	// Warnings holds advisory notes that are NOT per-file skips — currently the
+	// preserve-or-advise carry-forward notes for spec-invalid `verified` values
+	// (issue #7): the authored value is preserved unchanged and reported here
+	// rather than silently dropped. Each is "path: message". Initialized to [].
+	Warnings []string `json:"warnings"`
+}
+
+// NumFindings returns the count of advisory findings enrich produces: skipped
+// files (unparseable frontmatter) plus preserve-or-advise warnings. All are
+// advisory — the run always completes; under --strict they gate (exit 1).
+func (r *Report) NumFindings() int { return r.NumSkipped + len(r.Warnings) }
+
+// Enrich walks src and injects missing frontmatter into each non-reserved file
+// in place (unless opts.DryRun). It returns the run Report. A bad/unreadable src
+// path is a caller-side usage error surfaced by the command; a mid-walk IO
+// failure (read/write) is returned as an error (exit 3). Given identical input
+// and opts.Now the run is deterministic.
+func Enrich(src string, opts Options) (*Report, error) {
+	if opts.Codec == nil {
+		return nil, fmt.Errorf("enrich: codec is required")
+	}
+	if opts.DefaultType == "" {
+		opts.DefaultType = "Note"
+	}
+	if opts.Version == "" {
+		opts.Version = "dev"
+	}
+	if opts.Now.IsZero() {
+		opts.Now = time.Now()
+	}
+
+	info, err := os.Stat(src)
+	if err != nil {
+		return nil, fmt.Errorf("enrich: source %q: %w", src, err)
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("enrich: source %q is not a directory", src)
+	}
+
+	files, err := convert.WalkCorpus(src)
+	if err != nil {
+		return nil, fmt.Errorf("enrich: walking source: %w", err)
+	}
+
+	rep := &Report{
+		Src:      src,
+		DryRun:   opts.DryRun,
+		Files:    []FileResult{},
+		Warnings: []string{},
+	}
+
+	codec := opts.Codec
+	for _, f := range files {
+		// Reserved files (index.md/log.md) are never touched.
+		if codec.IsReservedFile(f.Rel) {
+			continue
+		}
+		rep.NumFiles++
+
+		raw, rerr := os.ReadFile(f.Abs)
+		if rerr != nil {
+			return nil, fmt.Errorf("enrich: reading %q: %w", f.Rel, rerr)
+		}
+
+		res, advisory, werr := enrichFile(codec, f, raw, opts)
+		if werr != nil {
+			return nil, werr
+		}
+		rep.Files = append(rep.Files, res)
+		if advisory != "" {
+			rep.Warnings = append(rep.Warnings, fmt.Sprintf("%s: %s", f.Rel, advisory))
+		}
+		switch res.Status {
+		case StatusEnriched, StatusWouldEnrich:
+			rep.NumEnriched++
+		case StatusUnchanged:
+			rep.NumUnchanged++
+		case StatusSkipped:
+			rep.NumSkipped++
+		}
+	}
+	sort.Strings(rep.Warnings)
+
+	sort.Slice(rep.Files, func(i, j int) bool { return rep.Files[i].Path < rep.Files[j].Path })
+	return rep, nil
+}
+
+// enrichFile applies the injectors to one file and, unless dry-run, writes it
+// atomically when the frontmatter changed. It returns the file's result, an
+// advisory message (else ""), and an error. A parse failure yields a skipped
+// result (never mutated); an IO write failure returns an error (exit 3).
+func enrichFile(codec okf.Codec, f convert.SourceFile, raw []byte, opts Options) (FileResult, string, error) {
+	var c *okf.Concept
+	if convert.OpensFrontmatterFence(raw) {
+		parsed, perr := codec.ParseConcept(f.Rel, raw)
+		if perr != nil {
+			// Never mutate what we cannot safely parse — skip and report.
+			return FileResult{
+				Path:   f.Rel,
+				Status: StatusSkipped,
+				Reason: fmt.Sprintf("unparseable frontmatter: %v", perr),
+			}, "", nil
+		}
+		c = parsed
+	} else {
+		// No frontmatter: a fresh valid block will be injected.
+		c = convert.PlainConcept(codec, f.Rel, raw)
+	}
+
+	// Snapshot the frontmatter (keys + deep-copied values) BEFORE injection so
+	// the change signal catches not only added keys but a modified value (e.g. a
+	// verified actorstamp appended to an existing list) — set-when-absent covers
+	// the rest, but --verified-by mutates an existing key in place.
+	before := snapshotFM(c.Frontmatter)
+
+	// Injectors — all set-when-absent / never-clobber. Order mirrors convert.
+	convert.EnsureType(c.Frontmatter, f.Rel, opts.TypeMap, opts.DefaultType)
+	convert.EnsureTitle(c.Frontmatter, f.Rel, c.Body)
+	// #7 declarative injectors (off unless the corresponding option is set), plus
+	// the preserve-or-advise verified handling.
+	cOpts := convert.Options{
+		StatusMap:     opts.StatusMap,
+		StatusDefault: opts.StatusDefault,
+		StaleAfterMap: opts.StaleAfterMap,
+		VerifiedBy:    opts.VerifiedBy,
+		Now:           opts.Now,
+	}
+	convert.ApplyLifecycleMaps(c, f.Rel, cOpts)
+	advisory := convert.ApplyVerifiedBy(c, cOpts)
+	convert.StampGenerated(c.Frontmatter, opts.Version, opts.Now)
+
+	changed := changedKeys(before, c.Frontmatter)
+	if len(changed) == 0 {
+		// Nothing changed → no write (no mtime/git churn). An advisory (a
+		// preserved spec-invalid verified value) is still surfaced by the caller.
+		return FileResult{Path: f.Rel, Status: StatusUnchanged}, advisory, nil
+	}
+
+	if opts.DryRun {
+		return FileResult{Path: f.Rel, Status: StatusWouldEnrich, Added: changed}, advisory, nil
+	}
+
+	out, serr := codec.Serialize(c)
+	if serr != nil {
+		return FileResult{}, "", fmt.Errorf("enrich: serializing %q: %w", f.Rel, serr)
+	}
+	if err := atomicWrite(f.Abs, out); err != nil {
+		return FileResult{}, "", fmt.Errorf("enrich: writing %q: %w", f.Rel, err)
+	}
+	return FileResult{Path: f.Rel, Status: StatusEnriched, Added: changed}, advisory, nil
+}
+
+// fmSnapshot captures a frontmatter's values by deep copy so a later comparison
+// detects in-place value changes (not just added keys).
+type fmSnapshot map[string]any
+
+// snapshotFM deep-copies every top-level value of fm so an injector that mutates
+// a value in place (e.g. appending to a verified list) is still detectable.
+func snapshotFM(fm *okf.OrderedMap) fmSnapshot {
+	s := make(fmSnapshot, fm.Len())
+	for _, k := range fm.Keys() {
+		v, _ := fm.Get(k)
+		s[k] = deepCopyValue(v)
+	}
+	return s
+}
+
+// changedKeys returns the keys whose value in fm differs from the snapshot (a
+// new key, or a modified value), sorted. Empty ⟺ the frontmatter is unchanged,
+// so it is the complete write/no-write signal AND the reported "added" set.
+func changedKeys(before fmSnapshot, fm *okf.OrderedMap) []string {
+	var changed []string
+	for _, k := range fm.Keys() {
+		v, _ := fm.Get(k)
+		old, existed := before[k]
+		if !existed || !reflect.DeepEqual(old, v) {
+			changed = append(changed, k)
+		}
+	}
+	sort.Strings(changed)
+	return changed
+}
+
+// deepCopyValue recursively copies plain frontmatter values (maps, slices,
+// scalars) so a snapshot is immune to later in-place mutation.
+func deepCopyValue(v any) any {
+	switch t := v.(type) {
+	case map[string]any:
+		m := make(map[string]any, len(t))
+		for k, val := range t {
+			m[k] = deepCopyValue(val)
+		}
+		return m
+	case []any:
+		s := make([]any, len(t))
+		for i, val := range t {
+			s[i] = deepCopyValue(val)
+		}
+		return s
+	default:
+		return v
+	}
+}
+
+// atomicWrite writes data to a temp file in the target's directory, fsyncs it,
+// then renames it over the target — a same-filesystem atomic replace. The
+// original file's mode is preserved (or 0644 for a new file). An interrupt
+// leaves either the untouched original or the fully written replacement, never a
+// partial/corrupt file. The temp file is cleaned up on any error before rename.
+func atomicWrite(path string, data []byte) error {
+	dir := filepath.Dir(path)
+	mode := os.FileMode(0o644)
+	if info, err := os.Stat(path); err == nil {
+		mode = info.Mode().Perm()
+	}
+
+	tmp, err := os.CreateTemp(dir, ".binder-enrich-*.tmp")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	// On any failure before the rename, remove the temp file so we never litter.
+	cleanup := func() {
+		tmp.Close()
+		os.Remove(tmpName)
+	}
+
+	if _, err := tmp.Write(data); err != nil {
+		cleanup()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		cleanup()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmpName)
+		return err
+	}
+	if err := os.Chmod(tmpName, mode); err != nil {
+		os.Remove(tmpName)
+		return err
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		os.Remove(tmpName)
+		return err
+	}
+	return nil
+}

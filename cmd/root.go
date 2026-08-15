@@ -49,6 +49,7 @@ func NewRootCmd() *cobra.Command {
 		return clijson.Usage(err)
 	})
 	root.AddCommand(newConvertCmd(codec, cfg))
+	root.AddCommand(newEnrichCmd(codec, cfg))
 	root.AddCommand(newValidateCmd(codec))
 	root.AddCommand(newIndexCmd(codec))
 	root.AddCommand(newReviewCmd(codec))

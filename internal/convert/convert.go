@@ -258,8 +258,12 @@ func Analyze(src string, opts Options) (concepts []*okf.Concept, facts []SourceF
 		// prefix, additive and set-when-absent; off by default → byte-identical.
 		applyLifecycleMaps(c, it.out, opts)
 		// Optional verified actorstamp (issue #7): appended (dedup by by,at) only
-		// when a --verified-by / config verified_by actor is configured.
-		applyVerifiedBy(c, opts)
+		// when a --verified-by / config verified_by actor is configured. A
+		// spec-invalid scalar verified value is preserved unchanged and surfaced as
+		// a warning (never silently dropped) — the shared preserve-or-advise fix.
+		if adv := applyVerifiedBy(c, opts); adv != "" {
+			report.addWarning("%s: %s", it.out, adv)
+		}
 
 		stampGenerated(c.Frontmatter, opts.Version, opts.Now)
 		c.Trust = okf.ProjectTrust(c.Frontmatter, c.Type)
