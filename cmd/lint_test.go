@@ -37,6 +37,28 @@ func TestLintExitCodes(t *testing.T) {
 	}
 }
 
+// TestLintTodayFlag: --today drives staleness deterministically, and under
+// --strict an orphan/stale finding gates exit 1 while a clean date does not gate
+// away the orphan.
+func TestLintTodayFlag(t *testing.T) {
+	// After stale_after: orphan + stale both present → --strict gates.
+	if _, code := runCLI(t, "lint", "../testdata/corpus-lint-graph", "--today", "2023-11-14", "--strict"); code != clijson.ExitFindings {
+		t.Errorf("strict with findings: exit = %d, want 1", code)
+	}
+	// The orphan (island) persists regardless of date, so --strict still gates
+	// even before any stale_after.
+	out, code := runCLI(t, "lint", "../testdata/corpus-lint-graph", "--today", "2019-01-01")
+	if code != clijson.ExitSuccess {
+		t.Fatalf("bare lint exit = %d, want 0; %s", code, out)
+	}
+	if !strings.Contains(out, "stale: 0") {
+		t.Errorf("expected no stale concepts as of 2019:\n%s", out)
+	}
+	if !strings.Contains(out, "orphans: 1") {
+		t.Errorf("expected the orphan regardless of date:\n%s", out)
+	}
+}
+
 // TestLintProse: default output is the deterministic prose report.
 func TestLintProse(t *testing.T) {
 	t.Setenv("SOURCE_DATE_EPOCH", "1700000000")

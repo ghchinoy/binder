@@ -150,6 +150,45 @@ func TestLintMissingTitlesAndSchema(t *testing.T) {
 	}
 }
 
+// TestLintOrphansAndStale: an orphan has 0 inbound AND 0 outbound edges; a
+// connected-but-past-stale_after concept is stale, not an orphan; staleness is
+// deterministic in `today`.
+func TestLintOrphansAndStale(t *testing.T) {
+	src := "../../testdata/corpus-lint-graph"
+	concepts, facts, _, err := convert.Analyze(src, convert.Options{
+		Codec:   native.New(),
+		Version: "0.1.0",
+		Now:     fixedNow,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rep := lint.Lint(concepts, facts, "2023-11-14")
+	if want := []string{"island"}; !equalStrings(rep.Orphans, want) {
+		t.Errorf("orphans = %v, want %v", rep.Orphans, want)
+	}
+	if want := []string{"stale"}; !equalStrings(rep.Stale, want) {
+		t.Errorf("stale = %v, want %v", rep.Stale, want)
+	}
+	// The stale concept is connected (links to/from a), so it is not an orphan.
+	for _, id := range rep.Orphans {
+		if id == "stale" {
+			t.Errorf("connected 'stale' concept wrongly flagged orphan")
+		}
+	}
+
+	// Determinism: before stale_after, the same corpus reports no stale concepts.
+	early := lint.Lint(concepts, facts, "2019-01-01")
+	if len(early.Stale) != 0 {
+		t.Errorf("stale as of 2019-01-01 = %v, want none", early.Stale)
+	}
+	// Orphan detection is independent of today.
+	if !equalStrings(early.Orphans, []string{"island"}) {
+		t.Errorf("orphans as of 2019 = %v, want [island]", early.Orphans)
+	}
+}
+
 func equalStrings(a, b []string) bool {
 	if len(a) != len(b) {
 		return false

@@ -19,6 +19,7 @@ import (
 	"strings"
 
 	"github.com/ghchinoy/binder/internal/convert"
+	"github.com/ghchinoy/binder/internal/graph"
 	"github.com/ghchinoy/binder/internal/linkcheck"
 	"github.com/ghchinoy/binder/internal/okf"
 )
@@ -114,6 +115,30 @@ func Lint(concepts []*okf.Concept, facts []convert.SourceFacts, today string) *R
 			r.SchemaViolations = append(r.SchemaViolations, Finding{Concept: f.ConceptID, Detail: detail})
 		case !f.TypePresent:
 			r.SchemaViolations = append(r.SchemaViolations, Finding{Concept: f.ConceptID, Detail: "missing type"})
+		}
+	}
+
+	// Check 3 — orphans: a concept with 0 inbound AND 0 outbound resolved edges (a
+	// truly disconnected node). Edges come from the SINGLE resolved-edge definition
+	// graph.EdgesFromConcepts — the same edges `binder graph` and the #9 catalog
+	// see — so lint never forks resolution. This both-direction rule is stricter
+	// than review's inbound-only orphan, which is intended (design §5).
+	edges := graph.EdgesFromConcepts(concepts)
+	inbound := make(map[string]int, len(concepts))
+	outbound := make(map[string]int, len(concepts))
+	for _, e := range edges {
+		outbound[e.From]++
+		inbound[e.To]++
+	}
+
+	// Check 4 — stale: okf.IsStale as of today. today is deterministic (the
+	// command derives it from --today or SOURCE_DATE_EPOCH). Inherently advisory.
+	for _, c := range concepts {
+		if inbound[c.ID] == 0 && outbound[c.ID] == 0 {
+			r.Orphans = append(r.Orphans, c.ID)
+		}
+		if okf.IsStale(c, today) {
+			r.Stale = append(r.Stale, c.ID)
 		}
 	}
 
