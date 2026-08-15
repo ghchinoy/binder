@@ -38,6 +38,10 @@ via `binder config`, and supports `--strict` CI gating.
   `[[wikilinks]]` rewritten to bundle-relative form, frontmatter-ref edges,
   `#hashtags` merged into `tags`, per-directory `index.md` navigation, and a
   generated provenance stamp. It never mutates the source.
+- **`enrich`** adds the missing required frontmatter (`type`, `title`,
+  `generated`) to a source markdown tree **in place** — frontmatter only, no body
+  changes. It is additive/never-clobber, idempotent, atomic, and safe on a
+  git-tracked repo (see [Enriching a source corpus](#enriching-a-source-corpus-in-place-binder-enrich)).
 - **`validate`** checks a bundle against the OKF v0.2 §11 conformance rules and
   reports trust/lifecycle well-formedness as advisories.
 - **`index`** (re)generates per-directory `index.md` navigation for a bundle, and
@@ -148,10 +152,10 @@ RESULT: conformant (OKF 0.2)
 
 ### Machine-readable output (`--json`) and exit codes
 
-`convert`, `validate`, `review`, `lint`, and `graph` accept `--json` for scripting
-and CI. Prose is the default and is byte-unchanged when `--json` is absent.
+`convert`, `enrich`, `validate`, `review`, `lint`, and `graph` accept `--json` for
+scripting and CI. Prose is the default and is byte-unchanged when `--json` is absent.
 
-`convert`, `validate`, `review`, and `lint` wrap their existing report in a thin,
+`convert`, `enrich`, `validate`, `review`, and `lint` wrap their existing report in a thin,
 deterministic envelope (schema `binder.report/v1`) — same field names every run,
 2-space indent, sorted keys, a trailing newline, and any `SOURCE_DATE_EPOCH`
 honoured, so two runs on the same input are byte-identical:
@@ -243,6 +247,84 @@ catalog and the graph can never disagree:
   * backlink: [Beta](/patterns/beta.md)
   * link: [Setup](/guides/setup.md)
 ```
+
+### Enriching a source corpus in place (`binder enrich`)
+
+`binder enrich <src>` adds the missing required OKF frontmatter (`type`, `title`,
+`generated`) to the markdown files under `<src>`, **in place**. It is for authors
+adopting OKF in an existing (usually git-tracked) repo who want the required
+frontmatter added to their files without a convert-to-temp-and-copy-back dance.
+
+```bash
+binder enrich path/to/corpus            # write the injected frontmatter
+binder enrich path/to/corpus --dry-run  # preview; writes nothing
+```
+
+```text
+enrich path/to/corpus
+3 file(s): 2 enriched, 1 unchanged, 0 skipped
+  enriched getting-started.md (added: generated, title, type)
+  enriched notes/idea.md (added: generated)
+```
+
+**enrich is not `convert --in-place`.** It touches **frontmatter only** — no link
+rewriting, no `index.md` generation, no `## Related` section, no `#hashtag` merge.
+Bodies are otherwise untouched. `binder convert` is unchanged (still strictly
+out-of-place, still never touches `<src>`). Use `convert` to compile a bundle;
+use `enrich` to bring a source tree's frontmatter up to spec.
+
+The safety model is load-bearing, because enrich mutates the source:
+
+- **Additive / never-clobber.** Only keys that are **absent** are added; an
+  authored `type`/`title`/`generated` (or any other key) is never overwritten.
+- **Idempotent.** A second run finds every key present → `unchanged` → **no
+  write**. `generated.at` is stable across runs (set-when-absent).
+- **Body + pre-existing keys byte-faithful.** enrich reuses the codec's
+  byte-faithful serializer: on a file it changes, existing frontmatter subtrees
+  are re-emitted verbatim (nested/list order and quoting preserved) and only the
+  added keys are encoded fresh; the body is preserved.
+- **Skip-unchanged (no git churn).** A file that needs no key is **not written at
+  all** — no spurious diffs, no mtime bumps.
+- **Skip-unparseable.** A file whose frontmatter will not parse is **skipped and
+  reported**, never rewritten (unlike `convert`'s out-of-place recover-as-body,
+  which would be destructive in place). Left byte-identical on disk.
+- **Reserved files** (`index.md`/`log.md`) are skipped.
+- **Atomic write.** enrich writes a temp file in the target's directory, `fsync`s
+  it, then renames it over the original (same-filesystem atomic replace),
+  preserving the file mode. An interrupt never leaves a partial/corrupt file.
+- **Deterministic.** `generated.at` honours `SOURCE_DATE_EPOCH`.
+
+> **Known normalization (only on files enrich changes):** the serializer
+> normalizes body `\r\n`→`\n` and the frontmatter/body separator to a single
+> blank line. A file that needs no key is never rewritten, so CRLF/spacing-only
+> files are left exactly as-is. Because enrich mutates the source, run it on a
+> clean working tree (git is your backup) and review the diff.
+
+For no-frontmatter (plain-markdown) files, enrich prepends a fresh, valid block;
+`title` derives from the first `# H1` else a humanized filename.
+
+`--dry-run` reports `would-enrich` and writes nothing. `--json` emits the shared
+deterministic envelope with `command: "enrich"` (schema `binder.report/v1`).
+Skipped files (and preserved spec-invalid `verified` values) are advisory: bare
+enrich exits `0`; `--strict` gates (exit 1) when any are present. A bad/unreadable
+`<src>` → exit 2; a write failure → exit 3.
+
+#### enrich flags
+
+| Flag | Default | Purpose |
+|---|---|---|
+| `--dry-run` | `false` | Report what would be enriched without writing anything. |
+| `--default-type` | `Note` (or config `default_type`) | Concept type applied when none is present or mapped. |
+| `--type-map` | — | Per-directory type overrides, e.g. `"docs=Guide,adr=Decision"`. |
+| `--status-map` | — | Per-directory `status` (set only when `status` is absent), e.g. `"archive=deprecated,default=active"`. |
+| `--stale-after-map` | — | Per-directory `stale_after` relative to the run clock (grammar `+Nd`/`+Nm`/`+Ny`), set only when absent. Malformed → exit 2. |
+| `--verified-by` | config `verified_by` | Actor to append as a `verified` stamp, e.g. `"human:ghchinoy"`. Invalid actor → exit 2. |
+| `--strict` | `false` | Gate (exit 1) when any file is skipped or a preserve-or-advise finding is present. |
+| `--json` | `false` | Emit the run report as deterministic JSON (schema `binder.report/v1`) instead of prose. |
+
+The `--status-map`/`--stale-after-map`/`--verified-by` injectors are the same
+declarative `#7` stamps `convert` offers, all set-when-absent; core enrichment is
+`type`/`title`/`generated`.
 
 ### Linting a source corpus (`binder lint`)
 
@@ -392,6 +474,8 @@ non-conformance always gates regardless of `--strict`.
 | `validate --strict` | trust well-formedness advisories (in addition to hard non-conformance, which always gates) |
 | `review --strict` | any review finding — orphans, stale, unresolved/broken edges, unparsed-frontmatter recoveries |
 | `convert --strict` | unresolved links + recovery warnings |
+| `enrich --strict` | skipped (unparseable-frontmatter) files + preserve-or-advise findings |
+| `lint --strict` | any lint finding — broken links, missing titles, orphans, stale, schema violations |
 
 **`file://` links.** IDE- and assistant-generated `file:///abs/path/doc.md` links
 that point inside the workspace root resolve to internal edges rewritten to

@@ -79,13 +79,15 @@ command and are the properties that make binder safe in a pipeline:
 
 ## Commands
 
-The binary exposes seven commands. All bundle-reading commands
+The binary exposes eight commands. All bundle-reading commands
 (`validate`/`index`/`review`/`graph`) load a bundle through the same codec, so
-their views of concepts, links, and trust always agree. `lint` is the exception:
-it reads a **source corpus** (not a bundle) through the same converter pipeline.
+their views of concepts, links, and trust always agree. `lint` and `enrich` are
+the exceptions: they read (and, for `enrich`, mutate) a **source corpus** (not a
+bundle) through the same converter machinery.
 
 ```text
 binder convert    Convert a markdown corpus into an OKF v0.2 bundle
+binder enrich     Inject missing frontmatter into a source tree, in place (frontmatter only)
 binder validate   Check a bundle for OKF v0.2 conformance (spec §11)
 binder index      (Re)generate the per-directory index.md nav tree (spec §8)
 binder review     Summarize a bundle: concepts, links, orphans, trust tiers, stale
@@ -95,9 +97,14 @@ binder config     Show the resolved effective configuration and each value's sou
 ```
 
 Every command supports `-h`/`--help`. The root binary supports `-v`/`--version`.
-`validate`, `review`, `lint`, and `convert` also support `--strict` to gate
-advisories in CI (see [Strict mode](#strict-mode)); configuration is resolved
+`validate`, `review`, `lint`, `convert`, and `enrich` also support `--strict` to
+gate advisories in CI (see [Strict mode](#strict-mode)); configuration is resolved
 once with the precedence flag > env > file > default (see [`config`](#config)).
+
+`convert` and `enrich` are complementary and single-purpose: `convert` compiles a
+corpus into a **new bundle** out-of-place (and never touches the source);
+`enrich` brings a **source tree's frontmatter** up to spec **in place** and
+touches frontmatter only (no bodies, no links, no indexes). See [`enrich`](#enrich).
 
 ### `convert`
 
@@ -201,6 +208,114 @@ Resolution rules:
 binder convert /home/me/notes -o /tmp/bundle
 # → intro.md body now contains [doc](/docs/doc.md); links: 1 (resolved 1)
 ```
+
+### `enrich`
+
+```text
+binder enrich <src> [flags]
+```
+
+Adds the missing required OKF frontmatter (`type`, `title`, `generated`) to the
+markdown files under `<src>`, **in place**. It is for authors adopting OKF in an
+existing (usually git-tracked) repo who want the required frontmatter added to
+their files without a convert-to-temp-and-copy-back dance.
+
+**enrich touches frontmatter ONLY.** Unlike `convert`, it does **no** link
+rewriting, **no** `index.md` generation, **no** `## Related` section, and **no**
+`#hashtag` merge — bodies are otherwise untouched. `binder convert` is unchanged
+(still strictly out-of-place; it never touches `<src>`). Enrichment per file:
+
+- `type` ensured (precedence: existing → `--type-map` per-directory →
+  `--default-type`, default `Note`), set **only if absent**;
+- `title` ensured (precedence: existing → first `# H1` → humanized filename), set
+  **only if absent**;
+- `generated` provenance stamp added **only if absent**;
+- optionally the declarative `#7` stamps `status`/`stale_after`/`verified`
+  (`--status-map`/`--stale-after-map`/`--verified-by`), all set-when-absent.
+
+A plain-markdown file (no frontmatter fence) gets a fresh, valid block prepended.
+
+#### The safety model (load-bearing — enrich mutates the source)
+
+1. **Additive / never-clobber.** Only keys that are **absent** are added; an
+   authored value (any key) is never overwritten.
+2. **Idempotent.** A second run finds every key present → `unchanged` → **no
+   write**. `generated.at` is stable across runs (set-when-absent).
+3. **Body + pre-existing keys byte-faithful.** enrich reuses the codec's
+   byte-faithful serializer: on a file it changes, unchanged frontmatter subtrees
+   are re-emitted verbatim (nested-map key order, list order, and scalar
+   quoting/folding preserved) and only the **added** top-level keys are encoded
+   fresh; the body is re-emitted as-is.
+4. **Skip-unchanged (no git churn).** A file that needs no key is **not written
+   at all** — no spurious diffs, no mtime bumps. Critical for git-tracked trees.
+5. **Skip-unparseable.** A file whose frontmatter will not parse (invalid YAML or
+   an unterminated fence) is **skipped and reported** (`status: skipped`, with a
+   reason), **never rewritten** — and is left **byte-identical on disk**. This is
+   deliberately unlike `convert`'s out-of-place recover-as-body (which moves the
+   bad frontmatter into the body): silent recovery in place would be destructive.
+6. **Reserved files** (`index.md`/`log.md`) are skipped.
+7. **Atomic write.** enrich writes a temp file in the target's directory,
+   `fsync`s it, then `rename`s it over the original (a same-filesystem atomic
+   replace), preserving the file mode. An interrupt never leaves a partial or
+   corrupt source file; a mid-write failure leaves the original intact.
+8. **Deterministic.** `generated.at` (and any resolved `stale_after`) honour
+   `SOURCE_DATE_EPOCH`.
+
+> **Known normalization (only on files enrich changes):** the serializer
+> normalizes body `\r\n`→`\n` and the frontmatter/body separator to a single
+> blank line. A file that needs no key is never rewritten, so CRLF- or
+> spacing-only files are left exactly as-is. Because enrich mutates the source,
+> run it on a clean working tree (git is your backup) and review the diff.
+
+#### Flags
+
+| Flag | Default | Purpose |
+|---|---|---|
+| `--dry-run` | `false` | Report what would be enriched (`status: would-enrich`) without writing anything. |
+| `--default-type` | `Note` (or config `default_type`) | Concept type applied when none is present or mapped. |
+| `--type-map` | — | Per-directory type overrides, e.g. `"docs=Guide,adr=Decision"`. Longest matching directory key wins. |
+| `--status-map` | — | Per-directory `status`, e.g. `"archive=deprecated,default=active"`; `default=` is the fallback. Set **only when `status` is absent**. |
+| `--stale-after-map` | — | Per-directory `stale_after` relative to the run clock (grammar `+Nd`/`+Nm`/`+Ny`, UTC `YYYY-MM-DD`); set **only when absent**. Malformed → exit 2. |
+| `--verified-by` | config `verified_by` | Actor appended as a `verified` stamp, e.g. `"human:ghchinoy"`. Invalid actor → exit 2. Appends only (dedup by `by,at`). |
+| `--strict` | `false` | Gate (exit 1) when any file is skipped or a preserve-or-advise finding is present. Without it these never gate (exit 0). |
+| `--json` | `false` | Emit the run report as deterministic JSON (schema `binder.report/v1`, `command:"enrich"`) instead of prose. |
+
+The `--status-map`/`--stale-after-map`/`--verified-by` injectors are the same
+declarative `#7` stamps `convert` offers; core enrichment is `type`/`title`/`generated`.
+
+#### Output report
+
+```text
+enrich path/to/corpus
+3 file(s): 2 enriched, 1 unchanged, 0 skipped
+  enriched getting-started.md (added: generated, title, type)
+  enriched notes/idea.md (added: generated)
+```
+
+The `--json` report carries `src`, `dry_run`, the `num_files`/`num_enriched`/
+`num_unchanged`/`num_skipped` counts, a per-file `files` array (`path`, `status`
+∈ `enriched|unchanged|would-enrich|skipped`, sorted `added` keys, and a `reason`
+for skips), and a `warnings` array (preserve-or-advise notes). Empty arrays
+serialize as `[]`, and two runs on the same input are byte-identical.
+
+#### `verified` preserve-or-advise
+
+When `--verified-by` is set and a file already carries a **spec-invalid scalar**
+`verified` value (spec §5.2 wants a `{by,at}` stamp or a list of them), enrich
+**preserves the authored value unchanged** and does **not** append — it never
+silently drops or reshapes authored data — reporting the file under `warnings`
+instead. This same shared helper backs `convert`, which surfaces it as a warning.
+
+```bash
+binder enrich path/to/corpus            # write injected frontmatter
+binder enrich path/to/corpus --dry-run  # preview; writes nothing
+binder enrich path/to/corpus --json     # deterministic envelope, command:"enrich"
+binder enrich path/to/corpus --strict   # exit 1 if any file is skipped
+```
+
+Exit codes: clean run → `0`; a bad/unreadable `<src>` → `2`; a bad flag value
+(`--status-map`/`--stale-after-map`/`--verified-by`) → `2`; a write failure →
+`3`; skipped/advisory findings gate to `1` only under `--strict`.
 
 ### `validate`
 
@@ -496,16 +611,16 @@ the resolved config file and, per key, the effective value and its source (`flag
 
 ## JSON output (`--json`) and the exit-code contract
 
-`convert`, `validate`, `review`, `lint`, and `graph` accept `--json` for
+`convert`, `enrich`, `validate`, `review`, `lint`, and `graph` accept `--json` for
 scripting, agents, and CI. Prose is the default and is **byte-unchanged** when
 `--json` is absent — `--json` is a presentation layer over the already-computed
 report, it changes no behavior and fabricates no fields or trust data.
 
 ### The envelope (schema `binder.report/v1`)
 
-`convert`, `validate`, `review`, and `lint` wrap their existing report struct in
-a thin envelope that carries the provenance and schema tag a consumer needs to
-parse it safely:
+`convert`, `enrich`, `validate`, `review`, and `lint` wrap their existing report
+struct in a thin envelope that carries the provenance and schema tag a consumer
+needs to parse it safely:
 
 ```json
 {
@@ -519,7 +634,7 @@ parse it safely:
 | Envelope field | Meaning |
 |---|---|
 | `binder` | The producing binder version, `binder/<version>` (same string as `--version`). |
-| `command` | `convert` \| `validate` \| `review` \| `lint`. |
+| `command` | `convert` \| `enrich` \| `validate` \| `review` \| `lint`. |
 | `schema` | The report contract identifier. Bumped **only** on a breaking change to a payload's shape or field names, so a consumer can branch on it. |
 | `result` | The command's report object (see per-command fields below). |
 
@@ -560,6 +675,24 @@ always present, so a parser sees a stable shape regardless of the bundle.
 Each `concepts[]` object: `rel_path`, `type`, `title`, `num_links`,
 `num_unresolved`. Each `unresolved[]` object: `from` (source concept rel path),
 `raw_target` (target exactly as written), `text` (link text / relationship label).
+
+### `enrich --json` — `result` fields
+
+| Field | Type | Meaning |
+|---|---|---|
+| `src` | string | Source corpus path. |
+| `dry_run` | bool | Whether this was a `--dry-run`. |
+| `num_files` | int | Non-reserved files considered. |
+| `num_enriched` | int | Files written (or `would-enrich` under `--dry-run`). |
+| `num_unchanged` | int | Files needing no key — not written. |
+| `num_skipped` | int | Files skipped (unparseable frontmatter), never mutated. |
+| `files` | array | One object per file (see below), sorted by path. |
+| `warnings` | array of string | Preserve-or-advise notices (`path: message`). |
+
+Each `files[]` object: `path` (source-relative), `status` ∈
+`enriched|unchanged|would-enrich|skipped`, `added` (sorted keys injected, omitted
+when empty), and `reason` (for `skipped`, e.g. `unparseable frontmatter: <err>`).
+Empty arrays serialize as `[]`.
 
 ### `validate --json` — `result` fields
 
@@ -635,7 +768,7 @@ Every command maps its outcome onto four stable codes. The code is about the
 | Code | Name | Meaning | Emitted by (today) |
 |---|---|---|---|
 | `0` | success | Completed with no gating findings. Advisories may be present — they are reported but never gate. | all commands, normal case |
-| `1` | findings-present | A gating condition: `validate` spec §11 non-conformance (unparseable frontmatter or a missing/empty `type`), or — under [`--strict`](#strict-mode) — any advisory promoted to a gating finding. | `validate`, `review`, `lint`, `convert` (with `--strict`) |
+| `1` | findings-present | A gating condition: `validate` spec §11 non-conformance (unparseable frontmatter or a missing/empty `type`), or — under [`--strict`](#strict-mode) — any advisory promoted to a gating finding. | `validate`, `review`, `lint`, `convert`, `enrich` (with `--strict`) |
 | `2` | usage-error | Bad flags/args — unknown flag, missing/extra argument, or a conflicting `--json`/`--format`. | any command |
 | `3` | io-error | Cannot read the corpus/bundle, a write failure, or an internal error. | any command |
 
@@ -668,11 +801,12 @@ The per-command contract:
 | `review` | any review finding: orphans, stale concepts, unresolved links, unparsed-frontmatter recoveries | — |
 | `lint` | any lint finding: broken links, missing titles, orphans, stale, schema violations | — |
 | `convert` | unresolved links or recovery warnings | — (a clean run is exit `0` even under `--strict`) |
+| `enrich` | skipped (unparseable-frontmatter) files + preserve-or-advise findings | — (a clean run is exit `0` even under `--strict`) |
 
-`--strict` is available on `validate`, `review`, `lint`, and `convert`. A clean
-run stays exit `0` even with `--strict` set, so the flag is safe to leave on
-permanently in CI. `index`, `graph`, and `config` have no advisory surface and do
-not take it.
+`--strict` is available on `validate`, `review`, `lint`, `convert`, and `enrich`.
+A clean run stays exit `0` even with `--strict` set, so the flag is safe to leave
+on permanently in CI. `index`, `graph`, and `config` have no advisory surface and
+do not take it.
 
 ```bash
 # Fail CI on any unresolved link or recovered file, not just spec violations
@@ -922,6 +1056,12 @@ two surfaces can never disagree, and no fragile body-shape heuristic is needed.
 Files with **no** frontmatter at all are the ordinary plain-markdown case: they
 become concepts with the whole file as body and a defaulted `type`; they are not
 "recovered" and carry no marker.
+
+`binder enrich` handles the unparseable case **differently and deliberately**:
+because it mutates the source in place, recover-as-body would be destructive, so
+enrich instead **skips** such a file (`status: skipped`, with a reason), leaves it
+**byte-identical on disk**, and reports it as an advisory (gating only under
+`--strict`). See [`enrich`](#enrich).
 
 ## Determinism and reproducible builds
 
