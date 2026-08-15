@@ -25,7 +25,9 @@ bundle and reports on OKF bundles. It is **Phase 2 complete**.
   - [`index`](#index)
   - [`review`](#review)
   - [`graph`](#graph)
+  - [`config`](#config)
 - [JSON output (`--json`) and the exit-code contract](#json-output---json-and-the-exit-code-contract)
+  - [Strict mode](#strict-mode)
 - [Discovery surface (`--version` / `--help`)](#discovery-surface---version----help)
 - [OKF v0.2 output structure](#okf-v02-output-structure)
 - [Relationship extraction](#relationship-extraction)
@@ -76,7 +78,7 @@ command and are the properties that make binder safe in a pipeline:
 
 ## Commands
 
-The binary exposes five commands. All bundle-reading commands
+The binary exposes six commands. All bundle-reading commands
 (`validate`/`index`/`review`/`graph`) load a bundle through the same codec, so
 their views of concepts, links, and trust always agree.
 
@@ -86,9 +88,13 @@ binder validate   Check a bundle for OKF v0.2 conformance (spec §11)
 binder index      (Re)generate the per-directory index.md nav tree (spec §8)
 binder review     Summarize a bundle: concepts, links, orphans, trust tiers, stale
 binder graph      Export the bundle's concept graph (dot|json|graphml|html)
+binder config     Show the resolved effective configuration and each value's source
 ```
 
 Every command supports `-h`/`--help`. The root binary supports `-v`/`--version`.
+`validate`, `review`, and `convert` also support `--strict` to gate advisories in
+CI (see [Strict mode](#strict-mode)); configuration is resolved once with the
+precedence flag > env > file > default (see [`config`](#config)).
 
 ### `convert`
 
@@ -121,6 +127,9 @@ Output is required unless you pass `--dry-run`.
 | `--dry-run` | `false` | Report what would be written without writing anything. |
 | `--default-type` | `Note` | Concept type applied when none is present or mapped. |
 | `--type-map` | — | Per-directory type overrides, e.g. `"docs=Guide,adr=Decision"`. The longest (most specific) matching directory key wins. |
+| `--status-map` | — | Per-directory `status`, e.g. `"archive=deprecated,drafts=draft,default=active"`. Longest-prefix match; `default=` is the fallback. Set **only when `status` is absent** (never clobbers an authored value). See [Declarative trust & lifecycle](#declarative-trust--lifecycle-flags). |
+| `--stale-after-map` | — | Per-directory `stale_after` relative to now, e.g. `"07-benchmarks=+6m,legacy=+0d"`. Grammar `+Nd`/`+Nm`/`+Ny` (days/months/years, UTC `YYYY-MM-DD`). Longest-prefix match; set **only when `stale_after` is absent**. |
+| `--verified-by` | config `verified_by` | Actor appended as a `verified` stamp, e.g. `"human:ghchinoy"` or `"binder/0.1.0"`. Validated with the actor grammar; an invalid value is a usage error (exit 2). Appends only — never rewrites the derived tier. See [Declarative trust & lifecycle](#declarative-trust--lifecycle-flags). |
 | `--fm-ref-keys` | — | Frontmatter keys treated as relationship edges, e.g. `"related,parent"`. |
 | `--workspace-root` | `<src>` root | Boundary within which `file://` links resolve to internal edges. See [`file://` link resolution](#file-link-resolution). |
 | `--map-citations` | `false` | Map a body `# Citations` list into `sources` entries. |
@@ -128,12 +137,16 @@ Output is required unless you pass `--dry-run`.
 | `--map-draft` | `false` | Map a `draft: true` marker to `status: draft` (only when `status` is absent). |
 | `--report` | — | Also write the run report (the same text printed to stdout) to this file. |
 | `--json` | `false` | Emit the run report as deterministic JSON (schema `binder.report/v1`) instead of prose. Composes with `--report` (the file gets whichever format `--json` selects). See [JSON output](#json-output---json-and-the-exit-code-contract). |
+| `--strict` | `false` | Gate (exit 1) on unresolved links or recovery warnings. Without it these never gate (never-reject; exit 0). See [Strict mode](#strict-mode). |
 | `--group-by-type` | `false` | Append an additive `# Catalog` of all concepts, grouped by type, to the **root** `index.md`. See [The type-grouped catalog](#the-type-grouped-catalog). |
 | `--include-backlinks` | `false` | Annotate each catalog entry with its inbound resolved edges (requires `--group-by-type`). |
 | `--include-graph` | `false` | Annotate each catalog entry with its outbound resolved edges (requires `--group-by-type`). |
 
 `--map-citations`, `--source-keys`, and `--map-draft` are the **trust-mapping**
 flags — all off by default. See [The trust vocabulary](#the-trust-vocabulary).
+`--status-map`, `--stale-after-map`, and `--verified-by` are the **declarative
+trust & lifecycle** flags — also off by default; with none set, output is
+byte-identical to a plain run. See [Declarative trust & lifecycle](#declarative-trust--lifecycle-flags).
 `--group-by-type`, `--include-backlinks`, and `--include-graph` are the
 **catalog** flags — also off by default and shared with `binder index`; see
 [The type-grouped catalog](#the-type-grouped-catalog).
@@ -214,6 +227,7 @@ A non-conformant bundle prints each finding and ends with
 | Flag | Default | Purpose |
 |---|---|---|
 | `--json` | `false` | Emit the validation result as deterministic JSON (schema `binder.report/v1`) instead of prose. The exit code is identical in both modes. See [JSON output](#json-output---json-and-the-exit-code-contract). |
+| `--strict` | `false` | Also gate (exit 1) on trust advisories (malformed trust, actor-convention, or date-shape warnings). Hard conformance violations gate regardless. See [Strict mode](#strict-mode). |
 
 ### `index`
 
@@ -295,6 +309,7 @@ tiers and staleness are derived on demand, never stored.
 |---|---|---|
 | `--today` | now | Date (`YYYY-MM-DD`) used for the staleness check; honours `SOURCE_DATE_EPOCH`. |
 | `--json` | `false` | Emit the review report as deterministic JSON (schema `binder.report/v1`) instead of prose. See [JSON output](#json-output---json-and-the-exit-code-contract). |
+| `--strict` | `false` | Gate (exit 1) when any review finding is present (orphans, stale, unresolved, or unparsed-frontmatter recoveries). Without it `review` never gates (exit 0). See [Strict mode](#strict-mode). |
 
 ```text
 binder review
@@ -361,6 +376,54 @@ digraph okf {
   "overview" -> "metrics/revenue" [label="revenue metric"];
 }
 ```
+
+### `config`
+
+```text
+binder config [flags]
+```
+
+Prints the **resolved effective configuration** — the value binder would use for
+each key and where that value came from. It reads nothing from a bundle and
+mutates nothing; it is the way to answer "what will convert actually use here?"
+before running it.
+
+Configuration is resolved once, at startup, with a strict precedence:
+
+```text
+flag  >  environment variable  >  config file  >  built-in default
+```
+
+- **Config file** (first found): `./.binder.yaml`, then
+  `$XDG_CONFIG_HOME/binder/config.yaml` (falling back to
+  `$HOME/.config/binder/config.yaml`).
+- **Environment variables** use the `BINDER_` prefix, e.g. `BINDER_VERIFIED_BY`,
+  `BINDER_DEFAULT_TYPE`.
+- **Keys:**
+
+  | Key | Env | Default | Purpose |
+  |---|---|---|---|
+  | `default_type` | `BINDER_DEFAULT_TYPE` | `Note` | Type applied by `convert` when none is present or mapped (overridable per-run by `--default-type`). |
+  | `verified_by` | `BINDER_VERIFIED_BY` | — | Default actor appended as a `verified` stamp by `convert` (overridable per-run by `--verified-by`). Validated with the actor grammar **at config-load** — an invalid configured value fails fast. |
+
+A configured `verified_by` is validated the moment the config loads, so a typo in
+the file surfaces immediately on any command rather than silently producing an
+unstamped bundle.
+
+| Flag | Default | Purpose |
+|---|---|---|
+| `--json` | `false` | Emit the resolved config as deterministic JSON (schema `binder.config/v1`) instead of prose. |
+
+```text
+binder config
+  config file: ./.binder.yaml
+  default_type: Note  (default)
+  verified_by:  human:ghchinoy  (file)
+```
+
+The `--json` form is stable for tooling (schema `binder.config/v1`): it reports
+the resolved config file and, per key, the effective value and its source (`flag`
+/ `env` / `file` / `default`).
 
 ## JSON output (`--json`) and the exit-code contract
 
@@ -487,23 +550,49 @@ Every command maps its outcome onto four stable codes. The code is about the
 | Code | Name | Meaning | Emitted by (today) |
 |---|---|---|---|
 | `0` | success | Completed with no gating findings. Advisories may be present — they are reported but never gate. | all commands, normal case |
-| `1` | findings-present | A gating condition: `validate` spec §11 non-conformance (unparseable frontmatter or a missing/empty `type`). **Reserved:** advisories under a future `--strict` flag. | `validate` |
+| `1` | findings-present | A gating condition: `validate` spec §11 non-conformance (unparseable frontmatter or a missing/empty `type`), or — under [`--strict`](#strict-mode) — any advisory promoted to a gating finding. | `validate`, `review`, `convert` (with `--strict`) |
 | `2` | usage-error | Bad flags/args — unknown flag, missing/extra argument, or a conflicting `--json`/`--format`. | any command |
 | `3` | io-error | Cannot read the corpus/bundle, a write failure, or an internal error. | any command |
 
-**Never-reject is preserved.** Broken links, orphans, staleness, recovered
-frontmatter, and missing optional trust are all **advisories** — they are
-reported (in prose and JSON) and exit `0`. The only default non-zero for a
-well-formed run is `validate`'s spec §11 hard non-conformance, which is a genuine
-violation, not an advisory. A `--strict` flag that flips advisories into gating
-findings (exit `1`) is reserved by this contract and delivered separately
-([#7](https://github.com/ghchinoy/binder/issues/7)); the `strict` row above is
-stable from day one so consumers can rely on it.
+**Never-reject is preserved by default.** Broken links, orphans, staleness,
+recovered frontmatter, and missing optional trust are all **advisories** — by
+default they are reported (in prose and JSON) and exit `0`. The only default
+non-zero for a well-formed run is `validate`'s spec §11 hard non-conformance,
+which is a genuine violation, not an advisory. Opting into [`--strict`](#strict-mode)
+promotes those advisories into gating findings (exit `1`) **only for the run that
+requests it** — the default posture is unchanged.
 
 > **Compatibility note.** This refines the previous behavior (where non-IO
 > failures collapsed to exit `1`): `0` still means success, and failures are now
 > more specific (`1`/`2`/`3`). No consumer that only checked "zero vs non-zero"
 > is affected.
+
+### Strict mode
+
+By default binder is **never-reject**: advisories are reported but exit `0`.
+`--strict` opts a single run into promoting advisories to gating findings
+(exit `1`), so CI can fail the build on conditions that are informational
+locally. It changes only the exit code — the report (prose or JSON) is
+byte-identical with and without the flag — and it never affects any other run.
+
+The per-command contract:
+
+| Command | `--strict` gates (exit 1) on | Always gates, regardless |
+|---|---|---|
+| `validate` | trust advisories (malformed trust, actor-convention, date-shape warnings) | spec §11 hard non-conformance (unparseable frontmatter, missing/empty `type`) |
+| `review` | any review finding: orphans, stale concepts, unresolved links, unparsed-frontmatter recoveries | — |
+| `convert` | unresolved links or recovery warnings | — (a clean run is exit `0` even under `--strict`) |
+
+`--strict` is available on `validate`, `review`, and `convert`. A clean run stays
+exit `0` even with `--strict` set, so the flag is safe to leave on permanently in
+CI. `index`, `graph`, and `config` have no advisory surface and do not take it.
+
+```bash
+# Fail CI on any unresolved link or recovered file, not just spec violations
+SOURCE_DATE_EPOCH=1700000000 binder convert docs/ -o build/bundle --strict
+binder validate build/bundle --strict
+binder review   build/bundle --strict
+```
 
 ## Discovery surface (`--version` / `--help`)
 
@@ -668,6 +757,50 @@ preserved):
 Mapped sources are de-duplicated against existing `sources` by
 `(resource, title, author)`.
 
+### Declarative trust & lifecycle flags
+
+Three `convert` flags let you assign lifecycle and verification metadata
+declaratively, per run, without hand-editing frontmatter. All three are off by
+default; with none set, output is **byte-identical** to a plain run. Each obeys
+the same discipline as the trust-mapping flags: deterministic, additive, and
+**never clobbering an authored value**.
+
+- **`--status-map "archive=deprecated,drafts=draft,default=active"`** — assigns
+  `status` by the concept's source directory. Keys are directory prefixes matched
+  **longest-first** (the most specific directory wins); the reserved `default=`
+  key is the fallback for anything unmatched. `status` is set **only when the
+  concept has none** — an authored `status` is always preserved. Values are the
+  spec `status` enum.
+
+- **`--stale-after-map "07-benchmarks=+6m,legacy=+0d"`** — assigns `stale_after`
+  by directory prefix (same longest-first matching). Values use the relative-date
+  grammar below, resolved against "now" (honouring `SOURCE_DATE_EPOCH`), and
+  `stale_after` is set **only when absent**.
+
+  | Spec | Meaning | Example (now = 2023-11-14) |
+  |---|---|---|
+  | `+Nd` | `N` days from now | `+30d` → `2023-12-14` |
+  | `+Nm` | `N` months from now | `+6m` → `2024-05-14` |
+  | `+Ny` | `N` years from now | `+1y` → `2024-11-14` |
+
+  The result is emitted as a UTC `YYYY-MM-DD` date. `+0d` marks a concept stale
+  as of now. A malformed spec (or a malformed `name=value` pair in either map) is
+  a **usage error** (exit 2), not a silent skip.
+
+- **`--verified-by "human:ghchinoy"`** — appends a `verified` stamp
+  `{ by: <actor>, at: <now> }` (RFC 3339, `SOURCE_DATE_EPOCH`-aware) to each
+  concept. It **appends** to any existing `verified` list and de-duplicates by
+  `(by, at)`; it never rewrites the derived trust tier — the tier stays computed
+  from the `verified` events (see [Derived trust tiers](#derived-trust-tiers)).
+  The actor is validated with the actor grammar (`human:<id>`, `process:<id>`,
+  `team:<id>`, or `<producer>/<version>` such as `binder/0.1.0`); an invalid
+  value is a **usage error** (exit 2) that lists the valid forms. If unset, the
+  flag falls back to the `verified_by` [config](#config) key (which is itself
+  validated fail-fast at config-load).
+
+These flags leave `binder validate` conformant: stamped output round-trips
+byte-faithfully and never introduces a hard violation.
+
 ### Trust well-formedness (advisories)
 
 `validate` reports — as advisories, never errors — any trust value that is
@@ -748,16 +881,17 @@ else
   exit "$code"
 fi
 
-# review/graph are advisory: capture signal without failing the build.
-binder review build/bundle --json | jq '{orphans: .result.orphans, stale: .result.stale}'
+# review is advisory by default; --strict makes it (and convert) gate.
+binder convert docs/ -o build/bundle --strict   # fail on unresolved links / recoveries
+binder review  build/bundle --strict            # fail on orphans / stale / unresolved
 ```
 
-`review` and `graph` never fail the build (they always exit `0`); use them for
-reporting and artifacts. To fail a build on unresolved links or orphans today,
-parse the `review --json` output (a first-class `binder lint`, and a `--strict`
-flag that gates advisories, are planned — see
-[issue #8](https://github.com/ghchinoy/binder/issues/8) and
-[issue #7](https://github.com/ghchinoy/binder/issues/7)).
+By default `review` and `graph` never fail the build (they always exit `0`); use
+them for reporting and artifacts. To fail a build on unresolved links, orphans,
+or staleness, pass [`--strict`](#strict-mode) to `convert`, `review`, or
+`validate` — it promotes those advisories to gating findings (exit `1`) for that
+run only. (A first-class `binder lint` is still planned — see
+[issue #8](https://github.com/ghchinoy/binder/issues/8).)
 
 The project's own exit gate additionally cross-checks binder's verdicts against
 the external [`okfcli/okf`](https://github.com/okfcli/okf) validator in both
@@ -883,8 +1017,11 @@ section for each as it lands; today each links to its tracking issue.
   that point inside the workspace root now resolve to internal concept edges. See
   [`file://` link resolution](#file-link-resolution).
   [#6](https://github.com/ghchinoy/binder/issues/6)
-- **Declarative trust & lifecycle flags** — `--stale-after-map`, `--verified-by`,
-  `--status-map` for stamping provenance and freshness across directories.
+- **Declarative trust & lifecycle flags** — ✅ shipped: `--status-map`,
+  `--stale-after-map`, and `--verified-by` stamp status, freshness, and
+  verification across directories, plus a `--strict` mode that gates advisories in
+  CI. See [Declarative trust & lifecycle](#declarative-trust--lifecycle-flags) and
+  [Strict mode](#strict-mode).
   [#7](https://github.com/ghchinoy/binder/issues/7)
 - **`binder lint`** — a standalone corpus linter / link-health checker with a
   non-zero exit on broken links for CI gates.
@@ -894,8 +1031,9 @@ section for each as it lands; today each links to its tracking issue.
   `--include-graph` annotate entries with inbound/outbound resolved edges. See
   [The type-grouped catalog](#the-type-grouped-catalog).
   [#9](https://github.com/ghchinoy/binder/issues/9)
-- **`binder config`** — a viper-backed config for actor identity and defaults, so
-  common flags need not be passed every run.
+- **`binder config`** — ✅ shipped: a viper-backed config (flag > env > file >
+  default) for actor identity and defaults, so common flags need not be passed
+  every run. See [`config`](#config).
   [#10](https://github.com/ghchinoy/binder/issues/10)
 
 ### Phases 3–6 — codec adapter and the reachability layer
