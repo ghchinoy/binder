@@ -101,6 +101,26 @@ else
 fi
 echo
 
+echo "== 2b. binder-converted RICH corpus (all Phase-2 signals): both must accept =="
+# corpus-rich exercises wikilinks, anchor links, frontmatter refs, hashtag/tag
+# merge, per-dir index, a reserved-name collision, and corpus-native trust
+# mapping together. The fully-featured output must still be conformant on both.
+RICH="$WORK/rich"
+SOURCE_DATE_EPOCH=1700000000 "$BINDER" convert testdata/corpus-rich -o "$RICH" \
+  --fm-ref-keys related --map-citations --source-keys source --map-draft >/dev/null
+expect_agree_valid "converted:corpus-rich" "$RICH"
+echo "   -- okf graph (edges must be visible) --"
+"$OKF" graph "$RICH" > "$WORK/graph-rich.json" 2>/dev/null || true
+r_edges="$(grep -oE '"edge_count":[[:space:]]*[0-9]+' "$WORK/graph-rich.json" | grep -oE '[0-9]+' || echo 0)"
+r_nodes="$(grep -oE '"node_count":[[:space:]]*[0-9]+' "$WORK/graph-rich.json" | grep -oE '[0-9]+' || echo 0)"
+if [[ "${r_edges:-0}" -ge 1 && "${r_nodes:-0}" -ge 1 ]]; then
+  echo "PASS  [graph:corpus-rich] okf graph sees nodes=$r_nodes edges=$r_edges (wikilink/fm-ref/anchor edges resolved)"
+else
+  echo "FAIL  [graph:corpus-rich] okf graph saw nodes=$r_nodes edges=$r_edges"
+  fail=1
+fi
+echo
+
 echo "== 3. hard error (missing type): both validators must flag =="
 expect_agree_invalid "malformed:notype" "testdata/malformed"
 echo

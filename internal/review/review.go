@@ -96,7 +96,10 @@ func Review(b *okf.Bundle, today string) *Report {
 			r.Attested = append(r.Attested, c.ID)
 		}
 		for _, l := range c.Links {
-			if !l.Resolved {
+			// Only broken INTERNAL references are "unresolved" (§4.2). A legitimate
+			// external URL or a same-doc anchor is not a broken edge; reporting it
+			// would be noise and inconsistent with `binder convert`'s own report.
+			if !l.Resolved && !isExternalTarget(l.RawTarget) {
 				r.Unresolved = append(r.Unresolved, Edge{From: c.ID, RawTarget: l.RawTarget, Text: l.Text})
 			}
 		}
@@ -145,6 +148,25 @@ func (r *Report) String() string {
 		fmt.Fprintf(&b, "    %s -> %s\n", e.From, e.RawTarget)
 	}
 	return b.String()
+}
+
+// isExternalTarget reports whether a raw link target is an external reference or
+// a same-document anchor rather than an internal concept link. These are never
+// "broken" edges: an unresolved external URL is expected, not a corpus error.
+func isExternalTarget(raw string) bool {
+	t := strings.TrimSpace(raw)
+	if t == "" || strings.HasPrefix(t, "#") {
+		return true
+	}
+	if strings.Contains(t, "://") {
+		return true
+	}
+	for _, p := range []string{"mailto:", "tel:", "ftp:"} {
+		if strings.HasPrefix(t, p) {
+			return true
+		}
+	}
+	return false
 }
 
 func sortedKeys(m map[string]int) []string {
