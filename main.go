@@ -7,11 +7,12 @@ import (
 	"os"
 
 	"github.com/ghchinoy/binder/cmd"
+	"github.com/ghchinoy/binder/internal/clijson"
 )
 
 func main() {
 	if err := cmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, "binder:", err)
-		os.Exit(1)
+		os.Exit(clijson.ExitCode(err))
 	}
 }

@@ -68,7 +68,16 @@ func Convert(src, out string, opts Options) (*Report, error) {
 		return nil, fmt.Errorf("convert: walking source: %w", err)
 	}
 
-	report := &Report{Src: src, Out: out, DryRun: opts.DryRun}
+	// Initialize the report slices so an empty run serializes to [] rather than
+	// null in --json mode (#13 empty-slice policy). Prose output is unaffected.
+	report := &Report{
+		Src:        src,
+		Out:        out,
+		DryRun:     opts.DryRun,
+		Concepts:   []ConceptReport{},
+		Warnings:   []string{},
+		Unresolved: []UnresolvedLink{},
+	}
 
 	// Phase 1: resolve output paths, renaming reserved-name source files so they
 	// are never dropped (spec §3.1).

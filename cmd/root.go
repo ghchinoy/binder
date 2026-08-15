@@ -8,6 +8,7 @@ package cmd
 import (
 	"github.com/spf13/cobra"
 
+	"github.com/ghchinoy/binder/internal/clijson"
 	"github.com/ghchinoy/binder/internal/okf"
 	"github.com/ghchinoy/binder/internal/okf/native"
 )
@@ -26,12 +27,26 @@ func NewRootCmd() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
+	// Flag-parse errors (unknown flag, bad value) are usage errors → exit 2.
+	// Cobra propagates a flag error func to subcommands, so setting it on the
+	// root covers every command.
+	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
+		return clijson.Usage(err)
+	})
 	root.AddCommand(newConvertCmd(codec))
 	root.AddCommand(newValidateCmd(codec))
 	root.AddCommand(newIndexCmd(codec))
 	root.AddCommand(newReviewCmd(codec))
 	root.AddCommand(newGraphCmd(codec))
 	return root
+}
+
+// exactArgs wraps a positional-args validator so an arg-count violation is a
+// usage error (exit 2) rather than an IO/internal error (exit 3).
+func exactArgs(n int) cobra.PositionalArgs {
+	return func(cmd *cobra.Command, args []string) error {
+		return clijson.Usage(cobra.ExactArgs(n)(cmd, args))
+	}
 }
 
 // Execute runs the binder CLI.
