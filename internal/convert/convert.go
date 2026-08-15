@@ -26,9 +26,16 @@ type Options struct {
 	Codec       okf.Codec         // required
 	DefaultType string            // fallback type; defaults to "Note"
 	TypeMap     map[string]string // per-directory type overrides
+	FMRefKeys   []string          // frontmatter keys treated as relationship edges (§4.2)
 	Version     string            // binder version, used in generated.by
 	Now         time.Time         // clock for generated.at; controls determinism
 	DryRun      bool              // when true, write nothing
+
+	// Trust-mapping options (design-v2 §3.2 / Phase-2 point 7). All are OFF by
+	// default and deterministic; binder never fabricates provenance.
+	MapCitations bool     // map a body "# Citations" list to sources entries
+	SourceKeys   []string // frontmatter keys to map into sources entries
+	MapDraft     bool     // map a `draft: true` marker to status: draft
 }
 
 // Convert runs the corpus→bundle conversion. It never mutates the source. With
@@ -70,33 +77,87 @@ func Convert(src, out string, opts Options) (*Report, error) {
 		report.addWarning("%s", w)
 	}
 
-	var concepts []*okf.Concept
+	// Pass 1: parse every file, apply type/title defaulting, and record its
+	// identity. Titles must be resolved for ALL files before any body is rewritten
+	// because wikilinks resolve against the corpus's titles (design-v2 §4.2).
+	type staged struct {
+		src string // source-relative path (for relative link resolution)
+		out string // output-relative path
+		c   *okf.Concept
+	}
+	var items []staged
+	entries := make([]indexEntry, 0, len(files))
 	for _, f := range files {
 		outRel := srcToOut[f.rel]
 		raw, err := os.ReadFile(f.abs)
 		if err != nil {
 			return nil, fmt.Errorf("convert: reading %q: %w", f.rel, err)
 		}
-
 		c, err := toConcept(opts.Codec, outRel, raw)
+		recovered := false
 		if err != nil {
-			return nil, fmt.Errorf("convert: parsing %q: %w", f.rel, err)
+			// Never-reject (spec §11 / design-v2): a source file whose frontmatter
+			// will not parse must not abort the whole conversion, nor be dropped.
+			// Preserve it losslessly as a plain-markdown concept — its raw text
+			// (including the unparsed fence block) becomes the body — and report it,
+			// so the run completes and no content is lost.
+			c = plainConcept(opts.Codec, outRel, raw)
+			recovered = true
+			report.NumRecovered++
+			report.addWarning("%s: frontmatter did not parse (%v); converted as plain markdown (original text preserved in body)", f.rel, err)
 		}
-
 		typ := ensureType(c.Frontmatter, outRel, opts.TypeMap, opts.DefaultType)
 		ensureTitle(c.Frontmatter, outRel, c.Body)
+		c.Type = typ
+		if recovered {
+			// Stamp an explicit, persisted recovery marker (design-v2 §4.6). Both
+			// --report (the warning above) and `binder review` derive "recovered"
+			// from this single fact, so they can never disagree — and no fragile
+			// body-shape heuristic is needed.
+			okf.MarkRecovered(c.Frontmatter, "unparseable-frontmatter")
+		}
 
-		newBody, links := rewriteLinks(c.Body, f.rel, srcToOut)
-		c.Body = newBody
+		items = append(items, staged{src: f.rel, out: outRel, c: c})
+		entries = append(entries, indexEntry{srcRel: f.rel, outRel: outRel, title: conceptTitle(c)})
+	}
+	index := buildCorpusIndex(entries)
+
+	// Pass 2: extract every relationship signal, merge tags, map trust where
+	// configured, stamp provenance, and project the typed trust view.
+	var concepts []*okf.Concept
+	for _, it := range items {
+		c := it.c
+
+		// Standard markdown links (P1) + wikilinks (P2), both rewritten to
+		// bundle-relative-absolute form; unresolved links left in place.
+		body, links := rewriteLinks(c.Body, it.src, srcToOut)
+		body, wlinks := rewriteWikilinks(body, path.Dir(it.out), index)
+		c.Body = body
+		links = append(links, wlinks...)
+
+		// Frontmatter-ref edges (§4.2): additive, original frontmatter key/value
+		// preserved. Each resolved target is ALSO materialized as a real markdown
+		// link in a stable trailing "## Related" section so the relationship
+		// survives reload and is visible to `binder graph`/`binder review` — which
+		// rebuild edges only from persisted body links. Unresolved refs are omitted
+		// from the block and reported like any other unresolved edge.
+		fmEdges := frontmatterRefEdges(c.Frontmatter, it.out, opts.FMRefKeys, index)
+		links = append(links, fmEdges...)
+		c.Body = appendRelatedSection(c.Body, fmEdges)
 		c.Links = links
 
-		stampGenerated(c.Frontmatter, opts.Version, opts.Now)
+		// Hashtags + frontmatter tags merge/dedupe (spec §4).
+		mergeTags(c.Frontmatter, extractHashtags(c.Body))
 
-		c.Type = typ
-		c.Trust = okf.ProjectTrust(c.Frontmatter, typ)
+		// Corpus-native provenance → trust signals, where configured (§3.2).
+		mapTrust(c, opts)
+
+		stampGenerated(c.Frontmatter, opts.Version, opts.Now)
+		c.Trust = okf.ProjectTrust(c.Frontmatter, c.Type)
 
 		concepts = append(concepts, c)
 		report.Concepts = append(report.Concepts, conceptReport(c))
+		report.addUnresolved(c)
 	}
 
 	// Tally.
@@ -125,17 +186,31 @@ func Convert(src, out string, opts Options) (*Report, error) {
 // toConcept parses raw into a Concept. Files without frontmatter (the common
 // plain-markdown case) become a concept with an empty frontmatter block and the
 // whole file as the body.
+// toConcept parses raw into a Concept. A file that opens a "---" fence is routed
+// to the codec parser; any parse error it returns (invalid YAML in a closed
+// fence, or an unterminated fence) is a frontmatter-parse failure the caller
+// recovers from by preserving the file as plain markdown (never-reject). A file
+// with no opening fence is plain markdown and never errors here — so the only
+// error toConcept can return is a frontmatter-parse failure, never I/O.
 func toConcept(codec okf.Codec, outRel string, raw []byte) (*okf.Concept, error) {
-	if hasFrontmatter(raw) {
+	if opensFrontmatterFence(raw) {
 		return codec.ParseConcept(outRel, raw)
 	}
+	return plainConcept(codec, outRel, raw), nil
+}
+
+// plainConcept builds a concept from raw bytes treated as plain markdown: an
+// empty frontmatter block plus the whole file as the body. It is used for files
+// with no frontmatter and, as a never-reject fallback, for files whose
+// frontmatter will not parse (the raw text, fence and all, is preserved as body).
+func plainConcept(codec okf.Codec, outRel string, raw []byte) *okf.Concept {
 	id, _ := codec.ConceptIDFromRel(outRel)
 	return &okf.Concept{
 		ID:          id,
 		RelPath:     outRel,
 		Frontmatter: okf.NewOrderedMap(),
 		Body:        strings.ReplaceAll(string(raw), "\r\n", "\n"),
-	}, nil
+	}
 }
 
 // planOutputPaths maps each source path to its output path, renaming files whose
@@ -195,9 +270,14 @@ func writeBundle(out string, concepts []*okf.Concept, codec okf.Codec) error {
 			return fmt.Errorf("convert: writing %q: %w", c.RelPath, err)
 		}
 	}
-	index := buildRootIndex(concepts, okf.DefaultSpecVersion)
-	if err := os.WriteFile(filepath.Join(out, "index.md"), index, 0o644); err != nil {
-		return fmt.Errorf("convert: writing root index.md: %w", err)
+	for rel, data := range GenerateIndexes(concepts, okf.DefaultSpecVersion) {
+		dst := filepath.Join(out, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+			return fmt.Errorf("convert: creating dir for %q: %w", rel, err)
+		}
+		if err := os.WriteFile(dst, data, 0o644); err != nil {
+			return fmt.Errorf("convert: writing %q: %w", rel, err)
+		}
 	}
 	return nil
 }

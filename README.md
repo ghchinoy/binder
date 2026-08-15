@@ -7,6 +7,14 @@ bundle and validates OKF bundles against the spec's conformance rules.
 ![license](https://img.shields.io/badge/license-Apache--2.0-blue)
 ![go](https://img.shields.io/badge/go-1.26-00ADD8)
 
+**Status: Phase 2 complete** — a Go CLI that converts a non-OKF markdown corpus
+into a conformant [OKF v0.2](https://github.com/GoogleCloudPlatform/knowledge-catalog)
+bundle, extracts every relationship signal (wikilinks, anchor links, frontmatter
+refs, hashtags), maps corpus-native provenance into the trust vocabulary,
+generates per-directory index navigation, validates bundles against the spec's
+§11 conformance rules, and preserves trust frontmatter byte-for-byte on
+round-trip. It also reports and visualizes a bundle (`review`, `graph`).
+
 ## Table of Contents
 
 - [What it does](#what-it-does)
@@ -20,14 +28,20 @@ bundle and validates OKF bundles against the spec's conformance rules.
 
 ## What it does
 
-`binder` has two commands:
+`binder` has these commands:
 
 - **`convert`** walks a directory of ordinary markdown files and writes an OKF
-  v0.2 bundle: one concept per non-reserved `.md`, standard markdown links
-  rewritten to bundle-relative form, a root `index.md` declaring `okf_version`,
-  and a generated provenance stamp. It never mutates the source.
+  v0.2 bundle: one concept per non-reserved `.md`, standard markdown links and
+  `[[wikilinks]]` rewritten to bundle-relative form, frontmatter-ref edges,
+  `#hashtags` merged into `tags`, per-directory `index.md` navigation, and a
+  generated provenance stamp. It never mutates the source.
 - **`validate`** checks a bundle against the OKF v0.2 §11 conformance rules and
   reports trust/lifecycle well-formedness as advisories.
+- **`index`** (re)generates per-directory `index.md` navigation for a bundle.
+- **`review`** summarizes a bundle: concepts by type, trust tiers,
+  stale/attested, orphans, and unresolved links.
+- **`graph`** exports the concept graph (edges = resolved links) as
+  dot/json/graphml/html.
 
 Two properties make it trustworthy for pipelines:
 
@@ -87,6 +101,16 @@ Validate a bundle against OKF v0.2 §11 conformance rules:
 
 ```bash
 binder validate path/to/bundle
+
+# (Re)generate per-directory index.md navigation for a bundle.
+binder index path/to/bundle
+
+# Summarize a bundle: concepts by type, trust tiers, stale/attested,
+# orphans, and broken internal links.
+binder review path/to/bundle
+
+# Export the concept graph (edges = resolved links).
+binder graph path/to/bundle --format dot   # dot|json|graphml|html
 ```
 
 ```text
@@ -105,20 +129,52 @@ RESULT: conformant (OKF 0.2)
 | `--type-map` | — | Per-directory type overrides, e.g. `"docs=Guide,adr=Decision"`. |
 | `--report` | — | Also write the run report to this file. |
 
+### Relationship & trust flags (`convert`)
+
+Relationship extraction that is always on: `[[wikilinks]]` / `[[Target|alias]]`
+(resolved by path → filename → title-slug), standard `[text](a.md#anchor)`
+links, and `#hashtags` merged into frontmatter `tags`. Unresolved links are left
+in place **and** reported (spec §6/§11). These flags opt into the rest:
+
+| Flag | Effect |
+|---|---|
+| `--fm-ref-keys related,parent` | treat the named frontmatter keys as relationship edges (keys are preserved; each resolved target is also materialized as a link in a trailing `## Related` section) |
+| `--map-citations` | map a body `# Citations` list into `sources` entries |
+| `--source-keys source,url` | map the named frontmatter keys into `sources` entries |
+| `--map-draft` | map a `draft: true` marker to `status: draft` (never clobbers an existing status) |
+
+Trust mapping is **off by default** and never fabricates provenance: with no
+mapping flags, frontmatter round-trips byte-for-byte.
+
+`convert` never rejects: a source file whose frontmatter will not parse (invalid
+YAML or an unterminated fence) is preserved losslessly as a plain-markdown concept
+— its original text, fence and all, becomes the body — stamped with a default
+`type` so the bundle stays conformant, and reported. Such a file carries a
+binder-namespaced marker `x_binder: { recovered: true, reason: ... }` in its
+emitted frontmatter; `binder review` reads that same marker (not a body-shape
+guess) to report recovered files, so `--report` and `review` always agree.
+
 ## How it works
 
 - `internal/okf` — the OKF domain model plus two small interfaces, `Codec`
-  (parse/serialize concepts) and `LinkGraph` (extract/resolve links). Trust tiers
-  are *derived* from frontmatter, never stored.
-- `internal/okf/native` — the sole codec today:
-  [`goldmark`](https://github.com/yuin/goldmark) for markdown and link
-  extraction, and [`gopkg.in/yaml.v3`](https://gopkg.in/yaml.v3) (`yaml.Node`)
-  for order-preserving frontmatter.
-- `internal/convert` — the converter: concept discovery, link rewriting, and
-  index/trust synthesis.
-- `internal/validate` — the OKF v0.2 §11 conformance checker.
+  (parse/serialize concepts) and `LinkGraph` (extract/resolve links). Trust tiers,
+  staleness, and the Attested flag are *derived* from frontmatter, never stored.
+- `internal/okf/native` — the sole codec: [`goldmark`](https://github.com/yuin/goldmark)
+  for markdown/link extraction and [`gopkg.in/yaml.v3`](https://gopkg.in/yaml.v3)
+  (`yaml.Node`) for order-preserving frontmatter. Unmodified frontmatter is passed
+  through verbatim so round-trips are byte-faithful, including nested-map key order.
+- `internal/convert` — the converter: concept discovery, link/wikilink rewriting,
+  frontmatter-ref edges, hashtag/tag merge, per-directory index generation, and
+  corpus-native trust mapping.
+- `internal/bundle` — loads an on-disk bundle into the domain model (read side
+  shared by `index`, `review`, and `graph`).
+- `internal/review` — bundle summary (types, tiers, stale, attested, orphans,
+  broken links).
+- `internal/graph` — concept-graph export in dot/json/graphml/html.
+- `internal/validate` — the §11 conformance checker.
 - `cmd` — the [Cobra](https://github.com/spf13/cobra) CLI; the concrete codec is
-  selected and injected at the composition root (`cmd/root.go`).
+  injected once at the composition root (`cmd/root.go`) — every other package
+  depends only on the `okf` interfaces.
 
 ## Development
 
@@ -147,12 +203,12 @@ verdicts in both directions and fails on any unexpected disagreement.
 
 The following are **planned, not yet shipped**:
 
-- Full relationship extraction across concepts (Phase 2).
 - An **MCP** (Model Context Protocol) server mode.
 - An **Agent Skill** and an **Agent-Plugin** bundle, layering agent tooling over
   the same OKF core.
 
-Today's shipped surface is the `convert` and `validate` CLI described above.
+Today's shipped surface is the `convert`, `validate`, `index`, `review`, and
+`graph` CLI described above.
 
 ## Contributing
 

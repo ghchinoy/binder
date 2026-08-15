@@ -1,6 +1,10 @@
 package okf
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+	"time"
+)
 
 // Trust logic is binder-owned (factile has none). These functions are pure
 // projections/derivations over Frontmatter and are identical regardless of which
@@ -88,25 +92,133 @@ func IsStale(c *Concept, today string) bool {
 
 // ValidateTrust returns advisory findings about trust-signal well-formedness. It
 // NEVER returns an error and NEVER emits SeverityError: absence of any optional
-// family is not a violation (spec §11). Full well-formedness validation is
-// Phase 2; Phase 1 keeps a minimal, non-rejecting set.
+// family is not a violation (spec §11). Every check here is a fidelity/shape
+// advisory over already-present values; a missing family is silent.
 func ValidateTrust(c *Concept, v SpecVersion) []Finding {
 	var out []Finding
 	add := func(msg string) {
 		out = append(out, Finding{ConceptID: c.ID, Severity: SeverityAdvisory, Message: msg})
 	}
-	if c.Trust.Generated != nil && c.Trust.Generated.By == "" {
-		add("generated is present but generated.by is empty (spec §5.2 requires by)")
-	}
-	for i, ver := range c.Trust.Verified {
-		if ver.By == "" {
-			add(fmt.Sprintf("verified[%d] is missing 'by' (spec §5.2)", i))
+
+	// generated: by REQUIRED (§5.2); by is an actor (§7); at is an ISO datetime.
+	if c.Trust.Generated != nil {
+		if c.Trust.Generated.By == "" {
+			add("generated is present but generated.by is empty (spec §5.2 requires by)")
+		} else if !IsValidActor(c.Trust.Generated.By) {
+			add(fmt.Sprintf("generated.by %q does not follow the actor convention (spec §7)", c.Trust.Generated.By))
+		}
+		if c.Trust.Generated.At != "" && !IsValidISODateTime(c.Trust.Generated.At) {
+			add(fmt.Sprintf("generated.at %q is not an ISO 8601 datetime (spec §5.2)", c.Trust.Generated.At))
 		}
 	}
+
+	// verified[]: by REQUIRED and an actor; at an ISO datetime (§5.2/§5.3/§7).
+	for i, ver := range c.Trust.Verified {
+		switch {
+		case ver.By == "":
+			add(fmt.Sprintf("verified[%d] is missing 'by' (spec §5.2)", i))
+		case !IsValidActor(ver.By):
+			add(fmt.Sprintf("verified[%d].by %q does not follow the actor convention (spec §7)", i, ver.By))
+		}
+		if ver.At != "" && !IsValidISODateTime(ver.At) {
+			add(fmt.Sprintf("verified[%d].at %q is not an ISO 8601 datetime (spec §5.2)", i, ver.At))
+		}
+	}
+
+	// status: enum draft|stable|deprecated, absent ⇒ stable (§5.4).
+	if s := c.Trust.Status; s != "" && s != "draft" && s != "stable" && s != "deprecated" {
+		add(fmt.Sprintf("status %q is not one of draft|stable|deprecated (spec §5.4)", s))
+	}
+
+	// stale_after: absolute date YYYY-MM-DD (§5.5).
+	if sa := c.Trust.StaleAfter; sa != "" && !IsValidISODate(sa) {
+		add(fmt.Sprintf("stale_after %q is not an absolute YYYY-MM-DD date (spec §5.5)", sa))
+	}
+
+	// sources[]: resource REQUIRED within an entry (§5.1); author is an actor;
+	// last_modified is a date.
+	for i, s := range c.Trust.Sources {
+		if s.Resource == "" {
+			add(fmt.Sprintf("sources[%d] is missing required 'resource' (spec §5.1)", i))
+		}
+		if s.Author != "" && !IsValidActor(s.Author) {
+			add(fmt.Sprintf("sources[%d].author %q does not follow the actor convention (spec §7)", i, s.Author))
+		}
+		if s.LastModified != "" && !IsValidISODate(s.LastModified) {
+			add(fmt.Sprintf("sources[%d].last_modified %q is not an absolute YYYY-MM-DD date (spec §5.1)", i, s.LastModified))
+		}
+	}
+
+	// usage_window: a { from, to } date range (§5.1).
+	if w := c.Trust.UsageWindow; w != nil {
+		if w.From != "" && !IsValidISODate(w.From) {
+			add(fmt.Sprintf("usage_window.from %q is not an absolute YYYY-MM-DD date (spec §5.1)", w.From))
+		}
+		if w.To != "" && !IsValidISODate(w.To) {
+			add(fmt.Sprintf("usage_window.to %q is not an absolute YYYY-MM-DD date (spec §5.1)", w.To))
+		}
+	}
+
+	// Attested Computation: runtime REQUIRED for this type (§10.2).
 	if c.Trust.Attested && !c.Frontmatter.Has("runtime") {
 		add("Attested Computation is missing required 'runtime' (spec §10.2)")
 	}
+
 	return out
+}
+
+// IsValidActor reports whether actor follows the actor convention (spec §7):
+// "<producer>/<version>" for tools/agents, or one of the "human:", "process:",
+// "team:" prefixes for people, processes, and teams. Empty is not valid here;
+// callers skip empty values before calling.
+func IsValidActor(actor string) bool {
+	actor = strings.TrimSpace(actor)
+	if actor == "" {
+		return false
+	}
+	for _, p := range []string{"human:", "process:", "team:"} {
+		if strings.HasPrefix(actor, p) {
+			return len(actor) > len(p)
+		}
+	}
+	// "<producer>/<version>": a single slash with non-empty sides.
+	if i := strings.IndexByte(actor, '/'); i > 0 && i < len(actor)-1 {
+		return !strings.ContainsAny(actor, " \t")
+	}
+	return false
+}
+
+// isoDateLayouts and isoDateTimeLayouts accept the ISO 8601 shapes the spec
+// uses. Validation is a shape check only; it never rejects a bundle.
+var (
+	isoDateLayouts     = []string{"2006-01-02"}
+	isoDateTimeLayouts = []string{
+		time.RFC3339, time.RFC3339Nano,
+		"2006-01-02T15:04:05", "2006-01-02T15:04",
+		"2006-01-02", // a date-only content stamp is tolerated
+	}
+)
+
+// IsValidISODate reports whether s is an absolute YYYY-MM-DD date (spec §5.5/§5.1).
+func IsValidISODate(s string) bool {
+	return parsesAny(strings.TrimSpace(s), isoDateLayouts)
+}
+
+// IsValidISODateTime reports whether s is an ISO 8601 datetime (spec §5.2).
+func IsValidISODateTime(s string) bool {
+	return parsesAny(strings.TrimSpace(s), isoDateTimeLayouts)
+}
+
+func parsesAny(s string, layouts []string) bool {
+	if s == "" {
+		return false
+	}
+	for _, l := range layouts {
+		if _, err := time.Parse(l, s); err == nil {
+			return true
+		}
+	}
+	return false
 }
 
 func hasHumanPrefix(actor string) bool {
