@@ -27,6 +27,9 @@ func NewRootCmd() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
+	// Print `binder/<version>` for --version so the discovery surface matches the
+	// JSON envelope's "binder" field exactly (#13 §4.5).
+	root.SetVersionTemplate("binder/{{.Version}}\n")
 	// Flag-parse errors (unknown flag, bad value) are usage errors → exit 2.
 	// Cobra propagates a flag error func to subcommands, so setting it on the
 	// root covers every command.

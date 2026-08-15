@@ -124,6 +124,48 @@ concepts: 2, reserved files: 1
 RESULT: conformant (OKF 0.2)
 ```
 
+### Machine-readable output (`--json`) and exit codes
+
+`convert`, `validate`, `review`, and `graph` accept `--json` for scripting and CI.
+Prose is the default and is byte-unchanged when `--json` is absent.
+
+`convert`, `validate`, and `review` wrap their existing report in a thin,
+deterministic envelope (schema `binder.report/v1`) — same field names every run,
+2-space indent, sorted keys, a trailing newline, and any `SOURCE_DATE_EPOCH`
+honoured, so two runs on the same input are byte-identical:
+
+```bash
+binder validate path/to/bundle --json | jq '.result.findings'
+```
+
+```json
+{
+  "binder": "binder/0.1.0",
+  "command": "validate",
+  "schema": "binder.report/v1",
+  "result": { "root": "path/to/bundle", "num_concepts": 2, "num_reserved": 1, "findings": [] }
+}
+```
+
+`graph` is already machine-readable, so `graph --json` is an **alias for
+`--format json`** — the raw `{nodes, edges}` export, **not** the envelope above.
+Combining `--json` with a conflicting `--format {dot,graphml,html}` is a usage
+error (exit 2).
+
+Every command maps its outcome onto a stable **exit-code contract** (identical in
+prose and `--json` mode):
+
+| Code | Meaning |
+|---|---|
+| `0` | Success. Advisories (broken links, orphans, staleness, recovered frontmatter, missing trust) may be present — they are reported but never gate. |
+| `1` | Gating findings. Today: `validate` spec §11 non-conformance. (Reserved: advisories under a future `--strict` flag.) |
+| `2` | Usage error — unknown flag, missing/extra argument, or conflicting `--json`/`--format`. |
+| `3` | I/O or internal error — unreadable corpus/bundle, write failure. |
+
+Never-reject is preserved: a well-formed bundle with broken links or orphans
+still exits `0`. See the [user guide](docs/user_guide.md) for the per-command
+field lists, the discovery surface (`--version`/`--help`), and a CI example.
+
 ### convert flags
 
 | Flag | Default | Purpose |
@@ -133,6 +175,7 @@ RESULT: conformant (OKF 0.2)
 | `--default-type` | `Note` | Concept type applied when none is present or mapped. |
 | `--type-map` | — | Per-directory type overrides, e.g. `"docs=Guide,adr=Decision"`. |
 | `--report` | — | Also write the run report to this file. |
+| `--json` | `false` | Emit the run report as deterministic JSON (schema `binder.report/v1`) instead of prose. Composes with `--report`. |
 
 ### Relationship & trust flags (`convert`)
 

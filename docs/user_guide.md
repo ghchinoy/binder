@@ -26,6 +26,8 @@ bundle and reports on OKF bundles. It is **Phase 2 complete**.
   - [`index`](#index)
   - [`review`](#review)
   - [`graph`](#graph)
+- [JSON output (`--json`) and the exit-code contract](#json-output---json-and-the-exit-code-contract)
+- [Discovery surface (`--version` / `--help`)](#discovery-surface---version----help)
 - [OKF v0.2 output structure](#okf-v02-output-structure)
 - [Relationship extraction](#relationship-extraction)
 - [The trust vocabulary](#the-trust-vocabulary)
@@ -124,6 +126,7 @@ Output is required unless you pass `--dry-run`.
 | `--source-keys` | — | Frontmatter keys to map into `sources` entries, e.g. `"source,author"`. |
 | `--map-draft` | `false` | Map a `draft: true` marker to `status: draft` (only when `status` is absent). |
 | `--report` | — | Also write the run report (the same text printed to stdout) to this file. |
+| `--json` | `false` | Emit the run report as deterministic JSON (schema `binder.report/v1`) instead of prose. Composes with `--report` (the file gets whichever format `--json` selects). See [JSON output](#json-output---json-and-the-exit-code-contract). |
 
 `--map-citations`, `--source-keys`, and `--map-draft` are the **trust-mapping**
 flags — all off by default. See [The trust vocabulary](#the-trust-vocabulary).
@@ -171,6 +174,10 @@ RESULT: conformant (OKF 0.2)
 A non-conformant bundle prints each finding and ends with
 `RESULT: NOT conformant (N violation(s))` and a non-zero exit code.
 
+| Flag | Default | Purpose |
+|---|---|---|
+| `--json` | `false` | Emit the validation result as deterministic JSON (schema `binder.report/v1`) instead of prose. The exit code is identical in both modes. See [JSON output](#json-output---json-and-the-exit-code-contract). |
+
 ### `index`
 
 ```text
@@ -205,6 +212,7 @@ tiers and staleness are derived on demand, never stored.
 | Flag | Default | Purpose |
 |---|---|---|
 | `--today` | now | Date (`YYYY-MM-DD`) used for the staleness check; honours `SOURCE_DATE_EPOCH`. |
+| `--json` | `false` | Emit the review report as deterministic JSON (schema `binder.report/v1`) instead of prose. See [JSON output](#json-output---json-and-the-exit-code-contract). |
 
 ```text
 binder review
@@ -244,6 +252,7 @@ deterministic (nodes and edges sorted).
 | Flag | Default | Purpose |
 |---|---|---|
 | `--format` | `dot` | Output format: `dot` \| `json` \| `graphml` \| `html`. |
+| `--json` | `false` | Alias for `--format json` (the raw `{nodes,edges}` export, **not** the report envelope). Conflicting with an explicit `--format {dot,graphml,html}` is a usage error (exit 2). See [JSON output](#json-output---json-and-the-exit-code-contract). |
 | `-o`, `--output` | stdout | Write the graph to a file instead of stdout. |
 | `--today` | now | Date (`YYYY-MM-DD`) used for the per-node staleness flag. |
 
@@ -270,6 +279,165 @@ digraph okf {
   "overview" -> "metrics/revenue" [label="revenue metric"];
 }
 ```
+
+## JSON output (`--json`) and the exit-code contract
+
+`convert`, `validate`, `review`, and `graph` accept `--json` for scripting,
+agents, and CI. Prose is the default and is **byte-unchanged** when `--json` is
+absent — `--json` is a presentation layer over the already-computed report, it
+changes no behavior and fabricates no fields or trust data.
+
+### The envelope (schema `binder.report/v1`)
+
+`convert`, `validate`, and `review` wrap their existing report struct in a thin
+envelope that carries the provenance and schema tag a consumer needs to parse it
+safely:
+
+```json
+{
+  "binder": "binder/0.1.0",
+  "command": "convert",
+  "schema": "binder.report/v1",
+  "result": { }
+}
+```
+
+| Envelope field | Meaning |
+|---|---|
+| `binder` | The producing binder version, `binder/<version>` (same string as `--version`). |
+| `command` | `convert` \| `validate` \| `review`. |
+| `schema` | The report contract identifier. Bumped **only** on a breaking change to a payload's shape or field names, so a consumer can branch on it. |
+| `result` | The command's report object (see per-command fields below). |
+
+`graph` is the deliberate exception — see [graph JSON](#graph-json-a-raw-export-not-the-envelope).
+
+### Determinism
+
+JSON output is deterministic: fixed 2-space indentation, HTML escaping **off**
+(so `<`, `>`, `&` are literal), object keys sorted, and a trailing newline. All
+timestamps derive from `SOURCE_DATE_EPOCH` (via `--today` for the read
+commands), so two runs on the same input are byte-identical:
+
+```bash
+SOURCE_DATE_EPOCH=1700000000 binder review bundle --json > a.json
+SOURCE_DATE_EPOCH=1700000000 binder review bundle --json > b.json
+diff a.json b.json   # no output — identical
+```
+
+Empty lists always serialize as `[]` (never `null`) and counts/booleans are
+always present, so a parser sees a stable shape regardless of the bundle.
+
+### `convert --json` — `result` fields
+
+| Field | Type | Meaning |
+|---|---|---|
+| `src` | string | Source corpus path. |
+| `out` | string | Output bundle path (empty under `--dry-run`). |
+| `concepts` | array | One object per converted concept (see below). |
+| `warnings` | array of string | Non-fatal notices (e.g. reserved-file renames). |
+| `unresolved` | array | Unresolved links, each `{ from, raw_target, text }`. |
+| `num_concepts` | int | Concept count. |
+| `num_links` | int | Total links seen. |
+| `num_resolved` | int | Links resolved to a bundle concept. |
+| `num_unresolved` | int | Links left unresolved (reported, not dropped). |
+| `num_recovered` | int | Files whose unparseable frontmatter was preserved as body (§4.6). |
+| `dry_run` | bool | Whether this was a `--dry-run`. |
+
+Each `concepts[]` object: `rel_path`, `type`, `title`, `num_links`,
+`num_unresolved`. Each `unresolved[]` object: `from` (source concept rel path),
+`raw_target` (target exactly as written), `text` (link text / relationship label).
+
+### `validate --json` — `result` fields
+
+| Field | Type | Meaning |
+|---|---|---|
+| `root` | string | Bundle path. |
+| `num_concepts` | int | Non-reserved concepts checked. |
+| `num_reserved` | int | Reserved files (`index.md`/`log.md`) counted, not required to carry a `type`. |
+| `findings` | array | Each `{ concept_id, severity, message }`. |
+
+`severity` is `error` (a hard §11 violation — gates the exit code) or `advisory`
+(trust/lifecycle well-formedness — reported, never gates). See the
+[exit-code contract](#exit-code-contract).
+
+### `review --json` — `result` fields
+
+| Field | Type | Meaning |
+|---|---|---|
+| `root` | string | Bundle path. |
+| `today` | string | The `YYYY-MM-DD` staleness date used. |
+| `num_concepts` | int | Concept count. |
+| `by_type` | object | `{ "<type>": count }` (types with no value show as `(none)`). |
+| `tiers` | object | `{ "<tier>": count }` over `unverified` / `machine-confirmed` / `human-reviewed`. |
+| `orphans` | array of string | Concept IDs with no inbound resolved edge. |
+| `stale` | array of string | Concept IDs stale as of `today`. |
+| `attested` | array of string | Attested-Computation concept IDs. |
+| `unresolved` | array | Broken concept references, each `{ from, raw_target, text }`. |
+| `unparsed_frontmatter` | array of string | Concept IDs recovered from unparseable frontmatter. |
+| `concepts` | array | Per-concept view: `{ id, type, tier, stale, attested, orphan }`. |
+
+`by_type` and `tiers` are JSON objects with sorted keys; all list fields are
+`[]` when empty.
+
+### graph JSON — a raw export, not the envelope
+
+`graph` is already machine-readable, so `graph --json` is an **alias for
+`--format json`**: it emits the raw graph export, **not** wrapped in the
+`binder.report/v1` envelope. This asymmetry is deliberate — the graph payload is
+a data export consumed directly (e.g. by a viewer), not a run report.
+
+```json
+{
+  "nodes": [ { "id": "overview", "title": "Overview", "type": "Note", "tier": "unverified", "stale": false } ],
+  "edges": [ { "from": "overview", "to": "metrics/revenue", "text": "revenue metric" } ]
+}
+```
+
+`--json` composes with an explicit `--format json` (redundant but fine).
+Combining `--json` with a conflicting `--format {dot,graphml,html}` is a **usage
+error** (exit 2) — binder will not silently override your chosen format.
+
+### Exit-code contract
+
+Every command maps its outcome onto four stable codes. The code is about the
+**run, not the output format** — it is identical in prose and `--json` mode.
+
+| Code | Name | Meaning | Emitted by (today) |
+|---|---|---|---|
+| `0` | success | Completed with no gating findings. Advisories may be present — they are reported but never gate. | all commands, normal case |
+| `1` | findings-present | A gating condition: `validate` spec §11 non-conformance (unparseable frontmatter or a missing/empty `type`). **Reserved:** advisories under a future `--strict` flag. | `validate` |
+| `2` | usage-error | Bad flags/args — unknown flag, missing/extra argument, or a conflicting `--json`/`--format`. | any command |
+| `3` | io-error | Cannot read the corpus/bundle, a write failure, or an internal error. | any command |
+
+**Never-reject is preserved.** Broken links, orphans, staleness, recovered
+frontmatter, and missing optional trust are all **advisories** — they are
+reported (in prose and JSON) and exit `0`. The only default non-zero for a
+well-formed run is `validate`'s spec §11 hard non-conformance, which is a genuine
+violation, not an advisory. A `--strict` flag that flips advisories into gating
+findings (exit `1`) is reserved by this contract and delivered separately
+([#7](https://github.com/ghchinoy/binder/issues/7)); the `strict` row above is
+stable from day one so consumers can rely on it.
+
+> **Compatibility note.** This refines the previous behavior (where non-IO
+> failures collapsed to exit `1`): `0` still means success, and failures are now
+> more specific (`1`/`2`/`3`). No consumer that only checked "zero vs non-zero"
+> is affected.
+
+## Discovery surface (`--version` / `--help`)
+
+An agent or script can enumerate binder's surface without parsing prose reports:
+
+- **`binder --version`** prints `binder/<version>` (e.g. `binder/0.1.0`) — the
+  exact string that appears in the JSON envelope's `binder` field. (`--version`
+  is a root flag; passing it to a subcommand is a usage error.)
+- **`binder --help`** lists every command; **`binder <cmd> --help`** prints that
+  command's `Usage:` line and a `Flags:` section (name, shorthand, default,
+  description) — a stable, documented shape sufficient to discover every flag,
+  including `--json`.
+
+A structured tool/flag catalog (a machine-readable command manifest) is not part
+of this surface; it is delivered natively by the planned MCP server mode
+(`binder mcp`).
 
 ## OKF v0.2 output structure
 
@@ -468,21 +636,46 @@ staleness, so a fully pinned pipeline is reproducible end to end.
 ## CI usage
 
 `validate` is the CI gate: it exits non-zero only on a hard conformance
-violation. A typical pipeline converts, then validates:
+violation (see the [exit-code contract](#exit-code-contract)). A typical pipeline
+converts, then validates:
 
 ```bash
 set -euo pipefail
 
 SOURCE_DATE_EPOCH=1700000000 binder convert docs/ -o build/bundle
-binder validate build/bundle          # non-zero exit fails the job
+binder validate build/bundle          # exit 1 on §11 non-conformance fails the job
 binder review   build/bundle          # advisory summary (orphans, stale, unresolved)
 binder graph    build/bundle --format json -o build/graph.json
 ```
 
-`review` and `graph` never fail the build; use them for reporting and artifacts.
-To fail a build on unresolved links or orphans today, parse the `review` output
-(a first-class `binder lint` with configurable exit codes is planned — see
-[issue #8](https://github.com/ghchinoy/binder/issues/8)).
+For machine consumption, add `--json` and branch on both the exit code and the
+parsed payload. The exit code is identical in prose and JSON mode, so a CI step
+can gate on the code while archiving the JSON as an artifact:
+
+```bash
+set -euo pipefail
+
+# Gate on the exit code (0 conformant, 1 non-conformant, 2 usage, 3 io);
+# archive the deterministic JSON report either way.
+if binder validate build/bundle --json > build/validate.json; then
+  echo "conformant"
+else
+  code=$?
+  echo "validate exited $code"        # 1 = non-conformant, 2/3 = usage/io
+  jq '.result.findings[] | select(.severity=="error")' build/validate.json
+  exit "$code"
+fi
+
+# review/graph are advisory: capture signal without failing the build.
+binder review build/bundle --json | jq '{orphans: .result.orphans, stale: .result.stale}'
+```
+
+`review` and `graph` never fail the build (they always exit `0`); use them for
+reporting and artifacts. To fail a build on unresolved links or orphans today,
+parse the `review --json` output (a first-class `binder lint`, and a `--strict`
+flag that gates advisories, are planned — see
+[issue #8](https://github.com/ghchinoy/binder/issues/8) and
+[issue #7](https://github.com/ghchinoy/binder/issues/7)).
 
 The project's own exit gate additionally cross-checks binder's verdicts against
 the external [`okfcli/okf`](https://github.com/okfcli/okf) validator in both
