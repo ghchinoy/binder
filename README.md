@@ -37,7 +37,8 @@ round-trip. It also reports and visualizes a bundle (`review`, `graph`).
   generated provenance stamp. It never mutates the source.
 - **`validate`** checks a bundle against the OKF v0.2 §11 conformance rules and
   reports trust/lifecycle well-formedness as advisories.
-- **`index`** (re)generates per-directory `index.md` navigation for a bundle.
+- **`index`** (re)generates per-directory `index.md` navigation for a bundle, and
+  can add a type-grouped `# Catalog` to the root index (`--group-by-type`).
 - **`review`** summarizes a bundle: concepts by type, trust tiers,
   stale/attested, orphans, and unresolved links.
 - **`graph`** exports the concept graph (edges = resolved links) as
@@ -110,6 +111,9 @@ binder validate path/to/bundle
 # (Re)generate per-directory index.md navigation for a bundle.
 binder index path/to/bundle
 
+# Add a type-grouped catalog (with backlinks + outbound edges) to the root index.
+binder index path/to/bundle --group-by-type --include-backlinks --include-graph
+
 # Summarize a bundle: concepts by type, trust tiers, stale/attested,
 # orphans, and broken internal links.
 binder review path/to/bundle
@@ -177,6 +181,46 @@ field lists, the discovery surface (`--version`/`--help`), and a CI example.
 | `--workspace-root` | `<src>` root | Boundary within which `file://` links resolve to internal edges (see below). |
 | `--report` | — | Also write the run report to this file. |
 | `--json` | `false` | Emit the run report as deterministic JSON (schema `binder.report/v1`) instead of prose. Composes with `--report`. |
+| `--group-by-type` | `false` | Append an additive `# Catalog` of all concepts, grouped by type, to the **root** `index.md` (see [Catalog](#catalog-in-the-root-indexmd)). |
+| `--include-backlinks` | `false` | Annotate each catalog entry with its inbound resolved edges (requires `--group-by-type`). |
+| `--include-graph` | `false` | Annotate each catalog entry with its outbound resolved edges (requires `--group-by-type`). |
+
+The same three catalog flags are also accepted by `binder index`, which
+regenerates indexes for an already-converted bundle.
+
+### Catalog in the root index.md
+
+`--group-by-type` **adds** a `# Catalog` section to the bundle-**root** `index.md`
+only. It is purely additive: the existing per-directory nav (`# Concepts` /
+`# Subdirectories`, spec §8) is left untouched, and non-root indexes are never
+modified — so with the flag off, output is byte-identical to before.
+
+The catalog lists **every** concept in the bundle, grouped under `## <type>`
+subheaders:
+
+- **Types are used verbatim** (no pluralization/humanization) and sorted
+  alphabetically; concepts with an empty/unknown type go under a final
+  `## (untyped)` group.
+- Within a group, concepts are sorted by bundle-relative path, each linked by its
+  bundle-relative-absolute path (`* [Title](/path/to/concept.md)`).
+- Output is deterministic and idempotent — re-running `convert`/`index` on
+  identical input yields a byte-identical `index.md`, and `binder validate` still
+  passes (the root index remains the sole `okf_version` carrier).
+
+`--include-backlinks` and `--include-graph` add, under each entry, a bounded,
+sorted sub-list of inbound / outbound edges. These annotations derive from the
+**same resolved-edge set** `binder graph` uses (resolved links only), so the
+catalog and the graph can never disagree:
+
+```markdown
+# Catalog
+
+## Pattern
+
+* [Alpha](/patterns/alpha.md)
+  * backlink: [Beta](/patterns/beta.md)
+  * link: [Setup](/guides/setup.md)
+```
 
 ### Relationship & trust flags (`convert`)
 

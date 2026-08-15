@@ -42,6 +42,12 @@ type Options struct {
 	MapCitations bool     // map a body "# Citations" list to sources entries
 	SourceKeys   []string // frontmatter keys to map into sources entries
 	MapDraft     bool     // map a `draft: true` marker to status: draft
+
+	// Index-catalog options (issue #9). All OFF by default → generated index.md
+	// output is byte-identical to before. See IndexOptions.
+	GroupByType      bool // append the additive "# Catalog" to the root index.md
+	IncludeBacklinks bool // annotate catalog entries with inbound resolved edges
+	IncludeGraph     bool // annotate catalog entries with outbound resolved edges
 }
 
 // Convert runs the corpus→bundle conversion. It never mutates the source. With
@@ -215,7 +221,11 @@ func Convert(src, out string, opts Options) (*Report, error) {
 		return report, nil
 	}
 
-	if err := writeBundle(out, concepts, opts.Codec); err != nil {
+	if err := writeBundle(out, concepts, opts.Codec, IndexOptions{
+		GroupByType:      opts.GroupByType,
+		IncludeBacklinks: opts.IncludeBacklinks,
+		IncludeGraph:     opts.IncludeGraph,
+	}); err != nil {
 		return nil, err
 	}
 	return report, nil
@@ -291,7 +301,7 @@ func joinRel(dir, name string) string {
 	return dir + "/" + name
 }
 
-func writeBundle(out string, concepts []*okf.Concept, codec okf.Codec) error {
+func writeBundle(out string, concepts []*okf.Concept, codec okf.Codec, idxOpts IndexOptions) error {
 	if err := os.MkdirAll(out, 0o755); err != nil {
 		return fmt.Errorf("convert: creating output %q: %w", out, err)
 	}
@@ -308,7 +318,7 @@ func writeBundle(out string, concepts []*okf.Concept, codec okf.Codec) error {
 			return fmt.Errorf("convert: writing %q: %w", c.RelPath, err)
 		}
 	}
-	for rel, data := range GenerateIndexes(concepts, okf.DefaultSpecVersion) {
+	for rel, data := range GenerateIndexes(concepts, okf.DefaultSpecVersion, idxOpts) {
 		dst := filepath.Join(out, filepath.FromSlash(rel))
 		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 			return fmt.Errorf("convert: creating dir for %q: %w", rel, err)

@@ -27,6 +27,10 @@ func newConvertCmd(codec okf.Codec) *cobra.Command {
 		mapDraft      bool
 		jsonOut       bool
 		workspaceRoot string
+
+		groupByType      bool
+		includeBacklinks bool
+		includeGraph     bool
 	)
 
 	cmd := &cobra.Command{
@@ -58,6 +62,10 @@ func newConvertCmd(codec okf.Codec) *cobra.Command {
 				SourceKeys:    convert.ParseFMRefKeys(sourceKeys),
 				MapDraft:      mapDraft,
 				WorkspaceRoot: workspaceRoot,
+
+				GroupByType:      groupByType,
+				IncludeBacklinks: includeBacklinks,
+				IncludeGraph:     includeGraph,
 			}
 			report, err := convert.Convert(args[0], output, opts)
 			if err != nil {
@@ -95,6 +103,9 @@ func newConvertCmd(codec okf.Codec) *cobra.Command {
 	cmd.Flags().BoolVar(&mapDraft, "map-draft", false, "map a draft:true marker to status:draft when status is absent")
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "emit the run report as deterministic JSON (schema "+clijson.SchemaVersion+") instead of prose")
 	cmd.Flags().StringVar(&workspaceRoot, "workspace-root", "", "boundary within which file:// links resolve to internal edges (default: the <src> root)")
+	cmd.Flags().BoolVar(&groupByType, "group-by-type", false, "append an additive \"# Catalog\" of all concepts grouped by type to the root index.md")
+	cmd.Flags().BoolVar(&includeBacklinks, "include-backlinks", false, "annotate catalog entries with inbound resolved edges (requires --group-by-type)")
+	cmd.Flags().BoolVar(&includeGraph, "include-graph", false, "annotate catalog entries with outbound resolved edges (requires --group-by-type)")
 	return cmd
 }
 

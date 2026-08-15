@@ -11,10 +11,9 @@ usage, and worked end-to-end examples.
 bundle and reports on OKF bundles. It is **Phase 2 complete**.
 
 > This guide grows alongside each Phase 2.x feature. Sections for planned work
-> (`enrich`/`--in-place`, `lint`, declarative trust flags, `config`,
-> grouped/backlink indexes) are stubbed under
-> [Roadmap & planned features](#roadmap--planned-features) and reference their
-> tracking issues.
+> (`enrich`/`--in-place`, `lint`, declarative trust flags, `config`) are stubbed
+> under [Roadmap & planned features](#roadmap--planned-features) and reference
+> their tracking issues.
 
 ## Table of Contents
 
@@ -129,9 +128,15 @@ Output is required unless you pass `--dry-run`.
 | `--map-draft` | `false` | Map a `draft: true` marker to `status: draft` (only when `status` is absent). |
 | `--report` | — | Also write the run report (the same text printed to stdout) to this file. |
 | `--json` | `false` | Emit the run report as deterministic JSON (schema `binder.report/v1`) instead of prose. Composes with `--report` (the file gets whichever format `--json` selects). See [JSON output](#json-output---json-and-the-exit-code-contract). |
+| `--group-by-type` | `false` | Append an additive `# Catalog` of all concepts, grouped by type, to the **root** `index.md`. See [The type-grouped catalog](#the-type-grouped-catalog). |
+| `--include-backlinks` | `false` | Annotate each catalog entry with its inbound resolved edges (requires `--group-by-type`). |
+| `--include-graph` | `false` | Annotate each catalog entry with its outbound resolved edges (requires `--group-by-type`). |
 
 `--map-citations`, `--source-keys`, and `--map-draft` are the **trust-mapping**
 flags — all off by default. See [The trust vocabulary](#the-trust-vocabulary).
+`--group-by-type`, `--include-backlinks`, and `--include-graph` are the
+**catalog** flags — also off by default and shared with `binder index`; see
+[The type-grouped catalog](#the-type-grouped-catalog).
 
 #### Output report
 
@@ -226,9 +231,54 @@ carries frontmatter and the only place `okf_version` is declared (spec §12).
 | Flag | Default | Purpose |
 |---|---|---|
 | `--dry-run` | `false` | Report which `index.md` files would be written, without writing. |
+| `--group-by-type` | `false` | Append an additive `# Catalog` of all concepts, grouped by type, to the **root** `index.md` (see [The type-grouped catalog](#the-type-grouped-catalog)). |
+| `--include-backlinks` | `false` | Annotate each catalog entry with its inbound resolved edges (requires `--group-by-type`). |
+| `--include-graph` | `false` | Annotate each catalog entry with its outbound resolved edges (requires `--group-by-type`). |
 
 `convert` already generates these indexes; run `index` to refresh them after
-hand-editing concepts in a bundle.
+hand-editing concepts in a bundle. The three catalog flags above are shared with
+`convert` and behave identically in both commands.
+
+#### The type-grouped catalog
+
+`--group-by-type` **adds** a `# Catalog` section to the bundle-**root** `index.md`
+only. It never replaces the per-directory nav and never touches non-root indexes,
+so with the flag off the generated output is byte-identical to before.
+
+The catalog lists **every** concept in the bundle, grouped under `## <type>`
+subheaders:
+
+- **Types are used verbatim** — no pluralization or humanization (`Pattern` stays
+  `Pattern`, not `Patterns`) — and sorted alphabetically. Concepts with an
+  empty/unknown type are collected under a final `## (untyped)` group.
+- Within a group, concepts are sorted by their bundle-relative path and each is
+  linked by its bundle-relative-absolute path, `* [Title](/path/to/concept.md)`,
+  because the catalog spans directories.
+- The section is deterministic and idempotent: re-running `convert`/`index` on
+  identical input yields a byte-identical `index.md`, and `binder validate` still
+  passes — the root index stays the sole `okf_version` carrier (spec §8/§12).
+
+`--include-backlinks` and `--include-graph` add, under each catalog entry, a
+bounded, sorted sub-list of **inbound** (who links to it) and **outbound** (its
+dependency links) edges. Both are opt-in and compose with `--group-by-type`;
+empty edge sets render nothing. Crucially, these annotations derive from the
+**same resolved-edge set** `binder graph` builds (resolved links only,
+`From=concept → To=target`), via a single shared helper — so the catalog and the
+graph can never drift apart.
+
+```markdown
+# Catalog
+
+## Pattern
+
+* [Alpha](/patterns/alpha.md)
+  * backlink: [Beta](/patterns/beta.md)
+  * link: [Setup](/guides/setup.md)
+
+## (untyped)
+
+* [misc/notes](/misc/notes.md)
+```
 
 ### `review`
 
@@ -839,8 +889,10 @@ section for each as it lands; today each links to its tracking issue.
 - **`binder lint`** — a standalone corpus linter / link-health checker with a
   non-zero exit on broken links for CI gates.
   [#8](https://github.com/ghchinoy/binder/issues/8)
-- **Richer root `index.md`** — `--group-by-type` and `--include-backlinks` /
-  `--include-graph` catalog synthesis.
+- **Richer root `index.md`** — ✅ shipped: `--group-by-type` appends an additive,
+  type-grouped `# Catalog` to the root index, and `--include-backlinks` /
+  `--include-graph` annotate entries with inbound/outbound resolved edges. See
+  [The type-grouped catalog](#the-type-grouped-catalog).
   [#9](https://github.com/ghchinoy/binder/issues/9)
 - **`binder config`** — a viper-backed config for actor identity and defaults, so
   common flags need not be passed every run.
