@@ -1,0 +1,107 @@
+# binder — goreleaser (v2) release configuration.
+#
+# Design: /scion-volumes/scratchpad/projects/binder/distribution-design.md §4-§7.
+# Invariants preserved vs. a stock config:
+#   - Reproducible: -trimpath, -s -w, mod_timestamp={{.CommitTimestamp}}, and the
+#     release workflow exports SOURCE_DATE_EPOCH = commit time.
+#   - Offline: -mod=vendor consumes the committed vendor/ (no proxy at release
+#     time), matching `make build`/`make check`. There is deliberately NO
+#     `go mod tidy`/`go mod download` before-hook (a2acli's needs the network).
+#   - Truthful trust stamp: -X .../cmd.Version={{.Version}} injects the git tag
+#     so generated.by = "binder/<tag>" (see cmd/root.go).
+#
+# Signing (cosign) and SBOMs are intentionally deferred (decision O-4, Phase 4);
+# no `signs:`/`sboms:` blocks here. Checksums stay.
+version: 2
+
+project_name: binder
+
+before:
+  hooks:
+    # Offline-safe verification only. NOT `go mod tidy` (needs network and would
+    # break the offline/vendored invariant). Confirms the vendored tree builds.
+    - go build -mod=vendor -o /dev/null .
+
+builds:
+  - id: binder
+    main: .                       # binder's main package is at the repo root.
+    binary: binder
+    env:
+      - CGO_ENABLED=0
+    mod_timestamp: "{{ .CommitTimestamp }}"   # reproducible file mtimes.
+    flags:
+      - -trimpath
+      - -mod=vendor               # honor committed vendor/; keeps the build offline.
+    ldflags:
+      - -s -w
+      - -X github.com/ghchinoy/binder/cmd.Version={{ .Version }}
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - LICENSE*
+      - README.md
+
+checksum:
+  name_template: "checksums.txt"
+
+brews:
+  - name: binder
+    directory: Formula
+    repository:
+      owner: ghchinoy
+      name: homebrew-tap           # reuse the existing tap (decision O-1).
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    homepage: "https://github.com/ghchinoy/binder"
+    description: "Convert a plain-markdown corpus into a conformant OKF bundle"
+    license: "Apache-2.0"
+    install: |
+      bin.install "binder"
+    test: |
+      system "#{bin}/binder", "--version"
+
+winget:
+  - name: binder
+    publisher: ghchinoy
+    publisher_url: "https://github.com/ghchinoy"
+    publisher_support_url: "https://github.com/ghchinoy/binder/issues"
+    short_description: "Convert a plain-markdown corpus into a conformant OKF bundle"
+    license: "Apache-2.0"
+    homepage: "https://github.com/ghchinoy/binder"
+    package_identifier: ghchinoy.binder
+    repository:
+      owner: ghchinoy
+      name: winget-pkgs            # the user's microsoft/winget-pkgs fork.
+      token: "{{ .Env.WINGET_GITHUB_TOKEN }}"
+      branch: "automated-ghchinoy.binder-{{.Version}}"
+      pull_request:
+        enabled: true
+        draft: false
+        base:
+          owner: microsoft
+          name: winget-pkgs
+          branch: master
+
+changelog:
+  # release-please owns the human CHANGELOG.md; this only shapes the GitHub
+  # Release body. Mirror a2acli's filters.
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+
+release:
+  github:
+    owner: ghchinoy
+    name: binder

@@ -32,8 +32,14 @@ func TestMain(m *testing.M) {
 	defer os.RemoveAll(dir)
 	binderBin = filepath.Join(dir, "binder")
 	// Build the real CLI from the module root so parity tests exercise the
-	// genuine cmd/*.go path (offline: deps are vendored).
-	cmd := exec.Command("go", "build", "-o", binderBin, "github.com/ghchinoy/binder")
+	// genuine cmd/*.go path (offline: deps are vendored). Pin cmd.Version via
+	// ldflags to testVersion exactly as the release pipeline does
+	// (.goreleaser.yaml), so the stamped "binder/<version>" is deterministic and
+	// matches the MCP side — otherwise Go embeds a VCS pseudo-version, which the
+	// cmd.Version build-info fallback would surface.
+	cmd := exec.Command("go", "build",
+		"-ldflags", "-X github.com/ghchinoy/binder/cmd.Version="+testVersion,
+		"-o", binderBin, "github.com/ghchinoy/binder")
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
 		panic("building binder for parity tests: " + err.Error())

@@ -1,0 +1,28 @@
+name: release-please
+
+# Versioning automation (design §3, §5). On every push to main, release-please
+# parses Conventional Commits and maintains a "release PR" that bumps the version
+# and updates CHANGELOG.md. Merging that PR creates the vX.Y.Z tag + GitHub
+# Release shell, which is the SOLE trigger for release.yml (goreleaser).
+#
+# CRITICAL (the release-please <-> goreleaser gotcha, design §5): this action
+# MUST use a PAT/App token (secrets.RELEASE_TOKEN), NOT the default GITHUB_TOKEN.
+# A tag pushed by the default GITHUB_TOKEN does not trigger another workflow, so
+# release.yml would never fire.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@v4
+        with:
+          token: ${{ secrets.RELEASE_TOKEN }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json

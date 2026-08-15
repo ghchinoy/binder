@@ -6,6 +6,8 @@
 package cmd
 
 import (
+	"runtime/debug"
+
 	"github.com/spf13/cobra"
 
 	"github.com/ghchinoy/binder/internal/clijson"
@@ -14,8 +16,35 @@ import (
 	"github.com/ghchinoy/binder/internal/okf/native"
 )
 
-// Version is the binder version, stamped into generated.by ("binder/<version>").
-const Version = "0.1.0"
+// Version is the binder version, stamped into generated.by ("binder/<version>")
+// and printed by `binder --version`. It is single-sourced from the git tag: at
+// release time goreleaser injects the tag via
+// -ldflags "-X github.com/ghchinoy/binder/cmd.Version=<version>" (see
+// .goreleaser.yaml). It MUST stay a var (not a const) so the linker's -X can
+// override it — a const cannot be overridden. The literal default "dev" is a
+// constant string expression, which is what makes -X effective.
+//
+// The trust-provenance stamp is load-bearing (design-v2 §2.3): every converted
+// concept records generated.by = "binder/<Version>", so a release binary must
+// carry the real tag or it corrupts trust metadata forever.
+var Version = "dev"
+
+// init recovers the version from Go's build metadata for builds that were not
+// stamped by goreleaser's ldflags — most importantly `go install
+// github.com/ghchinoy/binder@vX.Y.Z`, which embeds the module version. It only
+// runs when Version is still the "dev" default, so it never clobbers an
+// ldflags-injected value (nor does it alter test builds, whose module version
+// is "(devel)").
+func init() {
+	if Version != "dev" {
+		return
+	}
+	if bi, ok := debug.ReadBuildInfo(); ok {
+		if v := bi.Main.Version; v != "" && v != "(devel)" {
+			Version = v
+		}
+	}
+}
 
 // NewRootCmd builds the root command with the default (native) codec.
 func NewRootCmd() *cobra.Command {

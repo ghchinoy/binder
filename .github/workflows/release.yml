@@ -1,0 +1,47 @@
+name: release
+
+# Build & publish (design §4-§6). Triggered ONLY by a vX.Y.Z tag, which
+# release-please creates when its release PR is merged (see release-please.yml).
+# goreleaser builds reproducible, offline (-mod=vendor) cross-platform binaries,
+# stamps the version from the tag, and publishes to the GitHub Release, the
+# Homebrew tap, and winget.
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write   # required to upload artifacts to the GitHub Release.
+
+jobs:
+  goreleaser:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # goreleaser needs full history + tags.
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Set SOURCE_DATE_EPOCH to the commit time
+        # Deterministic timestamps: anything reading SOURCE_DATE_EPOCH agrees
+        # with goreleaser's mod_timestamp={{.CommitTimestamp}} (design §7).
+        run: echo "SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct)" >> "$GITHUB_ENV"
+
+      - name: Run goreleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: '~> v2'
+          args: release --clean
+        env:
+          # GitHub Release upload uses the built-in token.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Downstream publishers use the single fine-grained PAT stored under
+          # RELEASE_TOKEN (brief: one secret name for all cross-repo tokens).
+          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          WINGET_GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}

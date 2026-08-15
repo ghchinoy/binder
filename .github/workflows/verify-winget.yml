@@ -1,0 +1,19 @@
+name: Verify winget install
+
+# Manual smoke test (design §6): after a winget PR has been accepted, confirm the
+# published package installs and runs. Mirrors a2acli's verify-winget workflow.
+on:
+  workflow_dispatch:
+
+jobs:
+  winget:
+    runs-on: windows-latest
+    steps:
+      - name: Install via winget
+        run: winget install ghchinoy.binder --accept-source-agreements --accept-package-agreements
+
+      - name: Verify version
+        run: binder --version
+
+      - name: Smoke test
+        run: binder --help
