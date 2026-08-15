@@ -61,9 +61,45 @@ type Options struct {
 // Convert runs the corpus→bundle conversion. It never mutates the source. With
 // DryRun set it writes nothing. Given identical input and the same Options.Now,
 // output is byte-identical (deterministic).
+//
+// Convert is Analyze followed by writeBundle: the in-memory pipeline (walk,
+// parse, default, resolve, tally) lives in Analyze so read-only consumers such as
+// `binder lint` (issue #8) can reuse the EXACT same resolved concepts and report
+// without a second walk/parse/resolve — the drift the #9 edge-parity work
+// eliminated. This split is behavior-preserving: Convert's output and Report are
+// byte-identical to before (a regression test asserts it).
 func Convert(src, out string, opts Options) (*Report, error) {
+	concepts, _, report, err := Analyze(src, opts)
+	if err != nil {
+		return nil, err
+	}
+	// Out is not needed by the read-only analysis; set it here so the Report
+	// (prose + --json) is identical to the pre-refactor single-function version.
+	report.Out = out
+
+	if opts.DryRun {
+		return report, nil
+	}
+
+	if err := writeBundle(out, concepts, opts.Codec, IndexOptions{
+		GroupByType:      opts.GroupByType,
+		IncludeBacklinks: opts.IncludeBacklinks,
+		IncludeGraph:     opts.IncludeGraph,
+	}); err != nil {
+		return nil, err
+	}
+	return report, nil
+}
+
+// Analyze runs the read-only corpus→concepts pipeline and returns the resolved
+// concepts, the per-source-file facts captured BEFORE type/title defaulting (so a
+// missing authored title or type is visible, not masked), and the run Report. It
+// NEVER writes: Convert calls it and then persists, `binder lint` calls it and
+// only inspects. Given identical input it is deterministic. The returned Report's
+// Out is left empty (only Convert knows the output path).
+func Analyze(src string, opts Options) (concepts []*okf.Concept, facts []SourceFacts, rep *Report, err error) {
 	if opts.Codec == nil {
-		return nil, fmt.Errorf("convert: codec is required")
+		return nil, nil, nil, fmt.Errorf("convert: codec is required")
 	}
 	if strings.TrimSpace(opts.DefaultType) == "" {
 		opts.DefaultType = "Note"
@@ -77,15 +113,15 @@ func Convert(src, out string, opts Options) (*Report, error) {
 
 	info, err := os.Stat(src)
 	if err != nil {
-		return nil, fmt.Errorf("convert: source %q: %w", src, err)
+		return nil, nil, nil, fmt.Errorf("convert: source %q: %w", src, err)
 	}
 	if !info.IsDir() {
-		return nil, fmt.Errorf("convert: source %q is not a directory", src)
+		return nil, nil, nil, fmt.Errorf("convert: source %q is not a directory", src)
 	}
 
 	files, err := walkCorpus(src)
 	if err != nil {
-		return nil, fmt.Errorf("convert: walking source: %w", err)
+		return nil, nil, nil, fmt.Errorf("convert: walking source: %w", err)
 	}
 
 	// Absolute corpus source root and workspace boundary for file:// resolution
@@ -93,14 +129,14 @@ func Convert(src, out string, opts Options) (*Report, error) {
 	// absolute and cleaned so path comparisons in rewriteLinks are unambiguous.
 	absSrc, err := filepath.Abs(src)
 	if err != nil {
-		return nil, fmt.Errorf("convert: resolving source path %q: %w", src, err)
+		return nil, nil, nil, fmt.Errorf("convert: resolving source path %q: %w", src, err)
 	}
 	absSrc = filepath.Clean(absSrc)
 	absWorkspace := absSrc
 	if ws := strings.TrimSpace(opts.WorkspaceRoot); ws != "" {
 		absWorkspace, err = filepath.Abs(ws)
 		if err != nil {
-			return nil, fmt.Errorf("convert: resolving workspace root %q: %w", ws, err)
+			return nil, nil, nil, fmt.Errorf("convert: resolving workspace root %q: %w", ws, err)
 		}
 		absWorkspace = filepath.Clean(absWorkspace)
 	}
@@ -109,7 +145,6 @@ func Convert(src, out string, opts Options) (*Report, error) {
 	// null in --json mode (#13 empty-slice policy). Prose output is unaffected.
 	report := &Report{
 		Src:        src,
-		Out:        out,
 		DryRun:     opts.DryRun,
 		Concepts:   []ConceptReport{},
 		Warnings:   []string{},
@@ -133,15 +168,17 @@ func Convert(src, out string, opts Options) (*Report, error) {
 	}
 	var items []staged
 	entries := make([]indexEntry, 0, len(files))
+	facts = make([]SourceFacts, 0, len(files))
 	for _, f := range files {
 		outRel := srcToOut[f.rel]
-		raw, err := os.ReadFile(f.abs)
-		if err != nil {
-			return nil, fmt.Errorf("convert: reading %q: %w", f.rel, err)
+		raw, rerr := os.ReadFile(f.abs)
+		if rerr != nil {
+			return nil, nil, nil, fmt.Errorf("convert: reading %q: %w", f.rel, rerr)
 		}
-		c, err := toConcept(opts.Codec, outRel, raw)
+		c, perr := toConcept(opts.Codec, outRel, raw)
 		recovered := false
-		if err != nil {
+		recoverErr := ""
+		if perr != nil {
 			// Never-reject (spec §11 / design-v2): a source file whose frontmatter
 			// will not parse must not abort the whole conversion, nor be dropped.
 			// Preserve it losslessly as a plain-markdown concept — its raw text
@@ -149,9 +186,23 @@ func Convert(src, out string, opts Options) (*Report, error) {
 			// so the run completes and no content is lost.
 			c = plainConcept(opts.Codec, outRel, raw)
 			recovered = true
+			recoverErr = perr.Error()
 			report.NumRecovered++
-			report.addWarning("%s: frontmatter did not parse (%v); converted as plain markdown (original text preserved in body)", f.rel, err)
+			report.addWarning("%s: frontmatter did not parse (%v); converted as plain markdown (original text preserved in body)", f.rel, perr)
 		}
+
+		// Capture the authored source state BEFORE ensureType/ensureTitle default
+		// it away (issue #8). `binder lint` reads these to report missing titles
+		// and schema violations that convert legitimately masks by defaulting.
+		facts = append(facts, SourceFacts{
+			RelPath:      f.rel,
+			ConceptID:    c.ID,
+			TitlePresent: authoredTitlePresent(c.Frontmatter, c.Body),
+			TypePresent:  authoredTypePresent(c.Frontmatter),
+			Recovered:    recovered,
+			RecoverErr:   recoverErr,
+		})
+
 		typ := ensureType(c.Frontmatter, outRel, opts.TypeMap, opts.DefaultType)
 		ensureTitle(c.Frontmatter, outRel, c.Body)
 		c.Type = typ
@@ -176,7 +227,6 @@ func Convert(src, out string, opts Options) (*Report, error) {
 		wsRoot:   absWorkspace,
 		warn:     report.addWarning,
 	}
-	var concepts []*okf.Concept
 	for _, it := range items {
 		c := it.c
 
@@ -232,18 +282,7 @@ func Convert(src, out string, opts Options) (*Report, error) {
 		}
 	}
 
-	if opts.DryRun {
-		return report, nil
-	}
-
-	if err := writeBundle(out, concepts, opts.Codec, IndexOptions{
-		GroupByType:      opts.GroupByType,
-		IncludeBacklinks: opts.IncludeBacklinks,
-		IncludeGraph:     opts.IncludeGraph,
-	}); err != nil {
-		return nil, err
-	}
-	return report, nil
+	return concepts, facts, report, nil
 }
 
 // toConcept parses raw into a Concept. Files without frontmatter (the common

@@ -11,9 +11,9 @@ usage, and worked end-to-end examples.
 bundle and reports on OKF bundles. It is **Phase 2 complete**.
 
 > This guide grows alongside each Phase 2.x feature. Sections for planned work
-> (`enrich`/`--in-place`, `lint`, declarative trust flags, `config`) are stubbed
-> under [Roadmap & planned features](#roadmap--planned-features) and reference
-> their tracking issues.
+> (`enrich`/`--in-place`, declarative trust flags, `config`) are stubbed under
+> [Roadmap & planned features](#roadmap--planned-features) and reference their
+> tracking issues.
 
 ## Table of Contents
 
@@ -24,6 +24,7 @@ bundle and reports on OKF bundles. It is **Phase 2 complete**.
   - [`validate`](#validate)
   - [`index`](#index)
   - [`review`](#review)
+  - [`lint`](#lint)
   - [`graph`](#graph)
   - [`config`](#config)
 - [JSON output (`--json`) and the exit-code contract](#json-output---json-and-the-exit-code-contract)
@@ -78,23 +79,25 @@ command and are the properties that make binder safe in a pipeline:
 
 ## Commands
 
-The binary exposes six commands. All bundle-reading commands
+The binary exposes seven commands. All bundle-reading commands
 (`validate`/`index`/`review`/`graph`) load a bundle through the same codec, so
-their views of concepts, links, and trust always agree.
+their views of concepts, links, and trust always agree. `lint` is the exception:
+it reads a **source corpus** (not a bundle) through the same converter pipeline.
 
 ```text
 binder convert    Convert a markdown corpus into an OKF v0.2 bundle
 binder validate   Check a bundle for OKF v0.2 conformance (spec §11)
 binder index      (Re)generate the per-directory index.md nav tree (spec §8)
 binder review     Summarize a bundle: concepts, links, orphans, trust tiers, stale
+binder lint       Report source-corpus health before conversion (writes nothing)
 binder graph      Export the bundle's concept graph (dot|json|graphml|html)
 binder config     Show the resolved effective configuration and each value's source
 ```
 
 Every command supports `-h`/`--help`. The root binary supports `-v`/`--version`.
-`validate`, `review`, and `convert` also support `--strict` to gate advisories in
-CI (see [Strict mode](#strict-mode)); configuration is resolved once with the
-precedence flag > env > file > default (see [`config`](#config)).
+`validate`, `review`, `lint`, and `convert` also support `--strict` to gate
+advisories in CI (see [Strict mode](#strict-mode)); configuration is resolved
+once with the precedence flag > env > file > default (see [`config`](#config)).
 
 ### `convert`
 
@@ -336,6 +339,72 @@ links to non-concept files (assets, scripts) are **not** concept references and
 are never reported. An **orphan** is a concept with no inbound resolved edge — it
 is reported for you to wire up or accept, never removed.
 
+### `lint`
+
+```text
+binder lint <corpus> [flags]
+```
+
+`lint` is a **read-only** health check over a **source markdown corpus** — it
+writes nothing. It completes the command triad. Each surface is single-purpose:
+
+| Command | Input | Purpose |
+|---|---|---|
+| `validate` | emitted bundle | spec §11 **hard conformance** (always gates on non-conformance) |
+| `review` | emitted bundle | human **summary** of a finished bundle |
+| `lint` | **source** corpus | **pre-conversion** source health; writes nothing |
+
+`lint` earns its own command because it sees the corpus **as authored**, before
+`convert` fills in defaults: a missing `title:` or a missing `type:` is invisible
+in a bundle because `convert` synthesises both. To guarantee it sees exactly what
+`convert` would, `lint` runs the **same converter pipeline** (`convert.Analyze`)
+and the **same single resolved-edge definition** — its "broken link" is by
+construction the converter's "unresolved link". There is no second resolver and
+the codec is untouched.
+
+It reports five checks:
+
+1. **Broken links** — an unresolved internal `.md` reference, a resolved link
+   whose target concept is absent, a residual `[[wikilink]]`, or a broken
+   `#anchor` (`foo.md#bar` whose target has no `bar` heading, or a same-doc
+   `#bar`). The finding `Detail` is the raw target.
+2. **Missing titles** — no authored `title:` **and** no first-level (`# `)
+   heading (`convert` would humanize the filename; `lint` flags the gap).
+3. **Orphans** — a concept with **0 inbound AND 0 outbound** resolved edges: a
+   truly disconnected node. This is stricter than `review`'s inbound-only orphan,
+   intentionally — a source corpus is where you catch a note wired to nothing.
+4. **Stale** — `stale_after` reached as of `--today` (honours `SOURCE_DATE_EPOCH`).
+5. **Schema violations** — a missing `type:` (`Detail: "missing type"`), or
+   invalid frontmatter recovered under never-reject
+   (`Detail: "invalid frontmatter: <err>"`). A recovered file is reported once as
+   invalid frontmatter, never also as "missing type".
+
+| Flag | Default | Purpose |
+|---|---|---|
+| `--today` | now | Date (`YYYY-MM-DD`) used for the staleness check; honours `SOURCE_DATE_EPOCH`. |
+| `--json` | `false` | Emit the report as deterministic JSON (schema `binder.report/v1`, `command:"lint"`). See [JSON output](#json-output---json-and-the-exit-code-contract). |
+| `--strict` | `false` | Gate (exit 1) when any finding is present. Without it `lint` never gates (exit 0). See [Strict mode](#strict-mode). |
+
+All findings are **spec-tolerated advisories**: bare `binder lint` always exits
+`0` even with findings (§11 hard conformance stays `validate`'s job over a
+bundle). `--strict` gates **exit 1** when any finding is present — the same shared
+contract as `convert`/`review`. The report is always emitted before the gate
+signals. A missing or non-directory `<corpus>` path is a usage error (exit 2).
+
+```text
+binder lint path/to/corpus            # report; exit 0 even with findings
+binder lint path/to/corpus --strict   # exit 1 if any finding (CI)
+binder lint path/to/corpus --json     # deterministic envelope, command:"lint"
+```
+
+**Anchor slug convention (GitHub-style, pinned).** An `#anchor` matches a heading
+whose slug is produced by: lowercase; strip HTML tags; drop every character except
+`[a-z0-9]`, space, and hyphen; convert spaces to hyphens; collapse repeated
+hyphens; and disambiguate duplicate headings with the suffixes `-1`, `-2`, … in
+document order (a second `## Notes` becomes `#notes-1`). Slugging is
+code-region-aware: a `# heading` inside a fenced code block is not a heading. This
+convention lives in `okf.HeadingSlugs` and is a stable, load-bearing commitment.
+
 ### `graph`
 
 ```text
@@ -427,16 +496,16 @@ the resolved config file and, per key, the effective value and its source (`flag
 
 ## JSON output (`--json`) and the exit-code contract
 
-`convert`, `validate`, `review`, and `graph` accept `--json` for scripting,
-agents, and CI. Prose is the default and is **byte-unchanged** when `--json` is
-absent — `--json` is a presentation layer over the already-computed report, it
-changes no behavior and fabricates no fields or trust data.
+`convert`, `validate`, `review`, `lint`, and `graph` accept `--json` for
+scripting, agents, and CI. Prose is the default and is **byte-unchanged** when
+`--json` is absent — `--json` is a presentation layer over the already-computed
+report, it changes no behavior and fabricates no fields or trust data.
 
 ### The envelope (schema `binder.report/v1`)
 
-`convert`, `validate`, and `review` wrap their existing report struct in a thin
-envelope that carries the provenance and schema tag a consumer needs to parse it
-safely:
+`convert`, `validate`, `review`, and `lint` wrap their existing report struct in
+a thin envelope that carries the provenance and schema tag a consumer needs to
+parse it safely:
 
 ```json
 {
@@ -450,7 +519,7 @@ safely:
 | Envelope field | Meaning |
 |---|---|
 | `binder` | The producing binder version, `binder/<version>` (same string as `--version`). |
-| `command` | `convert` \| `validate` \| `review`. |
+| `command` | `convert` \| `validate` \| `review` \| `lint`. |
 | `schema` | The report contract identifier. Bumped **only** on a breaking change to a payload's shape or field names, so a consumer can branch on it. |
 | `result` | The command's report object (see per-command fields below). |
 
@@ -524,6 +593,22 @@ Each `concepts[]` object: `rel_path`, `type`, `title`, `num_links`,
 `by_type` and `tiers` are JSON objects with sorted keys; all list fields are
 `[]` when empty.
 
+### `lint --json` — `result` fields
+
+| Field | Type | Meaning |
+|---|---|---|
+| `src` | string | Source corpus path. |
+| `num_concepts` | int | Concepts analysed. |
+| `broken_links` | array | Each `{ concept, detail }`; `detail` is the raw target. |
+| `missing_titles` | array of string | Concept IDs with no authored title and no `# H1`. |
+| `orphans` | array of string | Concept IDs with 0 inbound **and** 0 outbound resolved edges. |
+| `stale` | array of string | Concept IDs stale as of `today`. |
+| `schema_violations` | array | Each `{ concept, detail }` — `"missing type"` or `"invalid frontmatter: <err>"`. |
+
+All list fields are `[]` when empty. `lint`'s exit code follows the shared
+contract: `0` by default (findings are advisories), `1` under `--strict` when any
+finding is present. See the [exit-code contract](#exit-code-contract).
+
 ### graph JSON — a raw export, not the envelope
 
 `graph` is already machine-readable, so `graph --json` is an **alias for
@@ -550,7 +635,7 @@ Every command maps its outcome onto four stable codes. The code is about the
 | Code | Name | Meaning | Emitted by (today) |
 |---|---|---|---|
 | `0` | success | Completed with no gating findings. Advisories may be present — they are reported but never gate. | all commands, normal case |
-| `1` | findings-present | A gating condition: `validate` spec §11 non-conformance (unparseable frontmatter or a missing/empty `type`), or — under [`--strict`](#strict-mode) — any advisory promoted to a gating finding. | `validate`, `review`, `convert` (with `--strict`) |
+| `1` | findings-present | A gating condition: `validate` spec §11 non-conformance (unparseable frontmatter or a missing/empty `type`), or — under [`--strict`](#strict-mode) — any advisory promoted to a gating finding. | `validate`, `review`, `lint`, `convert` (with `--strict`) |
 | `2` | usage-error | Bad flags/args — unknown flag, missing/extra argument, or a conflicting `--json`/`--format`. | any command |
 | `3` | io-error | Cannot read the corpus/bundle, a write failure, or an internal error. | any command |
 
@@ -581,17 +666,21 @@ The per-command contract:
 |---|---|---|
 | `validate` | trust advisories (malformed trust, actor-convention, date-shape warnings) | spec §11 hard non-conformance (unparseable frontmatter, missing/empty `type`) |
 | `review` | any review finding: orphans, stale concepts, unresolved links, unparsed-frontmatter recoveries | — |
+| `lint` | any lint finding: broken links, missing titles, orphans, stale, schema violations | — |
 | `convert` | unresolved links or recovery warnings | — (a clean run is exit `0` even under `--strict`) |
 
-`--strict` is available on `validate`, `review`, and `convert`. A clean run stays
-exit `0` even with `--strict` set, so the flag is safe to leave on permanently in
-CI. `index`, `graph`, and `config` have no advisory surface and do not take it.
+`--strict` is available on `validate`, `review`, `lint`, and `convert`. A clean
+run stays exit `0` even with `--strict` set, so the flag is safe to leave on
+permanently in CI. `index`, `graph`, and `config` have no advisory surface and do
+not take it.
 
 ```bash
 # Fail CI on any unresolved link or recovered file, not just spec violations
 SOURCE_DATE_EPOCH=1700000000 binder convert docs/ -o build/bundle --strict
 binder validate build/bundle --strict
 binder review   build/bundle --strict
+# Fail CI on source-corpus health before conversion
+binder lint     docs/ --strict
 ```
 
 ## Discovery surface (`--version` / `--help`)
@@ -881,6 +970,9 @@ else
   exit "$code"
 fi
 
+# lint the SOURCE corpus before conversion; --strict gates on any finding.
+binder lint    docs/ --strict                   # fail on broken links / orphans / …
+
 # review is advisory by default; --strict makes it (and convert) gate.
 binder convert docs/ -o build/bundle --strict   # fail on unresolved links / recoveries
 binder review  build/bundle --strict            # fail on orphans / stale / unresolved
@@ -888,10 +980,10 @@ binder review  build/bundle --strict            # fail on orphans / stale / unre
 
 By default `review` and `graph` never fail the build (they always exit `0`); use
 them for reporting and artifacts. To fail a build on unresolved links, orphans,
-or staleness, pass [`--strict`](#strict-mode) to `convert`, `review`, or
+or staleness, pass [`--strict`](#strict-mode) to `convert`, `review`, `lint`, or
 `validate` — it promotes those advisories to gating findings (exit `1`) for that
-run only. (A first-class `binder lint` is still planned — see
-[issue #8](https://github.com/ghchinoy/binder/issues/8).)
+run only. `binder lint` gates on **source-corpus** health before conversion; the
+others gate on the emitted bundle.
 
 The project's own exit gate additionally cross-checks binder's verdicts against
 the external [`okfcli/okf`](https://github.com/okfcli/okf) validator in both
@@ -1023,8 +1115,9 @@ section for each as it lands; today each links to its tracking issue.
   CI. See [Declarative trust & lifecycle](#declarative-trust--lifecycle-flags) and
   [Strict mode](#strict-mode).
   [#7](https://github.com/ghchinoy/binder/issues/7)
-- **`binder lint`** — a standalone corpus linter / link-health checker with a
-  non-zero exit on broken links for CI gates.
+- **`binder lint`** — ✅ shipped: a standalone **source-corpus** linter reporting
+  broken links, missing titles, orphans, staleness, and schema violations, with
+  `--strict` for a non-zero CI gate. See [`lint`](#lint).
   [#8](https://github.com/ghchinoy/binder/issues/8)
 - **Richer root `index.md`** — ✅ shipped: `--group-by-type` appends an additive,
   type-grouped `# Catalog` to the root index, and `--include-backlinks` /

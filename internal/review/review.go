@@ -7,18 +7,12 @@ package review
 
 import (
 	"fmt"
-	"regexp"
 	"sort"
 	"strings"
 
+	"github.com/ghchinoy/binder/internal/linkcheck"
 	"github.com/ghchinoy/binder/internal/okf"
 )
-
-// wikilinkRE matches a residual wiki-style link left in a body: [[Target]] or
-// [[Target|alias]]. `binder convert` rewrites RESOLVED wikilinks to standard
-// markdown links, so any [[...]] surviving in a persisted body is by construction
-// an UNRESOLVED reference the read side must report (design-v2 §4.2).
-var wikilinkRE = regexp.MustCompile(`\[\[([^\[\]]+)\]\]`)
 
 // Edge is one unresolved link, reported with its source concept (§4.2).
 type Edge struct {
@@ -142,7 +136,7 @@ func Review(b *okf.Bundle, today string) *Report {
 			case l.Resolved:
 				broken = !exists[l.TargetID] // resolved shape, but no such concept
 			default:
-				broken = isBrokenConceptRef(l.RawTarget) // couldn't resolve an internal .md ref
+				broken = linkcheck.IsBrokenConceptRef(l.RawTarget) // couldn't resolve an internal .md ref
 			}
 			if broken {
 				r.Unresolved = append(r.Unresolved, Edge{From: c.ID, RawTarget: l.RawTarget, Text: l.Text})
@@ -152,7 +146,7 @@ func Review(b *okf.Bundle, today string) *Report {
 		// reference (resolved ones were rewritten to markdown links at convert time),
 		// but it is not a markdown link so the codec's LinkGraph never surfaces it.
 		// Scan the persisted body directly so `review` reports it (design-v2 §4.2).
-		for _, target := range residualWikilinks(c.Body) {
+		for _, target := range linkcheck.ResidualWikilinks(c.Body) {
 			r.Unresolved = append(r.Unresolved, Edge{From: c.ID, RawTarget: "[[" + target + "]]", Text: target})
 		}
 	}
@@ -204,56 +198,6 @@ func (r *Report) String() string {
 		fmt.Fprintf(&b, "    %s -> %s\n", e.From, e.RawTarget)
 	}
 	return b.String()
-}
-
-// isBrokenConceptRef reports whether a raw, unresolved link target is an
-// internal CONCEPT reference — i.e. a bundle-relative .md target that names no
-// concept. External URLs, same-document anchors, and links to non-concept files
-// (assets, scripts, directories) are not concept references and so are never
-// "broken" edges, matching what `binder convert` tracks.
-func isBrokenConceptRef(raw string) bool {
-	t := strings.TrimSpace(raw)
-	if t == "" || strings.HasPrefix(t, "#") {
-		return false
-	}
-	if strings.Contains(t, "://") {
-		return false
-	}
-	for _, p := range []string{"mailto:", "tel:", "ftp:"} {
-		if strings.HasPrefix(t, p) {
-			return false
-		}
-	}
-	// Only a .md target (ignoring any #fragment) is a concept reference.
-	if i := strings.IndexByte(t, '#'); i >= 0 {
-		t = t[:i]
-	}
-	return strings.HasSuffix(strings.ToLower(strings.TrimSpace(t)), ".md")
-}
-
-// residualWikilinks returns the targets of any [[...]] / [[...|alias]] wikilinks
-// left in body, excluding those inside code spans/blocks (matching the converter's
-// code-aware handling). By construction these are unresolved references.
-func residualWikilinks(body string) []string {
-	if !strings.Contains(body, "[[") {
-		return nil
-	}
-	code := okf.CodeRegions(body)
-	var out []string
-	for _, idx := range wikilinkRE.FindAllStringSubmatchIndex(body, -1) {
-		if okf.InCodeRegion(idx[0], code) {
-			continue
-		}
-		inner := body[idx[2]:idx[3]]
-		target := inner
-		if i := strings.IndexByte(inner, '|'); i >= 0 {
-			target = inner[:i]
-		}
-		if target = strings.TrimSpace(target); target != "" {
-			out = append(out, target)
-		}
-	}
-	return out
 }
 
 func sortedKeys(m map[string]int) []string {
