@@ -30,6 +30,7 @@ func newConvertCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 		sourceKeys    string
 		mapDraft      bool
 		jsonOut       bool
+		strict        bool
 		workspaceRoot string
 
 		groupByType      bool
@@ -121,7 +122,15 @@ func newConvertCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 					return fmt.Errorf("writing report: %w", err)
 				}
 			}
-			return nil
+
+			// convert has no hard non-conformance; under --strict unresolved links
+			// and recovery warnings (unparseable frontmatter preserved as body) gate
+			// at exit 1. Without --strict it never gates (never-reject; exit 0). The
+			// report is already emitted, so the signal never suppresses output.
+			gatingPresent := report.NumUnresolved > 0 || report.NumRecovered > 0
+			return clijson.Gate(strict, false, gatingPresent,
+				fmt.Sprintf("convert produced %d unresolved link(s) and %d recovery warning(s) (--strict)",
+					report.NumUnresolved, report.NumRecovered))
 		},
 	}
 
@@ -138,6 +147,7 @@ func newConvertCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 	cmd.Flags().StringVar(&sourceKeys, "source-keys", "", "frontmatter keys to map into sources entries, e.g. \"source,author\"")
 	cmd.Flags().BoolVar(&mapDraft, "map-draft", false, "map a draft:true marker to status:draft when status is absent")
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "emit the run report as deterministic JSON (schema "+clijson.SchemaVersion+") instead of prose")
+	cmd.Flags().BoolVar(&strict, "strict", false, "gate (exit 1) on unresolved links or recovery warnings; without it these never gate (never-reject)")
 	cmd.Flags().StringVar(&workspaceRoot, "workspace-root", "", "boundary within which file:// links resolve to internal edges (default: the <src> root)")
 	cmd.Flags().BoolVar(&groupByType, "group-by-type", false, "append an additive \"# Catalog\" of all concepts grouped by type to the root index.md")
 	cmd.Flags().BoolVar(&includeBacklinks, "include-backlinks", false, "annotate catalog entries with inbound resolved edges (requires --group-by-type)")
