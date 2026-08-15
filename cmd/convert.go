@@ -20,6 +20,8 @@ func newConvertCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 		output        string
 		defaultType   string
 		typeMapRaw    string
+		statusMapRaw  string
+		staleAfterRaw string
 		fmRefKeysRaw  string
 		dryRun        bool
 		reportPath    string
@@ -50,6 +52,15 @@ func newConvertCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			// Malformed map shapes/values are usage errors (exit 2).
+			statusMap, statusDefault, err := convert.ParseStatusMap(statusMapRaw)
+			if err != nil {
+				return clijson.Usage(err)
+			}
+			staleAfterMap, err := convert.ParseStaleAfterMap(staleAfterRaw)
+			if err != nil {
+				return clijson.Usage(err)
+			}
 
 			// Resolve default_type through config precedence (flag > env > file >
 			// default). Binding the flag lets an explicit --default-type win over a
@@ -61,6 +72,9 @@ func newConvertCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 				Codec:         codec,
 				DefaultType:   defaultType,
 				TypeMap:       typeMap,
+				StatusMap:     statusMap,
+				StatusDefault: statusDefault,
+				StaleAfterMap: staleAfterMap,
 				FMRefKeys:     convert.ParseFMRefKeys(fmRefKeysRaw),
 				Version:       Version,
 				Now:           resolveNow(),
@@ -102,6 +116,8 @@ func newConvertCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 	cmd.Flags().StringVarP(&output, "output", "o", "", "output bundle directory")
 	cmd.Flags().StringVar(&defaultType, "default-type", "Note", "type applied when none is present or mapped")
 	cmd.Flags().StringVar(&typeMapRaw, "type-map", "", "per-directory type overrides, e.g. \"docs=Guide,adr=Decision\"")
+	cmd.Flags().StringVar(&statusMapRaw, "status-map", "", "per-directory status, e.g. \"archive=deprecated,drafts=draft,default=active\" (set only when status absent)")
+	cmd.Flags().StringVar(&staleAfterRaw, "stale-after-map", "", "per-directory stale_after relative to now, e.g. \"07-benchmarks=+6m,legacy=+0d\" (grammar +Nd/+Nm/+Ny; set only when absent)")
 	cmd.Flags().StringVar(&fmRefKeysRaw, "fm-ref-keys", "", "frontmatter keys treated as relationship edges, e.g. \"related,parent\"")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "report what would be written without writing anything")
 	cmd.Flags().StringVar(&reportPath, "report", "", "also write the run report to this file")
