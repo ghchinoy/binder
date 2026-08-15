@@ -11,34 +11,34 @@ import (
 // Report summarizes a conversion run. It is returned by Convert and is the
 // payload of --report and --dry-run output.
 type Report struct {
-	Src           string
-	Out           string
-	Concepts      []ConceptReport
-	Warnings      []string
-	Unresolved    []UnresolvedLink
-	NumConcepts   int
-	NumLinks      int
-	NumResolved   int
-	NumUnresolved int
-	NumRecovered  int // files whose unparseable frontmatter was preserved as body (§4.6)
-	DryRun        bool
+	Src           string           `json:"src"`
+	Out           string           `json:"out"`
+	Concepts      []ConceptReport  `json:"concepts"`
+	Warnings      []string         `json:"warnings"`
+	Unresolved    []UnresolvedLink `json:"unresolved"`
+	NumConcepts   int              `json:"num_concepts"`
+	NumLinks      int              `json:"num_links"`
+	NumResolved   int              `json:"num_resolved"`
+	NumUnresolved int              `json:"num_unresolved"`
+	NumRecovered  int              `json:"num_recovered"` // files whose unparseable frontmatter was preserved as body (§4.6)
+	DryRun        bool             `json:"dry_run"`
 }
 
 // UnresolvedLink is one link whose target is not a concept in the bundle. It is
 // left in place (spec §6) and reported so the user can fix or accept it (§4.2).
 type UnresolvedLink struct {
-	From      string // source concept rel path
-	RawTarget string // target exactly as written
-	Text      string // link text / relationship label
+	From      string `json:"from"`       // source concept rel path
+	RawTarget string `json:"raw_target"` // target exactly as written
+	Text      string `json:"text"`       // link text / relationship label
 }
 
 // ConceptReport describes one converted concept.
 type ConceptReport struct {
-	RelPath       string
-	Type          string
-	Title         string
-	NumLinks      int
-	NumUnresolved int
+	RelPath       string `json:"rel_path"`
+	Type          string `json:"type"`
+	Title         string `json:"title"`
+	NumLinks      int    `json:"num_links"`
+	NumUnresolved int    `json:"num_unresolved"`
 }
 
 func (r *Report) addWarning(format string, args ...any) {

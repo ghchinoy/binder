@@ -1,0 +1,30 @@
+name: CI
+
+# Offline quality gate for every PR and for pushes to main: gofmt + go vet +
+# go test (`make check`). The external okf interop gate (`make gate`) is
+# intentionally excluded — it needs a network install of okfcli/okf and would
+# make the pipeline flaky. Dependencies are vendored (vendor/), so no module
+# downloads are required.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Offline gate (gofmt + vet + test)
+        run: make check

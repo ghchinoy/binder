@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"strconv"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/ghchinoy/binder/internal/clijson"
 	"github.com/ghchinoy/binder/internal/convert"
 	"github.com/ghchinoy/binder/internal/okf"
 )
@@ -23,6 +25,7 @@ func newConvertCmd(codec okf.Codec) *cobra.Command {
 		mapCitations bool
 		sourceKeys   string
 		mapDraft     bool
+		jsonOut      bool
 	)
 
 	cmd := &cobra.Command{
@@ -32,10 +35,10 @@ func newConvertCmd(codec okf.Codec) *cobra.Command {
 			"bundle: one concept per non-reserved .md, standard markdown links rewritten\n" +
 			"to bundle-relative form, a root index.md declaring okf_version, and a\n" +
 			"generated provenance stamp. It never mutates the source and is deterministic.",
-		Args: cobra.ExactArgs(1),
+		Args: exactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if output == "" && !dryRun {
-				return fmt.Errorf("--output/-o is required (or use --dry-run)")
+				return clijson.Usage(fmt.Errorf("--output/-o is required (or use --dry-run)"))
 			}
 			typeMap, err := convert.ParseTypeMap(typeMapRaw)
 			if err != nil {
@@ -59,9 +62,19 @@ func newConvertCmd(codec okf.Codec) *cobra.Command {
 				return err
 			}
 
-			fmt.Fprint(cmd.OutOrStdout(), report.String())
+			// --json and prose share the same report; --report writes whichever
+			// format --json selects, so the file and stdout never disagree.
+			out := report.String()
+			if jsonOut {
+				var buf bytes.Buffer
+				if err := clijson.Encode(&buf, Version, "convert", report); err != nil {
+					return fmt.Errorf("encoding json report: %w", err)
+				}
+				out = buf.String()
+			}
+			fmt.Fprint(cmd.OutOrStdout(), out)
 			if reportPath != "" {
-				if err := os.WriteFile(reportPath, []byte(report.String()), 0o644); err != nil {
+				if err := os.WriteFile(reportPath, []byte(out), 0o644); err != nil {
 					return fmt.Errorf("writing report: %w", err)
 				}
 			}
@@ -78,6 +91,7 @@ func newConvertCmd(codec okf.Codec) *cobra.Command {
 	cmd.Flags().BoolVar(&mapCitations, "map-citations", false, "map a body \"# Citations\" list into sources entries")
 	cmd.Flags().StringVar(&sourceKeys, "source-keys", "", "frontmatter keys to map into sources entries, e.g. \"source,author\"")
 	cmd.Flags().BoolVar(&mapDraft, "map-draft", false, "map a draft:true marker to status:draft when status is absent")
+	cmd.Flags().BoolVar(&jsonOut, "json", false, "emit the run report as deterministic JSON (schema "+clijson.SchemaVersion+") instead of prose")
 	return cmd
 }
 

@@ -5,11 +5,13 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/ghchinoy/binder/internal/clijson"
 	"github.com/ghchinoy/binder/internal/okf"
 	"github.com/ghchinoy/binder/internal/validate"
 )
 
 func newValidateCmd(codec okf.Codec) *cobra.Command {
+	var jsonOut bool
 	cmd := &cobra.Command{
 		Use:   "validate <bundle>",
 		Short: "Check a bundle for OKF v0.2 conformance (spec §11)",
@@ -18,31 +20,44 @@ func newValidateCmd(codec okf.Codec) *cobra.Command {
 			"well-formedness as advisories and NEVER rejects a bundle for missing\n" +
 			"optional fields, unknown keys, unknown type values, broken links, or\n" +
 			"absent trust families.",
-		Args: cobra.ExactArgs(1),
+		Args: exactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			result, err := validate.Bundle(args[0], codec, okf.DefaultSpecVersion)
 			if err != nil {
 				return err
 			}
+			errs := result.Errors()
+			// The exit code is about the run, not the output format: identical in
+			// prose and --json. Non-conformance is a hard §11 violation (not an
+			// advisory) and always gates (exit 1). Advisories never gate until #7
+			// wires --strict — the strict arg is hardwired false here (the seam).
+			gate := clijson.Gate(false, !result.Conformant(), len(result.Advisories()) > 0,
+				fmt.Sprintf("bundle is not conformant (%d violation(s))", len(errs)))
+
 			out := cmd.OutOrStdout()
+			if jsonOut {
+				if encErr := clijson.Encode(out, Version, "validate", result); encErr != nil {
+					return fmt.Errorf("encoding json report: %w", encErr)
+				}
+				return gate
+			}
+
 			fmt.Fprintf(out, "bundle: %s\n", result.Root)
 			fmt.Fprintf(out, "concepts: %d, reserved files: %d\n", result.NumConcepts, result.NumReserved)
-
 			for _, f := range result.Advisories() {
 				fmt.Fprintf(out, "%s\n", f)
 			}
-			errs := result.Errors()
 			for _, f := range errs {
 				fmt.Fprintf(out, "%s\n", f)
 			}
-
 			if result.Conformant() {
 				fmt.Fprintf(out, "RESULT: conformant (OKF %s)\n", okf.DefaultSpecVersion)
-				return nil
+			} else {
+				fmt.Fprintf(out, "RESULT: NOT conformant (%d violation(s))\n", len(errs))
 			}
-			fmt.Fprintf(out, "RESULT: NOT conformant (%d violation(s))\n", len(errs))
-			return fmt.Errorf("bundle is not conformant")
+			return gate
 		},
 	}
+	cmd.Flags().BoolVar(&jsonOut, "json", false, "emit the validation result as deterministic JSON (schema "+clijson.SchemaVersion+") instead of prose")
 	return cmd
 }

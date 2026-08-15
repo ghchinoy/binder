@@ -18,10 +18,10 @@ import (
 
 // Result is the outcome of validating a bundle.
 type Result struct {
-	Root        string
-	NumConcepts int
-	NumReserved int
-	Findings    []okf.Finding
+	Root        string        `json:"root"`
+	NumConcepts int           `json:"num_concepts"`
+	NumReserved int           `json:"num_reserved"`
+	Findings    []okf.Finding `json:"findings"`
 }
 
 // Conformant reports whether the bundle satisfies the hard conformance rules
@@ -87,7 +87,8 @@ func Bundle(root string, codec okf.Codec, spec okf.SpecVersion) (*Result, error)
 	}
 	sort.Strings(files)
 
-	result := &Result{Root: root}
+	// Initialize Findings so a conformant bundle serializes to [] not null (#13).
+	result := &Result{Root: root, Findings: []okf.Finding{}}
 	for _, rel := range files {
 		if codec.IsReservedFile(rel) {
 			// Reserved files (index.md/log.md) are not concepts and are not
