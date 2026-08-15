@@ -111,6 +111,57 @@ func TestBrokenLinkParity(t *testing.T) {
 	}
 }
 
+// TestLintMissingTitlesAndSchema: source-fact checks see the pre-default state —
+// a file with no authored title/H1 is a missing title; a file with no authored
+// type: and one with invalid YAML are schema violations. A recovered file is not
+// double-listed as "missing type".
+func TestLintMissingTitlesAndSchema(t *testing.T) {
+	rep := lintCorpus(t, "../../testdata/corpus-lint-schema")
+
+	if want := []string{"notitle"}; !equalStrings(rep.MissingTitles, want) {
+		t.Errorf("missing titles = %v, want %v", rep.MissingTitles, want)
+	}
+
+	if len(rep.SchemaViolations) != 2 {
+		t.Fatalf("schema violations = %+v, want 2", rep.SchemaViolations)
+	}
+	if rep.SchemaViolations[0].Concept != "badyaml" ||
+		!strings.HasPrefix(rep.SchemaViolations[0].Detail, "invalid frontmatter: ") {
+		t.Errorf("schema[0] = %+v, want badyaml invalid-frontmatter", rep.SchemaViolations[0])
+	}
+	// The prefix must appear exactly once (codec error already carries it).
+	if strings.Count(rep.SchemaViolations[0].Detail, "invalid frontmatter") != 1 {
+		t.Errorf("invalid-frontmatter prefix duplicated: %q", rep.SchemaViolations[0].Detail)
+	}
+	if rep.SchemaViolations[1] != (lint.Finding{Concept: "notype", Detail: "missing type"}) {
+		t.Errorf("schema[1] = %+v, want notype missing type", rep.SchemaViolations[1])
+	}
+	// The recovered file (badyaml) must NOT also appear as "missing type".
+	for _, f := range rep.SchemaViolations {
+		if f.Concept == "badyaml" && f.Detail == "missing type" {
+			t.Errorf("recovered file double-listed as missing type: %+v", f)
+		}
+	}
+	// badyaml has a first H1 in its preserved body, so it is not a missing title.
+	for _, id := range rep.MissingTitles {
+		if id == "badyaml" {
+			t.Errorf("badyaml should not be a missing title (its body has an H1)")
+		}
+	}
+}
+
+func equalStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
 // TestReportSlicesInitialized: every bucket is a non-nil slice so --json emits []
 // not null (#13).
 func TestReportSlicesInitialized(t *testing.T) {

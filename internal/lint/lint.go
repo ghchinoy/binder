@@ -87,6 +87,36 @@ func Lint(concepts []*okf.Concept, facts []convert.SourceFacts, today string) *R
 		}
 	}
 
+	// Checks 2 & 5 — source-fact checks over the pre-default authored state. These
+	// are exactly what convert masks: a missing title is defaulted to a humanized
+	// filename, a missing type: is defaulted, and invalid frontmatter is recovered
+	// as body under never-reject. lint is the only surface that sees them.
+	for _, f := range facts {
+		if !f.TitlePresent {
+			r.MissingTitles = append(r.MissingTitles, f.ConceptID)
+		}
+		switch {
+		case f.Recovered:
+			// The frontmatter parse failure is the root schema problem; the missing
+			// type it necessarily also causes is subsumed by it, so report only the
+			// invalid-frontmatter finding rather than double-listing the same file.
+			detail := "invalid frontmatter"
+			if f.RecoverErr != "" {
+				// The codec's parse error already begins with "invalid frontmatter:";
+				// use it as-is so the required prefix appears exactly once, otherwise
+				// prepend it.
+				if strings.HasPrefix(f.RecoverErr, "invalid frontmatter") {
+					detail = f.RecoverErr
+				} else {
+					detail = "invalid frontmatter: " + f.RecoverErr
+				}
+			}
+			r.SchemaViolations = append(r.SchemaViolations, Finding{Concept: f.ConceptID, Detail: detail})
+		case !f.TypePresent:
+			r.SchemaViolations = append(r.SchemaViolations, Finding{Concept: f.ConceptID, Detail: "missing type"})
+		}
+	}
+
 	r.sortAll()
 	return r
 }
