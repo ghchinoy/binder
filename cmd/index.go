@@ -14,7 +14,12 @@ import (
 )
 
 func newIndexCmd(codec okf.Codec) *cobra.Command {
-	var dryRun bool
+	var (
+		dryRun           bool
+		groupByType      bool
+		includeBacklinks bool
+		includeGraph     bool
+	)
 	cmd := &cobra.Command{
 		Use:   "index <bundle>",
 		Short: "(Re)generate the per-directory index.md nav tree (spec §8)",
@@ -30,7 +35,11 @@ func newIndexCmd(codec okf.Codec) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			indexes := convert.GenerateIndexes(b.Concepts, b.OKFVersion)
+			indexes := convert.GenerateIndexes(b.Concepts, b.OKFVersion, convert.IndexOptions{
+				GroupByType:      groupByType,
+				IncludeBacklinks: includeBacklinks,
+				IncludeGraph:     includeGraph,
+			})
 
 			rels := make([]string, 0, len(indexes))
 			for rel := range indexes {
@@ -61,5 +70,8 @@ func newIndexCmd(codec okf.Codec) *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "report which index.md files would be written without writing")
+	cmd.Flags().BoolVar(&groupByType, "group-by-type", false, "append an additive \"# Catalog\" of all concepts grouped by type to the root index.md")
+	cmd.Flags().BoolVar(&includeBacklinks, "include-backlinks", false, "annotate catalog entries with inbound resolved edges (requires --group-by-type)")
+	cmd.Flags().BoolVar(&includeGraph, "include-graph", false, "annotate catalog entries with outbound resolved edges (requires --group-by-type)")
 	return cmd
 }

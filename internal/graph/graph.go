@@ -37,6 +37,35 @@ type Model struct {
 	Edges []Edge `json:"edges"`
 }
 
+// EdgesFromConcepts returns the resolved directed edge set for the given
+// concepts, sorted deterministically (by From, then To, then Text). It is the
+// SINGLE definition of what counts as an edge — a resolved link only
+// (Link.Resolved && TargetID != ""), with From=c.ID → To=l.TargetID. Build uses
+// it, and any caller that must stay in edge-parity with `binder graph` (e.g. the
+// index catalog's backlinks/graph annotations) calls it too, so the two can
+// never disagree. It does NOT reimplement link resolution; it reads the already
+// resolved Links on each concept.
+func EdgesFromConcepts(concepts []*okf.Concept) []Edge {
+	var edges []Edge
+	for _, c := range concepts {
+		for _, l := range c.Links {
+			if l.Resolved && l.TargetID != "" {
+				edges = append(edges, Edge{From: c.ID, To: l.TargetID, Text: l.Text})
+			}
+		}
+	}
+	sort.Slice(edges, func(i, j int) bool {
+		if edges[i].From != edges[j].From {
+			return edges[i].From < edges[j].From
+		}
+		if edges[i].To != edges[j].To {
+			return edges[i].To < edges[j].To
+		}
+		return edges[i].Text < edges[j].Text
+	})
+	return edges
+}
+
 // Build extracts the deterministic node/edge model from a loaded bundle as of
 // `today` (for staleness).
 func Build(b *okf.Bundle, today string) *Model {
@@ -55,21 +84,8 @@ func Build(b *okf.Bundle, today string) *Model {
 			ID: c.ID, Title: title, Type: c.Type,
 			Tier: okf.TrustTier(c), Stale: okf.IsStale(c, today),
 		})
-		for _, l := range c.Links {
-			if l.Resolved && l.TargetID != "" {
-				m.Edges = append(m.Edges, Edge{From: c.ID, To: l.TargetID, Text: l.Text})
-			}
-		}
 	}
-	sort.Slice(m.Edges, func(i, j int) bool {
-		if m.Edges[i].From != m.Edges[j].From {
-			return m.Edges[i].From < m.Edges[j].From
-		}
-		if m.Edges[i].To != m.Edges[j].To {
-			return m.Edges[i].To < m.Edges[j].To
-		}
-		return m.Edges[i].Text < m.Edges[j].Text
-	})
+	m.Edges = EdgesFromConcepts(b.Concepts)
 	return m
 }
 
