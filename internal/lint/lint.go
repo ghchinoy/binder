@@ -63,24 +63,57 @@ func Lint(concepts []*okf.Concept, facts []convert.SourceFacts, today string) *R
 	// against its output set, which is what makes lint's "broken" == convert's
 	// "unresolved" (parity).
 	exists := make(map[string]bool, len(concepts))
+	// slugSets holds each concept's heading-slug set for anchor resolution, from
+	// the single pinned convention (okf.HeadingSlugs). Precomputed once so a
+	// concept that is the target of many #anchor links is slugged only once.
+	slugSets := make(map[string]map[string]bool, len(concepts))
 	for _, c := range concepts {
 		exists[c.ID] = true
+		set := make(map[string]bool)
+		for _, s := range okf.HeadingSlugs(c.Body) {
+			set[s] = true
+		}
+		slugSets[c.ID] = set
 	}
 
 	// Check 1 — broken links (shared linkcheck predicates, identical to review):
 	// a resolved link whose target concept is absent, an unresolved internal .md
-	// concept reference, or any residual [[...]] wikilink left in the body.
+	// concept reference, or any residual [[...]] wikilink left in the body. Plus
+	// anchors: a resolved cross-doc "foo.md#bar" whose target concept lacks the
+	// heading slug "bar", and a same-doc "#bar" whose own concept lacks it.
 	for _, c := range concepts {
 		for _, l := range c.Links {
 			var broken bool
 			switch {
 			case l.Resolved:
-				broken = !exists[l.TargetID]
+				switch {
+				case !exists[l.TargetID]:
+					broken = true // resolved shape, but no such concept
+				default:
+					// The .md resolved; if it carries a #fragment, the target concept
+					// must have that heading slug.
+					if frag := fragmentOf(l.RawTarget); frag != "" && !slugSets[l.TargetID][frag] {
+						broken = true
+					}
+				}
 			default:
 				broken = linkcheck.IsBrokenConceptRef(l.RawTarget)
 			}
 			if broken {
 				r.BrokenLinks = append(r.BrokenLinks, Finding{Concept: c.ID, Detail: l.RawTarget})
+			}
+		}
+		// Same-document anchors ("#bar") are left in place by convert and are not
+		// recorded as edges, so read them straight from the body via the shared
+		// markdown-link extractor (code-region-aware). A "#bar" whose own concept
+		// has no such heading slug is broken.
+		for _, ml := range okf.ExtractMarkdownLinks(c.Body) {
+			dest := strings.TrimSpace(ml.Dest)
+			if !strings.HasPrefix(dest, "#") {
+				continue
+			}
+			if frag := dest[1:]; frag != "" && !slugSets[c.ID][frag] {
+				r.BrokenLinks = append(r.BrokenLinks, Finding{Concept: c.ID, Detail: dest})
 			}
 		}
 		for _, target := range linkcheck.ResidualWikilinks(c.Body) {
@@ -144,6 +177,15 @@ func Lint(concepts []*okf.Concept, facts []convert.SourceFacts, today string) *R
 
 	r.sortAll()
 	return r
+}
+
+// fragmentOf returns the #fragment of a raw link target (the part after the
+// first '#'), or "" if it has none.
+func fragmentOf(target string) string {
+	if i := strings.IndexByte(target, '#'); i >= 0 {
+		return target[i+1:]
+	}
+	return ""
 }
 
 // sortAll orders every bucket deterministically: Finding slices by concept then

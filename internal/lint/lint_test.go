@@ -201,6 +201,33 @@ func equalStrings(a, b []string) bool {
 	return true
 }
 
+// TestLintAnchors: a broken same-doc anchor and a broken cross-doc anchor are
+// flagged; valid same-doc, duplicate-heading, and cross-doc anchors are not.
+func TestLintAnchors(t *testing.T) {
+	rep := lintCorpus(t, "../../testdata/corpus-lint-anchors")
+
+	want := []lint.Finding{
+		{Concept: "doc", Detail: "#missing"},
+		{Concept: "doc", Detail: "other.md#nope"},
+	}
+	if len(rep.BrokenLinks) != len(want) {
+		t.Fatalf("broken links = %+v, want %+v", rep.BrokenLinks, want)
+	}
+	for i, f := range rep.BrokenLinks {
+		if f != want[i] {
+			t.Errorf("broken[%d] = %+v, want %+v", i, f, want[i])
+		}
+	}
+	// Valid anchors must never be flagged.
+	for _, f := range rep.BrokenLinks {
+		for _, ok := range []string{"#section-one", "#section-one-1", "other.md#target-heading"} {
+			if f.Detail == ok {
+				t.Errorf("valid anchor %q wrongly flagged broken", ok)
+			}
+		}
+	}
+}
+
 // TestReportSlicesInitialized: every bucket is a non-nil slice so --json emits []
 // not null (#13).
 func TestReportSlicesInitialized(t *testing.T) {
