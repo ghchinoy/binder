@@ -1,0 +1,16 @@
+{
+  "name": "binder",
+  "metadata": {
+    "pluginRoot": "./plugins"
+  },
+  "plugins": [
+    {
+      "name": "okf-convert",
+      "source": "./plugins/okf-convert",
+      "description": "Drive the binder CLI to ingest a plain-markdown corpus into a conformant Open Knowledge Format (OKF) v0.2 bundle, with ingestion-analysis judgment over binder's structured --json output. Assumes binder is installed.",
+      "skills": [
+        "./plugins/okf-convert/skills/okf-convert"
+      ]
+    }
+  ]
+}
