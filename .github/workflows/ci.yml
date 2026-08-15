@@ -28,3 +28,22 @@ jobs:
 
       - name: Offline gate (gofmt + vet + test)
         run: make check
+
+  plugin-validate:
+    # Validates the okf-convert Agent Plugin/Skill bundle (plugins/,
+    # .claude-plugin/) against Agent Plugins 1.0.0. Independent of the Go gate;
+    # the packaging artifacts are inert to `go build` / `make check`.
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Validate plugin & skill (Agent Plugins 1.0.0)
+        run: |
+          chmod +x scripts/validate-plugin.sh
+          ./scripts/validate-plugin.sh

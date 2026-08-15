@@ -10,10 +10,9 @@ usage, and worked end-to-end examples.
 [Open Knowledge Format (OKF) v0.2](https://github.com/GoogleCloudPlatform/knowledge-catalog)
 bundle and reports on OKF bundles. It is **Phase 2 complete**.
 
-> This guide grows alongside each Phase 2.x feature. Sections for planned work
-> (`enrich`/`--in-place`, declarative trust flags, `config`) are stubbed under
-> [Roadmap & planned features](#roadmap--planned-features) and reference their
-> tracking issues.
+> This guide grows alongside each feature as it ships. Any remaining planned work
+> is listed under [Roadmap & planned features](#roadmap--planned-features), each
+> item linking to its tracking issue.
 
 ## Table of Contents
 
@@ -1241,9 +1240,10 @@ section for each as it lands; today each links to its tracking issue.
 
 ### Phase 2.x — `convert`/CLI enhancements
 
-- **In-place enrichment** — a `binder enrich` / `binder convert --in-place` mode
-  that injects missing required frontmatter into existing files without an
-  out-of-place output directory.
+- **In-place enrichment** — ✅ shipped: `binder enrich` injects the missing
+  required frontmatter (`type`/`title`/`generated`) into a source tree **in
+  place** — frontmatter-only, additive/never-clobber, idempotent, and
+  byte-faithful. See [`enrich`](#enrich).
   [#5](https://github.com/ghchinoy/binder/issues/5)
 - **`file://` edge resolution** — ✅ shipped: workspace-relative `file://` URIs
   that point inside the workspace root now resolve to internal concept edges. See
