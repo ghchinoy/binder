@@ -94,6 +94,7 @@ func Convert(src, out string, opts Options) (*Report, error) {
 			return nil, fmt.Errorf("convert: reading %q: %w", f.rel, err)
 		}
 		c, err := toConcept(opts.Codec, outRel, raw)
+		recovered := false
 		if err != nil {
 			// Never-reject (spec §11 / design-v2): a source file whose frontmatter
 			// will not parse must not abort the whole conversion, nor be dropped.
@@ -101,11 +102,20 @@ func Convert(src, out string, opts Options) (*Report, error) {
 			// (including the unparsed fence block) becomes the body — and report it,
 			// so the run completes and no content is lost.
 			c = plainConcept(opts.Codec, outRel, raw)
+			recovered = true
+			report.NumRecovered++
 			report.addWarning("%s: frontmatter did not parse (%v); converted as plain markdown (original text preserved in body)", f.rel, err)
 		}
 		typ := ensureType(c.Frontmatter, outRel, opts.TypeMap, opts.DefaultType)
 		ensureTitle(c.Frontmatter, outRel, c.Body)
 		c.Type = typ
+		if recovered {
+			// Stamp an explicit, persisted recovery marker (design-v2 §4.6). Both
+			// --report (the warning above) and `binder review` derive "recovered"
+			// from this single fact, so they can never disagree — and no fragile
+			// body-shape heuristic is needed.
+			okf.MarkRecovered(c.Frontmatter, "unparseable-frontmatter")
+		}
 
 		items = append(items, staged{src: f.rel, out: outRel, c: c})
 		entries = append(entries, indexEntry{srcRel: f.rel, outRel: outRel, title: conceptTitle(c)})

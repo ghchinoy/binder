@@ -63,6 +63,14 @@ in place **and** reported (spec §6/§11). These flags opt into the rest:
 Trust mapping is **off by default** and never fabricates provenance: with no
 mapping flags, frontmatter round-trips byte-for-byte.
 
+`convert` never rejects: a source file whose frontmatter will not parse (invalid
+YAML or an unterminated fence) is preserved losslessly as a plain-markdown concept
+— its original text, fence and all, becomes the body — stamped with a default
+`type` so the bundle stays conformant, and reported. Such a file carries a
+binder-namespaced marker `x_binder: { recovered: true, reason: ... }` in its
+emitted frontmatter; `binder review` reads that same marker (not a body-shape
+guess) to report recovered files, so `--report` and `review` always agree.
+
 ## Architecture
 
 - `internal/okf` — the OKF domain model plus two small interfaces, `Codec`

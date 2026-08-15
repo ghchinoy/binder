@@ -125,24 +125,33 @@ func TestReviewReportsResolvedButNonexistentTarget(t *testing.T) {
 }
 
 func TestReviewDetectsRecoveredFrontmatterBody(t *testing.T) {
-	// Closed fence with invalid YAML (recovered as body).
+	// Recovery is reported from the persisted marker `binder convert` stamps, NOT
+	// from body shape — so it is uniform across recovery kinds and never fires on a
+	// clean file whose body merely opens with a "---" rule and a colon-bearing line.
+
+	// Closed fence with invalid YAML (recovered as body): body kept verbatim + marker.
 	recovered := concept("bad", "Note", "Bad")
 	recovered.Body = "---\ntitle: thing: bad colon\ngoal: x\n---\n\n# Real\nBody.\n"
-	// UNTERMINATED fence (recovered as body) — must be surfaced too, uniformly.
+	okf.MarkRecovered(recovered.Frontmatter, "unparseable-frontmatter")
+	// UNTERMINATED fence (recovered as body) — same marker, surfaced uniformly.
 	unterm := concept("unterm", "Note", "Unterm")
 	unterm.Body = "---\ntitle: never closed\ntags: [a, b]\n\n# Heading After\n\nStill body.\n"
+	okf.MarkRecovered(unterm.Frontmatter, "unparseable-frontmatter")
+
 	clean := concept("ok", "Note", "OK")
 	clean.Body = "# OK\n\nJust markdown.\n"
-	// A plain "---" thematic break followed by prose is NOT recovered frontmatter.
-	thematic := concept("hr", "Note", "HR")
-	thematic.Body = "---\n\nA doc that opens with a thematic break, not frontmatter.\n"
+	// FALSE-POSITIVE GUARD: a cleanly-parsed file whose BODY opens with a "---"
+	// thematic break followed by a "key:"-looking callout. No marker => must NOT be
+	// reported as recovered. A body-shape heuristic would wrongly flag this.
+	callout := concept("callout", "Guide", "Deploy")
+	callout.Body = "---\n\nWarning: this API is deprecated.\n"
 
-	b := &okf.Bundle{Root: "/b", Concepts: []*okf.Concept{recovered, unterm, clean, thematic}}
+	b := &okf.Bundle{Root: "/b", Concepts: []*okf.Concept{recovered, unterm, clean, callout}}
 	r := Review(b, "2026-08-15")
-	// Concepts are visited sorted by ID: "bad" then "unterm".
+	// Concepts are visited sorted by ID: "bad" then "unterm"; "callout"/"ok" excluded.
 	if len(r.UnparsedFrontmatter) != 2 ||
 		r.UnparsedFrontmatter[0] != "bad" || r.UnparsedFrontmatter[1] != "unterm" {
-		t.Errorf("UnparsedFrontmatter = %v, want [bad unterm]", r.UnparsedFrontmatter)
+		t.Errorf("UnparsedFrontmatter = %v, want [bad unterm] (marker-driven, no false positive)", r.UnparsedFrontmatter)
 	}
 }
 

@@ -81,6 +81,15 @@ func TestConvertNeverRejectsUnparseableFrontmatter(t *testing.T) {
 				t.Error("recovered concept must carry a stamped type")
 			}
 
+			// The persisted recovery marker is present and re-reads as recovered —
+			// the single authoritative signal both --report and review key off.
+			if !okf.IsRecovered(c.Frontmatter) {
+				t.Errorf("recovered concept must carry the recovery marker:\n%s", got)
+			}
+			if rep.NumRecovered != 1 {
+				t.Errorf("NumRecovered = %d, want 1", rep.NumRecovered)
+			}
+
 			// Bundle is conformant after recovery.
 			res, err := validate.Bundle(out, native.New(), okf.SpecV02)
 			if err != nil {

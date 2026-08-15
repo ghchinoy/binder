@@ -70,6 +70,49 @@ func TestFMRefEdgeSurvivesReload(t *testing.T) {
 	}
 }
 
+// TestRecoveryReportAndReviewAgree proves the R1c-fp fix end-to-end: on a mixed
+// corpus, `binder convert`'s recovered count equals `binder review`'s recovered
+// count (both key off the persisted marker), and a cleanly-parsed file whose body
+// merely opens with a "---" rule + a "key:"-looking callout is NOT misreported.
+func TestRecoveryReportAndReviewAgree(t *testing.T) {
+	src := t.TempDir()
+	// Two genuine recoveries: closed-fence invalid YAML, and an unterminated fence.
+	writeFile(t, src, "invalid.md", "---\ntitle: a: b: c\ngoal: x: y\n---\n\n# Invalid\n\nBody.\n")
+	writeFile(t, src, "unterm.md", "---\ntitle: never closed\ntags: [a, b]\n\n# Unterminated\n\nBody.\n")
+	// Two clean files that must NOT be flagged as recovered.
+	writeFile(t, src, "clean.md", "---\ntype: Note\ntitle: Clean\n---\n\n# Clean\n")
+	writeFile(t, src, "callout.md", "---\ntype: Guide\ntitle: Deploy\n---\n\n---\n\nWarning: this API is deprecated.\n")
+
+	out := filepath.Join(t.TempDir(), "bundle")
+	rep, err := convert.Convert(src, out, convert.Options{
+		Codec: native.New(), Version: "0.1.0", Now: time.Unix(1700000000, 0),
+	})
+	if err != nil {
+		t.Fatalf("convert: %v", err)
+	}
+	if rep.NumRecovered != 2 {
+		t.Errorf("convert NumRecovered = %d, want 2", rep.NumRecovered)
+	}
+
+	b, err := bundle.Load(out, native.New())
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	r := review.Review(b, "2026-08-15")
+
+	// --report count == review count (same authoritative marker).
+	if len(r.UnparsedFrontmatter) != rep.NumRecovered {
+		t.Errorf("review recovered = %d, convert recovered = %d; must agree (marker: %v)",
+			len(r.UnparsedFrontmatter), rep.NumRecovered, r.UnparsedFrontmatter)
+	}
+	// The clean callout file (body "---" rule + "Warning:" line) is not flagged.
+	for _, id := range r.UnparsedFrontmatter {
+		if id == "callout" || id == "clean" {
+			t.Errorf("clean file %q wrongly reported as recovered: %v", id, r.UnparsedFrontmatter)
+		}
+	}
+}
+
 func writeFile(t *testing.T, root, rel, content string) {
 	t.Helper()
 	p := filepath.Join(root, filepath.FromSlash(rel))

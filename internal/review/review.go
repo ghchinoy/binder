@@ -48,11 +48,12 @@ type Report struct {
 	Stale       []string
 	Attested    []string
 	Unresolved  []Edge
-	// UnparsedFrontmatter lists concepts whose body still begins with a YAML
-	// frontmatter fence — the fingerprint of a file whose original frontmatter
-	// would not parse and was preserved as body by `binder convert` (never-reject,
-	// design-v2 §4). review surfaces the same fact the converter warned about, so
-	// it stays visible without the original --report.
+	// UnparsedFrontmatter lists concepts carrying the binder recovery marker
+	// (okf.RecoveryMarkerKey) — a file whose original frontmatter would not parse
+	// and was preserved as body by `binder convert` (never-reject, design-v2 §4.6).
+	// review reads the same persisted marker the converter stamped and warned
+	// about, so the two surfaces can never disagree and no body-shape heuristic
+	// (which cannot tell a recovered fence from a legit thematic break) is needed.
 	UnparsedFrontmatter []string
 	Concepts            []ConceptView
 }
@@ -118,7 +119,7 @@ func Review(b *okf.Bundle, today string) *Report {
 		if c.Trust.Attested {
 			r.Attested = append(r.Attested, c.ID)
 		}
-		if bodyOpensFrontmatterFence(c.Body) {
+		if okf.IsRecovered(c.Frontmatter) {
 			r.UnparsedFrontmatter = append(r.UnparsedFrontmatter, c.ID)
 		}
 		for _, l := range c.Links {
@@ -246,34 +247,6 @@ func residualWikilinks(body string) []string {
 		}
 	}
 	return out
-}
-
-// bodyOpensFrontmatterFence reports whether body begins with a recovered YAML
-// frontmatter block: a leading "---" fence line immediately followed by a
-// "key: value" mapping line. That shape is the fingerprint of an original
-// frontmatter block that `binder convert` could not parse and preserved as body —
-// whether the fence was later closed (invalid-YAML) or left unterminated. Real
-// frontmatter opens straight into a mapping, so requiring the first line after the
-// fence to be a mapping keeps a plain leading "---" thematic break (followed by a
-// blank line or prose) from being mistaken for recovered frontmatter.
-func bodyOpensFrontmatterFence(body string) bool {
-	s := strings.ReplaceAll(body, "\r\n", "\n")
-	s = strings.TrimLeft(s, "\n")
-	if !strings.HasPrefix(s, "---\n") {
-		return false
-	}
-	lines := strings.Split(strings.TrimPrefix(s, "---\n"), "\n")
-	return len(lines) > 0 && isMappingLine(lines[0])
-}
-
-// isMappingLine reports whether a line looks like a YAML "key: value" mapping.
-func isMappingLine(line string) bool {
-	t := strings.TrimSpace(line)
-	if t == "" || strings.HasPrefix(t, "#") || strings.HasPrefix(t, "-") {
-		return false
-	}
-	i := strings.IndexByte(t, ':')
-	return i > 0 // a non-empty key before a colon
 }
 
 func sortedKeys(m map[string]int) []string {

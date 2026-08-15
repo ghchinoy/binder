@@ -20,6 +20,7 @@ type Report struct {
 	NumLinks      int
 	NumResolved   int
 	NumUnresolved int
+	NumRecovered  int // files whose unparseable frontmatter was preserved as body (§4.6)
 	DryRun        bool
 }
 
@@ -67,6 +68,9 @@ func (r *Report) String() string {
 	fmt.Fprintf(&b, "  output: %s\n", r.Out)
 	fmt.Fprintf(&b, "  concepts: %d\n", r.NumConcepts)
 	fmt.Fprintf(&b, "  links: %d (resolved %d, unresolved %d)\n", r.NumLinks, r.NumResolved, r.NumUnresolved)
+	if r.NumRecovered > 0 {
+		fmt.Fprintf(&b, "  recovered as body (unparseable frontmatter): %d\n", r.NumRecovered)
+	}
 
 	concepts := append([]ConceptReport(nil), r.Concepts...)
 	sort.Slice(concepts, func(i, j int) bool { return concepts[i].RelPath < concepts[j].RelPath })
