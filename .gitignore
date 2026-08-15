@@ -1,0 +1,6 @@
+# Go
+/bin/
+/dist/
+*.test
+*.out
+# vendored deps kept in repo intentionally (see design-v2 §7)
