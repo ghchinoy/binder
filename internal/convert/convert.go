@@ -95,7 +95,13 @@ func Convert(src, out string, opts Options) (*Report, error) {
 		}
 		c, err := toConcept(opts.Codec, outRel, raw)
 		if err != nil {
-			return nil, fmt.Errorf("convert: parsing %q: %w", f.rel, err)
+			// Never-reject (spec §11 / design-v2): a source file whose frontmatter
+			// will not parse must not abort the whole conversion, nor be dropped.
+			// Preserve it losslessly as a plain-markdown concept — its raw text
+			// (including the unparsed fence block) becomes the body — and report it,
+			// so the run completes and no content is lost.
+			c = plainConcept(opts.Codec, outRel, raw)
+			report.addWarning("%s: frontmatter did not parse (%v); converted as plain markdown (original text preserved in body)", f.rel, err)
 		}
 		typ := ensureType(c.Frontmatter, outRel, opts.TypeMap, opts.DefaultType)
 		ensureTitle(c.Frontmatter, outRel, c.Body)
@@ -163,17 +169,31 @@ func Convert(src, out string, opts Options) (*Report, error) {
 // toConcept parses raw into a Concept. Files without frontmatter (the common
 // plain-markdown case) become a concept with an empty frontmatter block and the
 // whole file as the body.
+// toConcept parses raw into a Concept. A file that opens a "---" fence is routed
+// to the codec parser; any parse error it returns (invalid YAML in a closed
+// fence, or an unterminated fence) is a frontmatter-parse failure the caller
+// recovers from by preserving the file as plain markdown (never-reject). A file
+// with no opening fence is plain markdown and never errors here — so the only
+// error toConcept can return is a frontmatter-parse failure, never I/O.
 func toConcept(codec okf.Codec, outRel string, raw []byte) (*okf.Concept, error) {
-	if hasFrontmatter(raw) {
+	if opensFrontmatterFence(raw) {
 		return codec.ParseConcept(outRel, raw)
 	}
+	return plainConcept(codec, outRel, raw), nil
+}
+
+// plainConcept builds a concept from raw bytes treated as plain markdown: an
+// empty frontmatter block plus the whole file as the body. It is used for files
+// with no frontmatter and, as a never-reject fallback, for files whose
+// frontmatter will not parse (the raw text, fence and all, is preserved as body).
+func plainConcept(codec okf.Codec, outRel string, raw []byte) *okf.Concept {
 	id, _ := codec.ConceptIDFromRel(outRel)
 	return &okf.Concept{
 		ID:          id,
 		RelPath:     outRel,
 		Frontmatter: okf.NewOrderedMap(),
 		Body:        strings.ReplaceAll(string(raw), "\r\n", "\n"),
-	}, nil
+	}
 }
 
 // planOutputPaths maps each source path to its output path, renaming files whose

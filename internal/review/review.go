@@ -41,7 +41,13 @@ type Report struct {
 	Stale       []string
 	Attested    []string
 	Unresolved  []Edge
-	Concepts    []ConceptView
+	// UnparsedFrontmatter lists concepts whose body still begins with a YAML
+	// frontmatter fence — the fingerprint of a file whose original frontmatter
+	// would not parse and was preserved as body by `binder convert` (never-reject,
+	// design-v2 §4). review surfaces the same fact the converter warned about, so
+	// it stays visible without the original --report.
+	UnparsedFrontmatter []string
+	Concepts            []ConceptView
 }
 
 // Review computes the review report for a loaded bundle as of `today`
@@ -57,10 +63,20 @@ func Review(b *okf.Bundle, today string) *Report {
 		Tiers:       map[okf.Tier]int{},
 	}
 
+	// The set of concept IDs that actually exist. A link the codec marks
+	// "resolved" only means it is an in-bundle-shaped .md reference; it may still
+	// name no concept. Cross-checking against this set is what distinguishes a
+	// live edge from a broken concept reference (the same existence check the
+	// converter does against its output set).
+	exists := make(map[string]bool, len(b.Concepts))
+	for _, c := range b.Concepts {
+		exists[c.ID] = true
+	}
+
 	inbound := map[string]int{}
 	for _, c := range b.Concepts {
 		for _, l := range c.Links {
-			if l.Resolved && l.TargetID != c.ID {
+			if l.Resolved && exists[l.TargetID] && l.TargetID != c.ID {
 				inbound[l.TargetID]++
 			}
 		}
@@ -95,11 +111,25 @@ func Review(b *okf.Bundle, today string) *Report {
 		if c.Trust.Attested {
 			r.Attested = append(r.Attested, c.ID)
 		}
+		if bodyOpensFrontmatterFence(c.Body) {
+			r.UnparsedFrontmatter = append(r.UnparsedFrontmatter, c.ID)
+		}
 		for _, l := range c.Links {
-			// Only broken INTERNAL references are "unresolved" (§4.2). A legitimate
-			// external URL or a same-doc anchor is not a broken edge; reporting it
-			// would be noise and inconsistent with `binder convert`'s own report.
-			if !l.Resolved && !isExternalTarget(l.RawTarget) {
+			// A "broken" edge is a CONCEPT reference whose target concept does not
+			// exist, matching what `binder convert` tracks. The codec optimistically
+			// marks any in-bundle-shaped .md link resolved without checking the
+			// target exists, so existence is cross-checked here. External URLs,
+			// anchors, and links to non-concept files (assets, scripts) are not
+			// concept references and are never reported — that would be noise and
+			// inconsistent with the converter's own report.
+			broken := false
+			switch {
+			case l.Resolved:
+				broken = !exists[l.TargetID] // resolved shape, but no such concept
+			default:
+				broken = isBrokenConceptRef(l.RawTarget) // couldn't resolve an internal .md ref
+			}
+			if broken {
 				r.Unresolved = append(r.Unresolved, Edge{From: c.ID, RawTarget: l.RawTarget, Text: l.Text})
 			}
 		}
@@ -139,6 +169,10 @@ func (r *Report) String() string {
 	for _, id := range r.Attested {
 		fmt.Fprintf(&b, "    %s\n", id)
 	}
+	fmt.Fprintf(&b, "  unparsed frontmatter (recovered as body): %d\n", len(r.UnparsedFrontmatter))
+	for _, id := range r.UnparsedFrontmatter {
+		fmt.Fprintf(&b, "    %s\n", id)
+	}
 	fmt.Fprintf(&b, "  orphans (no inbound links): %d\n", len(r.Orphans))
 	for _, id := range r.Orphans {
 		fmt.Fprintf(&b, "    %s\n", id)
@@ -150,23 +184,64 @@ func (r *Report) String() string {
 	return b.String()
 }
 
-// isExternalTarget reports whether a raw link target is an external reference or
-// a same-document anchor rather than an internal concept link. These are never
-// "broken" edges: an unresolved external URL is expected, not a corpus error.
-func isExternalTarget(raw string) bool {
+// isBrokenConceptRef reports whether a raw, unresolved link target is an
+// internal CONCEPT reference — i.e. a bundle-relative .md target that names no
+// concept. External URLs, same-document anchors, and links to non-concept files
+// (assets, scripts, directories) are not concept references and so are never
+// "broken" edges, matching what `binder convert` tracks.
+func isBrokenConceptRef(raw string) bool {
 	t := strings.TrimSpace(raw)
 	if t == "" || strings.HasPrefix(t, "#") {
-		return true
+		return false
 	}
 	if strings.Contains(t, "://") {
-		return true
+		return false
 	}
 	for _, p := range []string{"mailto:", "tel:", "ftp:"} {
 		if strings.HasPrefix(t, p) {
-			return true
+			return false
+		}
+	}
+	// Only a .md target (ignoring any #fragment) is a concept reference.
+	if i := strings.IndexByte(t, '#'); i >= 0 {
+		t = t[:i]
+	}
+	return strings.HasSuffix(strings.ToLower(strings.TrimSpace(t)), ".md")
+}
+
+// bodyOpensFrontmatterFence reports whether body begins with a YAML frontmatter
+// fence: a leading "---" line, a later closing "---" line, and at least one
+// "key: value" mapping line between them. That shape is the fingerprint of an
+// original frontmatter block that `binder convert` could not parse and preserved
+// as body. Requiring a closing fence AND a mapping line keeps a plain leading
+// "---" thematic break from being mistaken for recovered frontmatter.
+func bodyOpensFrontmatterFence(body string) bool {
+	s := strings.ReplaceAll(body, "\r\n", "\n")
+	s = strings.TrimLeft(s, "\n")
+	if !strings.HasPrefix(s, "---\n") {
+		return false
+	}
+	lines := strings.Split(strings.TrimPrefix(s, "---\n"), "\n")
+	sawMapping := false
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "---" {
+			return sawMapping
+		}
+		if isMappingLine(line) {
+			sawMapping = true
 		}
 	}
 	return false
+}
+
+// isMappingLine reports whether a line looks like a YAML "key: value" mapping.
+func isMappingLine(line string) bool {
+	t := strings.TrimSpace(line)
+	if t == "" || strings.HasPrefix(t, "#") || strings.HasPrefix(t, "-") {
+		return false
+	}
+	i := strings.IndexByte(t, ':')
+	return i > 0 // a non-empty key before a colon
 }
 
 func sortedKeys(m map[string]int) []string {

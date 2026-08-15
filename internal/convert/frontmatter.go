@@ -25,6 +25,20 @@ func hasFrontmatter(raw []byte) bool {
 	return false
 }
 
+// opensFrontmatterFence reports whether raw begins with a "---" fence line, i.e.
+// the file INTENDS to carry frontmatter — regardless of whether that fence is
+// ever closed or the YAML between fences parses. It is deliberately more lenient
+// than hasFrontmatter: an opened-but-unterminated fence and an opened-but-invalid
+// fence both qualify, so the converter routes both to the codec parser and lets
+// its error drive the never-reject recover-as-body path (design-v2 §4 robustness).
+func opensFrontmatterFence(raw []byte) bool {
+	s := string(raw)
+	if strings.HasPrefix(s, "---\n") || strings.HasPrefix(s, "---\r\n") {
+		return true
+	}
+	return strings.TrimRight(s, "\r\n") == "---"
+}
+
 // ensureType applies the type precedence: existing (non-empty) → per-directory
 // --type-map → --default-type. It sets frontmatter["type"] and returns the value.
 func ensureType(fm *okf.OrderedMap, relPath string, typeMap map[string]string, defaultType string) string {

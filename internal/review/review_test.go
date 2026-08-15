@@ -93,17 +93,49 @@ func TestReviewStringIsDeterministic(t *testing.T) {
 	}
 }
 
-func TestReviewIgnoresExternalAndAnchorTargets(t *testing.T) {
+func TestReviewOnlyReportsBrokenConceptRefs(t *testing.T) {
 	c := concept("a", "Note", "A",
-		okf.Link{RawTarget: "https://example.com/x", Resolved: false},
-		okf.Link{RawTarget: "#section", Resolved: false},
-		okf.Link{RawTarget: "mailto:x@example.com", Resolved: false},
-		okf.Link{RawTarget: "missing.md", Resolved: false}, // the only real broken edge
+		okf.Link{RawTarget: "https://example.com/x", Resolved: false}, // external
+		okf.Link{RawTarget: "#section", Resolved: false},              // anchor
+		okf.Link{RawTarget: "mailto:x@example.com", Resolved: false},  // mailto
+		okf.Link{RawTarget: "assets/logo.png", Resolved: false},       // non-concept file
+		okf.Link{RawTarget: "scripts/run.sh", Resolved: false},        // non-concept file
+		okf.Link{RawTarget: "missing.md", Resolved: false},            // the only broken concept ref
+		okf.Link{RawTarget: "gone.md#h", Resolved: false},             // broken concept ref w/ fragment
 	)
 	b := &okf.Bundle{Root: "/b", Concepts: []*okf.Concept{c}}
 	r := Review(b, "2026-08-15")
-	if len(r.Unresolved) != 1 || r.Unresolved[0].RawTarget != "missing.md" {
-		t.Errorf("Unresolved = %+v, want only missing.md (externals/anchors filtered)", r.Unresolved)
+	if len(r.Unresolved) != 2 {
+		t.Fatalf("Unresolved = %+v, want 2 (missing.md, gone.md#h)", r.Unresolved)
+	}
+	if r.Unresolved[0].RawTarget != "gone.md#h" || r.Unresolved[1].RawTarget != "missing.md" {
+		t.Errorf("Unresolved = %+v, want the two .md refs (sorted)", r.Unresolved)
+	}
+}
+
+func TestReviewReportsResolvedButNonexistentTarget(t *testing.T) {
+	// The codec optimistically marks an in-bundle .md link resolved even if the
+	// target concept does not exist; review must catch it via existence check.
+	c := concept("a", "Note", "A", okf.Link{TargetID: "ghost", RawTarget: "ghost.md", Resolved: true})
+	b := &okf.Bundle{Root: "/b", Concepts: []*okf.Concept{c}}
+	r := Review(b, "2026-08-15")
+	if len(r.Unresolved) != 1 || r.Unresolved[0].RawTarget != "ghost.md" {
+		t.Errorf("Unresolved = %+v, want ghost.md (resolved shape, no such concept)", r.Unresolved)
+	}
+}
+
+func TestReviewDetectsRecoveredFrontmatterBody(t *testing.T) {
+	recovered := concept("bad", "Note", "Bad")
+	recovered.Body = "---\ntitle: thing: bad colon\ngoal: x\n---\n\n# Real\nBody.\n"
+	clean := concept("ok", "Note", "OK")
+	clean.Body = "# OK\n\nJust markdown.\n"
+	thematic := concept("hr", "Note", "HR")
+	thematic.Body = "---\n\nA doc that opens with a thematic break, not frontmatter.\n"
+
+	b := &okf.Bundle{Root: "/b", Concepts: []*okf.Concept{recovered, clean, thematic}}
+	r := Review(b, "2026-08-15")
+	if len(r.UnparsedFrontmatter) != 1 || r.UnparsedFrontmatter[0] != "bad" {
+		t.Errorf("UnparsedFrontmatter = %v, want [bad]", r.UnparsedFrontmatter)
 	}
 }
 
