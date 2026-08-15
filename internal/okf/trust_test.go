@@ -116,9 +116,96 @@ func TestValidateTrustIsAdvisoryOnly(t *testing.T) {
 }
 
 func TestValidateTrustCleanConcept(t *testing.T) {
-	fm := fmFrom("type", "Note", "generated", map[string]any{"by": "binder/0.1.0", "at": "2026-01-01T00:00:00Z"})
+	fm := fmFrom(
+		"type", "Note",
+		"generated", map[string]any{"by": "binder/0.1.0", "at": "2026-01-01T00:00:00Z"},
+		"verified", []any{map[string]any{"by": "human:alice", "at": "2026-02-01T09:00:00Z"}},
+		"status", "stable",
+		"stale_after", "2027-01-01",
+		"sources", []any{map[string]any{
+			"id": "s1", "resource": "https://x", "author": "team:finance", "last_modified": "2026-06-15",
+		}},
+		"usage_window", map[string]any{"from": "2026-06-01", "to": "2026-06-30"},
+	)
 	c := &Concept{ID: "c", Type: "Note", Frontmatter: fm, Trust: ProjectTrust(fm, "Note")}
 	if findings := ValidateTrust(c, SpecV02); len(findings) != 0 {
-		t.Fatalf("expected no findings, got %v", findings)
+		t.Fatalf("expected no findings on a well-formed concept, got %v", findings)
 	}
+}
+
+func TestIsValidActor(t *testing.T) {
+	valid := []string{"human:alice", "process:nightly", "team:finance", "reference_agent/gemini-2.5-pro", "binder/0.1.0"}
+	for _, a := range valid {
+		if !IsValidActor(a) {
+			t.Errorf("IsValidActor(%q) = false, want true", a)
+		}
+	}
+	invalid := []string{"", "human:", "alice", "just text", "no space/ok but has space", "/leading", "trailing/"}
+	for _, a := range invalid {
+		if IsValidActor(a) {
+			t.Errorf("IsValidActor(%q) = true, want false", a)
+		}
+	}
+}
+
+func TestIsValidISODates(t *testing.T) {
+	if !IsValidISODate("2026-12-31") {
+		t.Error("2026-12-31 should be a valid date")
+	}
+	if IsValidISODate("2026-13-40") || IsValidISODate("not-a-date") {
+		t.Error("bad dates should be invalid")
+	}
+	if !IsValidISODateTime("2026-06-30T14:00:00Z") {
+		t.Error("RFC3339 datetime should be valid")
+	}
+	if !IsValidISODateTime("2026-06-30") {
+		t.Error("date-only content stamp should be tolerated as a datetime")
+	}
+	if IsValidISODateTime("yesterday") {
+		t.Error("garbage datetime should be invalid")
+	}
+}
+
+func TestValidateTrustShapeAdvisories(t *testing.T) {
+	fm := fmFrom(
+		"type", "Metric",
+		"generated", map[string]any{"by": "not-an-actor", "at": "whenever"},
+		"verified", []any{map[string]any{"by": "alice", "at": "2026-01-01T00:00:00Z"}},
+		"status", "wip",
+		"stale_after", "31-12-2026",
+		"sources", []any{map[string]any{"id": "s1", "author": "somebody", "last_modified": "nope"}}, // missing resource
+		"usage_window", map[string]any{"from": "2026-06-01", "to": "later"},
+	)
+	c := &Concept{ID: "c", Type: "Metric", Frontmatter: fm, Trust: ProjectTrust(fm, "Metric")}
+	findings := ValidateTrust(c, SpecV02)
+	wantSubstrings := []string{
+		"generated.by", "generated.at", "verified[0].by", "status", "stale_after",
+		"sources[0] is missing required 'resource'", "sources[0].author", "sources[0].last_modified",
+		"usage_window.to",
+	}
+	joined := ""
+	for _, f := range findings {
+		if f.Severity != SeverityAdvisory {
+			t.Fatalf("all findings must be advisory, got %q", f.Severity)
+		}
+		joined += f.Message + "\n"
+	}
+	for _, want := range wantSubstrings {
+		if !contains(joined, want) {
+			t.Errorf("missing advisory containing %q; got:\n%s", want, joined)
+		}
+	}
+}
+
+func contains(haystack, needle string) bool {
+	return len(needle) == 0 || (len(haystack) >= len(needle) && indexOf(haystack, needle) >= 0)
+}
+
+func indexOf(s, sub string) int {
+	for i := 0; i+len(sub) <= len(s); i++ {
+		if s[i:i+len(sub)] == sub {
+			return i
+		}
+	}
+	return -1
 }
