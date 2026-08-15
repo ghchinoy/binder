@@ -73,6 +73,11 @@ make build        # -> bin/binder
 
 ## Usage
 
+> **Looking for the full reference?** Every command and flag, the OKF v0.2 output
+> layout, the complete trust vocabulary, the relationship-extraction rules,
+> malformed-input recovery, CI usage, and worked end-to-end examples live in the
+> **[user guide](docs/user_guide.md)**. This section is the quickstart.
+
 Convert a plain markdown corpus into an OKF v0.2 bundle:
 
 ```bash
@@ -203,9 +208,19 @@ verdicts in both directions and fails on any unexpected disagreement.
 
 The following are **planned, not yet shipped**:
 
-- An **MCP** (Model Context Protocol) server mode.
-- An **Agent Skill** and an **Agent-Plugin** bundle, layering agent tooling over
-  the same OKF core.
+- **Phase 3 — a community-core codec adapter** (e.g. `--okf-impl=community`): a
+  second `Codec` behind the existing interface, slotted in only after it is
+  confirmed byte-complete against the golden bundles.
+- **Phase 4 — an MCP** (Model Context Protocol) server mode (`binder mcp`),
+  exposing binder's *additive* convert/author/emit tools only (no read/search
+  re-implementation).
+- **Phase 5 — an Agent Skill** and **Phase 6 — an Agent-Plugin bundle**, layering
+  agent tooling over the same OKF core.
+
+Near-term `convert`/CLI enhancements are tracked as open issues (in-place
+enrichment, a standalone `lint`, declarative trust/lifecycle flags, `file://`
+edge resolution, grouped/backlink indexes, and `binder config`); the
+[user guide](docs/user_guide.md#roadmap--planned-features) maps each to its issue.
 
 Today's shipped surface is the `convert`, `validate`, `index`, `review`, and
 `graph` CLI described above.
