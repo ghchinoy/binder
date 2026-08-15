@@ -125,8 +125,15 @@ func Convert(src, out string, opts Options) (*Report, error) {
 		c.Body = body
 		links = append(links, wlinks...)
 
-		// Frontmatter-ref edges (§4.2): additive, original keys preserved.
-		links = append(links, frontmatterRefEdges(c.Frontmatter, it.out, opts.FMRefKeys, index)...)
+		// Frontmatter-ref edges (§4.2): additive, original frontmatter key/value
+		// preserved. Each resolved target is ALSO materialized as a real markdown
+		// link in a stable trailing "## Related" section so the relationship
+		// survives reload and is visible to `binder graph`/`binder review` — which
+		// rebuild edges only from persisted body links. Unresolved refs are omitted
+		// from the block and reported like any other unresolved edge.
+		fmEdges := frontmatterRefEdges(c.Frontmatter, it.out, opts.FMRefKeys, index)
+		links = append(links, fmEdges...)
+		c.Body = appendRelatedSection(c.Body, fmEdges)
 		c.Links = links
 
 		// Hashtags + frontmatter tags merge/dedupe (spec §4).

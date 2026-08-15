@@ -4,7 +4,7 @@ okf_version: "0.2"
 
 # Concepts
 
-* [Introduction #overview](intro.md)
+* [Introduction](intro.md)
 
 # Subdirectories
 

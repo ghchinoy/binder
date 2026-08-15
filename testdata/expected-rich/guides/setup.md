@@ -15,3 +15,7 @@ generated:
 # Setup Guide
 
 Steps to get started; see the [Orders Table](/tables/orders.md) for the schema. #install #setup
+
+## Related
+
+- [Orders Table](/tables/orders.md)

@@ -94,14 +94,44 @@ func ensureTitle(fm *okf.OrderedMap, relPath, body string) {
 }
 
 // firstH1 returns the text of the first level-1 ATX heading in body, or "".
+// Trailing "#tag" hashtag tokens are stripped: a heading like "# Introduction
+// #overview" yields the title "Introduction" while `#overview` is still merged
+// into tags (spec §4). The hashtag is a tag marker, not part of the title.
 func firstH1(body string) string {
 	for _, line := range strings.Split(body, "\n") {
 		t := strings.TrimSpace(line)
 		if strings.HasPrefix(t, "# ") {
-			return strings.TrimSpace(strings.TrimPrefix(t, "# "))
+			return stripTrailingHashtags(strings.TrimSpace(strings.TrimPrefix(t, "# ")))
 		}
 	}
 	return ""
+}
+
+// stripTrailingHashtags removes trailing "#tag" tokens from a derived title.
+// Only trailing tokens are removed, and only well-formed hashtags (a leading '#'
+// followed by tag characters), so a mid-title token or a word like "C#" is kept.
+func stripTrailingHashtags(s string) string {
+	fields := strings.Fields(s)
+	end := len(fields)
+	for end > 0 && isHashtagToken(fields[end-1]) {
+		end--
+	}
+	return strings.Join(fields[:end], " ")
+}
+
+// isHashtagToken reports whether f is a well-formed "#tag" token.
+func isHashtagToken(f string) bool {
+	if len(f) < 2 || f[0] != '#' {
+		return false
+	}
+	for _, r := range f[1:] {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-', r == '_':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // humanize turns a filename like "getting-started.md" into "Getting Started".

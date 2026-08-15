@@ -7,11 +7,18 @@ package review
 
 import (
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 
 	"github.com/ghchinoy/binder/internal/okf"
 )
+
+// wikilinkRE matches a residual wiki-style link left in a body: [[Target]] or
+// [[Target|alias]]. `binder convert` rewrites RESOLVED wikilinks to standard
+// markdown links, so any [[...]] surviving in a persisted body is by construction
+// an UNRESOLVED reference the read side must report (design-v2 §4.2).
+var wikilinkRE = regexp.MustCompile(`\[\[([^\[\]]+)\]\]`)
 
 // Edge is one unresolved link, reported with its source concept (§4.2).
 type Edge struct {
@@ -133,6 +140,13 @@ func Review(b *okf.Bundle, today string) *Report {
 				r.Unresolved = append(r.Unresolved, Edge{From: c.ID, RawTarget: l.RawTarget, Text: l.Text})
 			}
 		}
+		// Residual wikilinks: any [[...]] still in the body is an unresolved
+		// reference (resolved ones were rewritten to markdown links at convert time),
+		// but it is not a markdown link so the codec's LinkGraph never surfaces it.
+		// Scan the persisted body directly so `review` reports it (design-v2 §4.2).
+		for _, target := range residualWikilinks(c.Body) {
+			r.Unresolved = append(r.Unresolved, Edge{From: c.ID, RawTarget: "[[" + target + "]]", Text: target})
+		}
 	}
 
 	sort.Slice(r.Unresolved, func(i, j int) bool {
@@ -209,12 +223,39 @@ func isBrokenConceptRef(raw string) bool {
 	return strings.HasSuffix(strings.ToLower(strings.TrimSpace(t)), ".md")
 }
 
-// bodyOpensFrontmatterFence reports whether body begins with a YAML frontmatter
-// fence: a leading "---" line, a later closing "---" line, and at least one
-// "key: value" mapping line between them. That shape is the fingerprint of an
-// original frontmatter block that `binder convert` could not parse and preserved
-// as body. Requiring a closing fence AND a mapping line keeps a plain leading
-// "---" thematic break from being mistaken for recovered frontmatter.
+// residualWikilinks returns the targets of any [[...]] / [[...|alias]] wikilinks
+// left in body, excluding those inside code spans/blocks (matching the converter's
+// code-aware handling). By construction these are unresolved references.
+func residualWikilinks(body string) []string {
+	if !strings.Contains(body, "[[") {
+		return nil
+	}
+	code := okf.CodeRegions(body)
+	var out []string
+	for _, idx := range wikilinkRE.FindAllStringSubmatchIndex(body, -1) {
+		if okf.InCodeRegion(idx[0], code) {
+			continue
+		}
+		inner := body[idx[2]:idx[3]]
+		target := inner
+		if i := strings.IndexByte(inner, '|'); i >= 0 {
+			target = inner[:i]
+		}
+		if target = strings.TrimSpace(target); target != "" {
+			out = append(out, target)
+		}
+	}
+	return out
+}
+
+// bodyOpensFrontmatterFence reports whether body begins with a recovered YAML
+// frontmatter block: a leading "---" fence line immediately followed by a
+// "key: value" mapping line. That shape is the fingerprint of an original
+// frontmatter block that `binder convert` could not parse and preserved as body —
+// whether the fence was later closed (invalid-YAML) or left unterminated. Real
+// frontmatter opens straight into a mapping, so requiring the first line after the
+// fence to be a mapping keeps a plain leading "---" thematic break (followed by a
+// blank line or prose) from being mistaken for recovered frontmatter.
 func bodyOpensFrontmatterFence(body string) bool {
 	s := strings.ReplaceAll(body, "\r\n", "\n")
 	s = strings.TrimLeft(s, "\n")
@@ -222,16 +263,7 @@ func bodyOpensFrontmatterFence(body string) bool {
 		return false
 	}
 	lines := strings.Split(strings.TrimPrefix(s, "---\n"), "\n")
-	sawMapping := false
-	for _, line := range lines {
-		if strings.TrimSpace(line) == "---" {
-			return sawMapping
-		}
-		if isMappingLine(line) {
-			sawMapping = true
-		}
-	}
-	return false
+	return len(lines) > 0 && isMappingLine(lines[0])
 }
 
 // isMappingLine reports whether a line looks like a YAML "key: value" mapping.

@@ -125,17 +125,44 @@ func TestReviewReportsResolvedButNonexistentTarget(t *testing.T) {
 }
 
 func TestReviewDetectsRecoveredFrontmatterBody(t *testing.T) {
+	// Closed fence with invalid YAML (recovered as body).
 	recovered := concept("bad", "Note", "Bad")
 	recovered.Body = "---\ntitle: thing: bad colon\ngoal: x\n---\n\n# Real\nBody.\n"
+	// UNTERMINATED fence (recovered as body) — must be surfaced too, uniformly.
+	unterm := concept("unterm", "Note", "Unterm")
+	unterm.Body = "---\ntitle: never closed\ntags: [a, b]\n\n# Heading After\n\nStill body.\n"
 	clean := concept("ok", "Note", "OK")
 	clean.Body = "# OK\n\nJust markdown.\n"
+	// A plain "---" thematic break followed by prose is NOT recovered frontmatter.
 	thematic := concept("hr", "Note", "HR")
 	thematic.Body = "---\n\nA doc that opens with a thematic break, not frontmatter.\n"
 
-	b := &okf.Bundle{Root: "/b", Concepts: []*okf.Concept{recovered, clean, thematic}}
+	b := &okf.Bundle{Root: "/b", Concepts: []*okf.Concept{recovered, unterm, clean, thematic}}
 	r := Review(b, "2026-08-15")
-	if len(r.UnparsedFrontmatter) != 1 || r.UnparsedFrontmatter[0] != "bad" {
-		t.Errorf("UnparsedFrontmatter = %v, want [bad]", r.UnparsedFrontmatter)
+	// Concepts are visited sorted by ID: "bad" then "unterm".
+	if len(r.UnparsedFrontmatter) != 2 ||
+		r.UnparsedFrontmatter[0] != "bad" || r.UnparsedFrontmatter[1] != "unterm" {
+		t.Errorf("UnparsedFrontmatter = %v, want [bad unterm]", r.UnparsedFrontmatter)
+	}
+}
+
+func TestReviewReportsResidualWikilinkAsUnresolved(t *testing.T) {
+	// A [[...]] left in a persisted body is by construction unresolved: convert
+	// rewrites resolved wikilinks to markdown links and leaves only broken ones.
+	c := concept("a", "Note", "A")
+	c.Body = "# A\n\nSee [[Nonexistent Topic]] and [[Other|alias]].\n\n" +
+		"In code it is ignored: `[[Not A Link]]`.\n"
+	b := &okf.Bundle{Root: "/b", Concepts: []*okf.Concept{c}}
+	r := Review(b, "2026-08-15")
+	if len(r.Unresolved) != 2 {
+		t.Fatalf("Unresolved = %+v, want 2 residual wikilinks", r.Unresolved)
+	}
+	// Sorted by (from, raw target): [[Nonexistent Topic]] < [[Other]].
+	if r.Unresolved[0].RawTarget != "[[Nonexistent Topic]]" || r.Unresolved[1].RawTarget != "[[Other]]" {
+		t.Errorf("Unresolved = %+v, want the two residual wikilinks", r.Unresolved)
+	}
+	if !strings.Contains(r.String(), "unresolved links: 2") {
+		t.Errorf("review output should report 2 unresolved links:\n%s", r.String())
 	}
 }
 

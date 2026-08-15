@@ -1,6 +1,6 @@
 ---
 type: Note
-title: 'Introduction #overview'
+title: Introduction
 tags:
   - overview
   - data

@@ -44,6 +44,39 @@ func frontmatterRefEdges(fm *okf.OrderedMap, outRel string, keys []string, ix *c
 	return links
 }
 
+// appendRelatedSection materializes the RESOLVED frontmatter-ref edges as real
+// markdown links in a stable, clearly-delimited "## Related" section appended to
+// the body (design-v2 §4.2). The read side (`bundle.Load`) rebuilds edges only
+// from persisted body links, so without this an fm-ref edge would vanish on
+// reload and its target would be wrongly reported as an orphan. One link per
+// resolved target, de-duplicated, in edge order (configured key, then value).
+// Unresolved refs are omitted (they carry no target) and reported elsewhere. If
+// no ref resolved, the body is returned unchanged so files without fm-refs — and
+// re-conversion of the same source — stay byte-identical.
+func appendRelatedSection(body string, edges []okf.Link) string {
+	seen := map[string]bool{}
+	var items []string
+	for _, l := range edges {
+		if !l.Resolved || l.TargetID == "" || seen[l.TargetID] {
+			continue
+		}
+		seen[l.TargetID] = true
+		display := strings.TrimSpace(l.RawTarget)
+		if display == "" {
+			display = l.TargetID
+		}
+		items = append(items, "- ["+display+"](/"+l.TargetID+".md)")
+	}
+	if len(items) == 0 {
+		return body
+	}
+	b := strings.TrimRight(body, "\n")
+	if b != "" {
+		b += "\n\n"
+	}
+	return b + "## Related\n\n" + strings.Join(items, "\n") + "\n"
+}
+
 // refValues normalizes a frontmatter-ref value (scalar, list, or a wikilink-ish
 // "[[Target]]" scalar) to a slice of reference strings.
 func refValues(v any) []string {
