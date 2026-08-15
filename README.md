@@ -57,6 +57,9 @@ via `binder config`, and supports `--strict` CI gating.
   dot/json/graphml/html.
 - **`config`** shows the resolved effective configuration (viper-backed) and
   where each value came from (flag/env/file/default).
+- **`mcp`** runs binder as a stdio MCP server, exposing the additive verbs
+  (`convert`/`validate`/`review`/`lint`/`graph`) as MCP tools that return the same
+  `binder.report/v1` payloads as `--json` (see [MCP server](#mcp-server-binder-mcp)).
 
 `convert` can also declaratively stamp trust and lifecycle metadata across
 directory sections — `--status-map`, `--stale-after-map`, and `--verified-by`
@@ -94,9 +97,11 @@ make build        # -> bin/binder
 
 ## Usage
 
-> **Looking for the full reference?** Every command and flag, the OKF v0.2 output
-> layout, the complete trust vocabulary, the relationship-extraction rules,
-> malformed-input recovery, CI usage, and worked end-to-end examples live in the
+> **New to binder?** The **[tutorial](docs/tutorial.md)** is a hands-on,
+> runnable walkthrough: ingest an existing corpus, gate it in CI, then author and
+> stamp a fresh one. For the full reference (every command and flag, the OKF v0.2
+> output layout, the complete trust vocabulary, the relationship-extraction rules,
+> malformed-input recovery, CI usage, and worked end-to-end examples) see the
 > **[user guide](docs/user_guide.md)**. This section is the quickstart.
 
 Convert a plain markdown corpus into an OKF v0.2 bundle:
