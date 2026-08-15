@@ -22,6 +22,7 @@ func newConvertCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 		typeMapRaw    string
 		statusMapRaw  string
 		staleAfterRaw string
+		verifiedBy    string
 		fmRefKeysRaw  string
 		dryRun        bool
 		reportPath    string
@@ -68,6 +69,16 @@ func newConvertCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 			cfg.BindFlag(config.KeyDefaultType, cmd.Flags().Lookup("default-type"))
 			defaultType = cfg.GetString(config.KeyDefaultType)
 
+			// Resolve verified_by (flag > config default). Validate the effective
+			// actor with okf.IsValidActor (option (a)): an invalid value is a usage
+			// error (exit 2) listing the valid forms. The config default was already
+			// validated fail-fast at config-load; this catches a bad flag value.
+			cfg.BindFlag(config.KeyVerifiedBy, cmd.Flags().Lookup("verified-by"))
+			verifiedBy = cfg.GetString(config.KeyVerifiedBy)
+			if verifiedBy != "" && !okf.IsValidActor(verifiedBy) {
+				return config.InvalidActorError(verifiedBy)
+			}
+
 			opts := convert.Options{
 				Codec:         codec,
 				DefaultType:   defaultType,
@@ -75,6 +86,7 @@ func newConvertCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 				StatusMap:     statusMap,
 				StatusDefault: statusDefault,
 				StaleAfterMap: staleAfterMap,
+				VerifiedBy:    verifiedBy,
 				FMRefKeys:     convert.ParseFMRefKeys(fmRefKeysRaw),
 				Version:       Version,
 				Now:           resolveNow(),
@@ -118,6 +130,7 @@ func newConvertCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 	cmd.Flags().StringVar(&typeMapRaw, "type-map", "", "per-directory type overrides, e.g. \"docs=Guide,adr=Decision\"")
 	cmd.Flags().StringVar(&statusMapRaw, "status-map", "", "per-directory status, e.g. \"archive=deprecated,drafts=draft,default=active\" (set only when status absent)")
 	cmd.Flags().StringVar(&staleAfterRaw, "stale-after-map", "", "per-directory stale_after relative to now, e.g. \"07-benchmarks=+6m,legacy=+0d\" (grammar +Nd/+Nm/+Ny; set only when absent)")
+	cmd.Flags().StringVar(&verifiedBy, "verified-by", "", "actor to append as a verified stamp, e.g. \"human:ghchinoy\" or \"binder/0.1.0\" (defaults to config verified_by; "+config.ActorFormsHint+")")
 	cmd.Flags().StringVar(&fmRefKeysRaw, "fm-ref-keys", "", "frontmatter keys treated as relationship edges, e.g. \"related,parent\"")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "report what would be written without writing anything")
 	cmd.Flags().StringVar(&reportPath, "report", "", "also write the run report to this file")

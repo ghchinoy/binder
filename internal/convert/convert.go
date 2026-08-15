@@ -207,6 +207,9 @@ func Convert(src, out string, opts Options) (*Report, error) {
 		// Declarative lifecycle stamps (issue #7): status/stale_after per directory
 		// prefix, additive and set-when-absent; off by default → byte-identical.
 		applyLifecycleMaps(c, it.out, opts)
+		// Optional verified actorstamp (issue #7): appended (dedup by by,at) only
+		// when a --verified-by / config verified_by actor is configured.
+		applyVerifiedBy(c, opts)
 
 		stampGenerated(c.Frontmatter, opts.Version, opts.Now)
 		c.Trust = okf.ProjectTrust(c.Frontmatter, c.Type)
