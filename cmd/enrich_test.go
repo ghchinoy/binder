@@ -108,3 +108,23 @@ func TestEnrichStrictGatesOnSkipped(t *testing.T) {
 		t.Fatalf("--strict exit = %d, want %d (findings)", code, clijson.ExitFindings)
 	}
 }
+
+// TestEnrichInvalidVerifiedByExit2: a malformed --verified-by actor is a usage
+// error (exit 2), mirroring convert.
+func TestEnrichInvalidVerifiedByExit2(t *testing.T) {
+	t.Setenv("SOURCE_DATE_EPOCH", "1700000000")
+	src := enrichCorpus(t)
+	_, code := runCLI(t, "enrich", src, "--verified-by", "not-an-actor", "--dry-run")
+	if code != clijson.ExitUsage {
+		t.Fatalf("exit = %d, want %d (usage) for a bad --verified-by", code, clijson.ExitUsage)
+	}
+}
+
+// TestEnrichBadStatusMapExit2: a malformed --status-map is a usage error (exit 2).
+func TestEnrichBadStatusMapExit2(t *testing.T) {
+	src := enrichCorpus(t)
+	_, code := runCLI(t, "enrich", src, "--status-map", "no-equals-sign", "--dry-run")
+	if code != clijson.ExitUsage {
+		t.Fatalf("exit = %d, want %d (usage) for a bad --status-map", code, clijson.ExitUsage)
+	}
+}

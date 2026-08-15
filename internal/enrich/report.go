@@ -34,5 +34,8 @@ func (r *Report) String() string {
 			fmt.Fprintf(&b, "  skipped %s (%s)\n", f.Path, f.Reason)
 		}
 	}
+	for _, w := range r.Warnings {
+		fmt.Fprintf(&b, "  advisory: %s\n", w)
+	}
 	return b.String()
 }

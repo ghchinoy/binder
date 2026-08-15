@@ -66,3 +66,19 @@ func EnsureTitle(fm *okf.OrderedMap, relPath, body string) {
 func StampGenerated(fm *okf.OrderedMap, version string, now time.Time) {
 	stampGenerated(fm, version, now)
 }
+
+// ApplyLifecycleMaps sets status/stale_after from opts.StatusMap/StatusDefault/
+// StaleAfterMap matched against relPath's directory prefix, each set-when-absent.
+// Behavior is identical to the helper convert uses (#7 declarative injectors).
+func ApplyLifecycleMaps(c *okf.Concept, relPath string, opts Options) {
+	applyLifecycleMaps(c, relPath, opts)
+}
+
+// ApplyVerifiedBy appends a verified actorstamp for opts.VerifiedBy (dedup by
+// by,at), set-when-absent/idempotent. It returns an advisory (else "") when the
+// existing verified value is a spec-invalid scalar, which it preserves unchanged
+// rather than drop — the shared preserve-or-advise carry-forward fix. Behavior is
+// identical to the helper convert uses.
+func ApplyVerifiedBy(c *okf.Concept, opts Options) string {
+	return applyVerifiedBy(c, opts)
+}

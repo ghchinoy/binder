@@ -27,6 +27,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"time"
 
@@ -76,11 +77,17 @@ type Report struct {
 	NumUnchanged int          `json:"num_unchanged"`
 	NumSkipped   int          `json:"num_skipped"`
 	Files        []FileResult `json:"files"`
+	// Warnings holds advisory notes that are NOT per-file skips — currently the
+	// preserve-or-advise carry-forward notes for spec-invalid `verified` values
+	// (issue #7): the authored value is preserved unchanged and reported here
+	// rather than silently dropped. Each is "path: message". Initialized to [].
+	Warnings []string `json:"warnings"`
 }
 
-// NumFindings returns the count of advisory findings — the skipped files, the
-// only advisory enrich produces. Under --strict these gate (exit 1).
-func (r *Report) NumFindings() int { return r.NumSkipped }
+// NumFindings returns the count of advisory findings enrich produces: skipped
+// files (unparseable frontmatter) plus preserve-or-advise warnings. All are
+// advisory — the run always completes; under --strict they gate (exit 1).
+func (r *Report) NumFindings() int { return r.NumSkipped + len(r.Warnings) }
 
 // Enrich walks src and injects missing frontmatter into each non-reserved file
 // in place (unless opts.DryRun). It returns the run Report. A bad/unreadable src
@@ -115,9 +122,10 @@ func Enrich(src string, opts Options) (*Report, error) {
 	}
 
 	rep := &Report{
-		Src:    src,
-		DryRun: opts.DryRun,
-		Files:  []FileResult{},
+		Src:      src,
+		DryRun:   opts.DryRun,
+		Files:    []FileResult{},
+		Warnings: []string{},
 	}
 
 	codec := opts.Codec
@@ -133,11 +141,14 @@ func Enrich(src string, opts Options) (*Report, error) {
 			return nil, fmt.Errorf("enrich: reading %q: %w", f.Rel, rerr)
 		}
 
-		res, werr := enrichFile(codec, f, raw, opts)
+		res, advisory, werr := enrichFile(codec, f, raw, opts)
 		if werr != nil {
 			return nil, werr
 		}
 		rep.Files = append(rep.Files, res)
+		if advisory != "" {
+			rep.Warnings = append(rep.Warnings, fmt.Sprintf("%s: %s", f.Rel, advisory))
+		}
 		switch res.Status {
 		case StatusEnriched, StatusWouldEnrich:
 			rep.NumEnriched++
@@ -147,16 +158,17 @@ func Enrich(src string, opts Options) (*Report, error) {
 			rep.NumSkipped++
 		}
 	}
+	sort.Strings(rep.Warnings)
 
 	sort.Slice(rep.Files, func(i, j int) bool { return rep.Files[i].Path < rep.Files[j].Path })
 	return rep, nil
 }
 
 // enrichFile applies the injectors to one file and, unless dry-run, writes it
-// atomically when the frontmatter changed. It returns the file's result. A parse
-// failure yields a skipped result (never mutated); an IO write failure returns
-// an error (exit 3).
-func enrichFile(codec okf.Codec, f convert.SourceFile, raw []byte, opts Options) (FileResult, error) {
+// atomically when the frontmatter changed. It returns the file's result, an
+// advisory message (else ""), and an error. A parse failure yields a skipped
+// result (never mutated); an IO write failure returns an error (exit 3).
+func enrichFile(codec okf.Codec, f convert.SourceFile, raw []byte, opts Options) (FileResult, string, error) {
 	var c *okf.Concept
 	if convert.OpensFrontmatterFence(raw) {
 		parsed, perr := codec.ParseConcept(f.Rel, raw)
@@ -166,7 +178,7 @@ func enrichFile(codec okf.Codec, f convert.SourceFile, raw []byte, opts Options)
 				Path:   f.Rel,
 				Status: StatusSkipped,
 				Reason: fmt.Sprintf("unparseable frontmatter: %v", perr),
-			}, nil
+			}, "", nil
 		}
 		c = parsed
 	} else {
@@ -174,49 +186,99 @@ func enrichFile(codec okf.Codec, f convert.SourceFile, raw []byte, opts Options)
 		c = convert.PlainConcept(codec, f.Rel, raw)
 	}
 
-	before := c.Frontmatter.Keys()
+	// Snapshot the frontmatter (keys + deep-copied values) BEFORE injection so
+	// the change signal catches not only added keys but a modified value (e.g. a
+	// verified actorstamp appended to an existing list) — set-when-absent covers
+	// the rest, but --verified-by mutates an existing key in place.
+	before := snapshotFM(c.Frontmatter)
 
-	// Injectors — all set-when-absent, never clobber authored values.
+	// Injectors — all set-when-absent / never-clobber. Order mirrors convert.
 	convert.EnsureType(c.Frontmatter, f.Rel, opts.TypeMap, opts.DefaultType)
 	convert.EnsureTitle(c.Frontmatter, f.Rel, c.Body)
+	// #7 declarative injectors (off unless the corresponding option is set), plus
+	// the preserve-or-advise verified handling.
+	cOpts := convert.Options{
+		StatusMap:     opts.StatusMap,
+		StatusDefault: opts.StatusDefault,
+		StaleAfterMap: opts.StaleAfterMap,
+		VerifiedBy:    opts.VerifiedBy,
+		Now:           opts.Now,
+	}
+	convert.ApplyLifecycleMaps(c, f.Rel, cOpts)
+	advisory := convert.ApplyVerifiedBy(c, cOpts)
 	convert.StampGenerated(c.Frontmatter, opts.Version, opts.Now)
 
-	added := addedKeys(before, c.Frontmatter.Keys())
-	if len(added) == 0 {
-		// Nothing added → no write (no mtime/git churn).
-		return FileResult{Path: f.Rel, Status: StatusUnchanged}, nil
+	changed := changedKeys(before, c.Frontmatter)
+	if len(changed) == 0 {
+		// Nothing changed → no write (no mtime/git churn). An advisory (a
+		// preserved spec-invalid verified value) is still surfaced by the caller.
+		return FileResult{Path: f.Rel, Status: StatusUnchanged}, advisory, nil
 	}
 
 	if opts.DryRun {
-		return FileResult{Path: f.Rel, Status: StatusWouldEnrich, Added: added}, nil
+		return FileResult{Path: f.Rel, Status: StatusWouldEnrich, Added: changed}, advisory, nil
 	}
 
 	out, serr := codec.Serialize(c)
 	if serr != nil {
-		return FileResult{}, fmt.Errorf("enrich: serializing %q: %w", f.Rel, serr)
+		return FileResult{}, "", fmt.Errorf("enrich: serializing %q: %w", f.Rel, serr)
 	}
 	if err := atomicWrite(f.Abs, out); err != nil {
-		return FileResult{}, fmt.Errorf("enrich: writing %q: %w", f.Rel, err)
+		return FileResult{}, "", fmt.Errorf("enrich: writing %q: %w", f.Rel, err)
 	}
-	return FileResult{Path: f.Rel, Status: StatusEnriched, Added: added}, nil
+	return FileResult{Path: f.Rel, Status: StatusEnriched, Added: changed}, advisory, nil
 }
 
-// addedKeys returns the keys present in after but not before, sorted. Because
-// every injector is set-when-absent (never clobber), the added-key set is the
-// complete change signal: empty ⟺ the frontmatter is unchanged.
-func addedKeys(before, after []string) []string {
-	prior := make(map[string]bool, len(before))
-	for _, k := range before {
-		prior[k] = true
+// fmSnapshot captures a frontmatter's values by deep copy so a later comparison
+// detects in-place value changes (not just added keys).
+type fmSnapshot map[string]any
+
+// snapshotFM deep-copies every top-level value of fm so an injector that mutates
+// a value in place (e.g. appending to a verified list) is still detectable.
+func snapshotFM(fm *okf.OrderedMap) fmSnapshot {
+	s := make(fmSnapshot, fm.Len())
+	for _, k := range fm.Keys() {
+		v, _ := fm.Get(k)
+		s[k] = deepCopyValue(v)
 	}
-	var added []string
-	for _, k := range after {
-		if !prior[k] {
-			added = append(added, k)
+	return s
+}
+
+// changedKeys returns the keys whose value in fm differs from the snapshot (a
+// new key, or a modified value), sorted. Empty ⟺ the frontmatter is unchanged,
+// so it is the complete write/no-write signal AND the reported "added" set.
+func changedKeys(before fmSnapshot, fm *okf.OrderedMap) []string {
+	var changed []string
+	for _, k := range fm.Keys() {
+		v, _ := fm.Get(k)
+		old, existed := before[k]
+		if !existed || !reflect.DeepEqual(old, v) {
+			changed = append(changed, k)
 		}
 	}
-	sort.Strings(added)
-	return added
+	sort.Strings(changed)
+	return changed
+}
+
+// deepCopyValue recursively copies plain frontmatter values (maps, slices,
+// scalars) so a snapshot is immune to later in-place mutation.
+func deepCopyValue(v any) any {
+	switch t := v.(type) {
+	case map[string]any:
+		m := make(map[string]any, len(t))
+		for k, val := range t {
+			m[k] = deepCopyValue(val)
+		}
+		return m
+	case []any:
+		s := make([]any, len(t))
+		for i, val := range t {
+			s[i] = deepCopyValue(val)
+		}
+		return s
+	default:
+		return v
+	}
 }
 
 // atomicWrite writes data to a temp file in the target's directory, fsyncs it,

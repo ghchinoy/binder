@@ -314,6 +314,9 @@ func TestReportSlicesInitialized(t *testing.T) {
 	if rep.Files == nil {
 		t.Error("Files is nil; want initialized [] for empty-slice JSON policy")
 	}
+	if rep.Warnings == nil {
+		t.Error("Warnings is nil; want initialized [] for empty-slice JSON policy")
+	}
 	if rep.NumFiles != 0 || rep.NumFindings() != 0 {
 		t.Errorf("empty corpus: NumFiles=%d NumFindings=%d, want 0/0", rep.NumFiles, rep.NumFindings())
 	}
@@ -423,6 +426,114 @@ func TestAtomicWriteFailureLeavesOriginalIntact(t *testing.T) {
 	os.Chmod(dir, 0o755)
 	if got := read(t, p); got != orig {
 		t.Errorf("original file was modified after a failed write:\n%s", got)
+	}
+}
+
+// TestLifecycleInjectors: --status-map / --stale-after-map inject status and
+// stale_after by directory prefix, set-when-absent.
+func TestLifecycleInjectors(t *testing.T) {
+	src := t.TempDir()
+	writeFile(t, src, "archive/old.md", "---\ntype: Note\ntitle: Old\n---\n\n# Old\n\nBody.\n")
+
+	o := opts(src)
+	o.StatusMap = map[string]string{"archive": "deprecated"}
+	o.StaleAfterMap = map[string]string{"archive": "+0d"}
+	rep, err := enrich.Enrich(src, o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res := find(t, rep, "archive/old.md")
+	if res.Status != enrich.StatusEnriched {
+		t.Fatalf("status = %q, want enriched", res.Status)
+	}
+	got := read(t, filepath.Join(src, "archive", "old.md"))
+	if !bytes.Contains([]byte(got), []byte("status: deprecated")) {
+		t.Errorf("status not injected:\n%s", got)
+	}
+	if !bytes.Contains([]byte(got), []byte("stale_after:")) {
+		t.Errorf("stale_after not injected:\n%s", got)
+	}
+	// generated is the fixed date; +0d stale_after resolves to that date.
+	if !bytes.Contains([]byte(got), []byte("stale_after: \"2026-08-15\"")) &&
+		!bytes.Contains([]byte(got), []byte("stale_after: 2026-08-15")) {
+		t.Errorf("stale_after not resolved to opts.Now date:\n%s", got)
+	}
+}
+
+// TestVerifiedByAppendsDetectedAndWritten: --verified-by appends a stamp to an
+// EXISTING verified list — a value change of an existing key. The value-aware
+// change detection must see it and write the file (not report unchanged).
+func TestVerifiedByAppendsDetectedAndWritten(t *testing.T) {
+	src := t.TempDir()
+	doc := "---\ntype: Note\ntitle: A\ngenerated:\n  by: human:me\n  at: '2020-01-01T00:00:00Z'\n" +
+		"verified:\n  - by: process:old-bot\n    at: '2020-01-01T00:00:00Z'\n---\n\n# A\n\nBody.\n"
+	p := writeFile(t, src, "a.md", doc)
+
+	o := opts(src)
+	o.VerifiedBy = "human:ghchinoy"
+	rep, err := enrich.Enrich(src, o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res := find(t, rep, "a.md")
+	if res.Status != enrich.StatusEnriched {
+		t.Fatalf("status = %q, want enriched (verified append is a change)", res.Status)
+	}
+	containsVerified := false
+	for _, k := range res.Added {
+		if k == "verified" {
+			containsVerified = true
+		}
+	}
+	if !containsVerified {
+		t.Errorf("added = %v, want to include 'verified' (value changed)", res.Added)
+	}
+	got := read(t, p)
+	if !bytes.Contains([]byte(got), []byte("process:old-bot")) {
+		t.Errorf("prior verified stamp not preserved:\n%s", got)
+	}
+	if !bytes.Contains([]byte(got), []byte("human:ghchinoy")) {
+		t.Errorf("new verified stamp not appended:\n%s", got)
+	}
+
+	// Idempotent: a second run with the same clock dedups → unchanged, no write.
+	rep2, err := enrich.Enrich(src, o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if find(t, rep2, "a.md").Status != enrich.StatusUnchanged {
+		t.Errorf("verified append not idempotent on re-run")
+	}
+}
+
+// TestVerifiedByScalarPreservedAdvisory: a spec-invalid scalar verified value is
+// preserved unchanged and surfaced as an advisory finding (never dropped). It
+// gates under --strict via NumFindings but the file is not skipped.
+func TestVerifiedByScalarPreservedAdvisory(t *testing.T) {
+	src := t.TempDir()
+	// All required keys present so the ONLY potential change is verified.
+	doc := "---\ntype: Note\ntitle: A\ngenerated:\n  by: human:me\n  at: '2020-01-01T00:00:00Z'\n" +
+		"verified: reviewed by bob\n---\n\n# A\n\nBody.\n"
+	p := writeFile(t, src, "a.md", doc)
+
+	o := opts(src)
+	o.VerifiedBy = "human:ghchinoy"
+	rep, err := enrich.Enrich(src, o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rep.Warnings) != 1 {
+		t.Fatalf("Warnings = %v, want 1 preserve-or-advise finding", rep.Warnings)
+	}
+	if rep.NumFindings() != 1 {
+		t.Errorf("NumFindings = %d, want 1 (advisory counts)", rep.NumFindings())
+	}
+	// The authored scalar is preserved and no stamp appended → file unchanged.
+	if find(t, rep, "a.md").Status != enrich.StatusUnchanged {
+		t.Errorf("want unchanged (scalar preserved, nothing appended)")
+	}
+	if read(t, p) != doc {
+		t.Errorf("spec-invalid scalar verified value was mutated on disk:\n%s", read(t, p))
 	}
 }
 

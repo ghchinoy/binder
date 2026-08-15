@@ -75,6 +75,21 @@ func TestVerifiedByBareMappingNormalized(t *testing.T) {
 	}
 }
 
+func TestVerifiedByPreservesSpecInvalidScalar(t *testing.T) {
+	// A spec-invalid SCALAR verified value must be PRESERVED unchanged (never
+	// silently dropped) and reported via an advisory; no stamp is appended.
+	c := newConcept("")
+	c.Frontmatter.Set("verified", "reviewed by bob")
+	adv := applyVerifiedBy(c, Options{VerifiedBy: "human:ghchinoy", Now: fixedNow})
+	if adv == "" {
+		t.Fatal("expected an advisory for a spec-invalid scalar verified value")
+	}
+	v, _ := c.Frontmatter.Get("verified")
+	if s, _ := v.(string); s != "reviewed by bob" {
+		t.Errorf("authored scalar was not preserved: got %#v", v)
+	}
+}
+
 func TestVerifiedByTierDerived(t *testing.T) {
 	// A human: actor derives human-reviewed; a tool/process actor derives
 	// machine-confirmed. The tier is never stored, only computed.
