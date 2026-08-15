@@ -16,16 +16,17 @@ import (
 
 func newConvertCmd(codec okf.Codec) *cobra.Command {
 	var (
-		output       string
-		defaultType  string
-		typeMapRaw   string
-		fmRefKeysRaw string
-		dryRun       bool
-		reportPath   string
-		mapCitations bool
-		sourceKeys   string
-		mapDraft     bool
-		jsonOut      bool
+		output        string
+		defaultType   string
+		typeMapRaw    string
+		fmRefKeysRaw  string
+		dryRun        bool
+		reportPath    string
+		mapCitations  bool
+		sourceKeys    string
+		mapDraft      bool
+		jsonOut       bool
+		workspaceRoot string
 	)
 
 	cmd := &cobra.Command{
@@ -46,16 +47,17 @@ func newConvertCmd(codec okf.Codec) *cobra.Command {
 			}
 
 			opts := convert.Options{
-				Codec:        codec,
-				DefaultType:  defaultType,
-				TypeMap:      typeMap,
-				FMRefKeys:    convert.ParseFMRefKeys(fmRefKeysRaw),
-				Version:      Version,
-				Now:          resolveNow(),
-				DryRun:       dryRun,
-				MapCitations: mapCitations,
-				SourceKeys:   convert.ParseFMRefKeys(sourceKeys),
-				MapDraft:     mapDraft,
+				Codec:         codec,
+				DefaultType:   defaultType,
+				TypeMap:       typeMap,
+				FMRefKeys:     convert.ParseFMRefKeys(fmRefKeysRaw),
+				Version:       Version,
+				Now:           resolveNow(),
+				DryRun:        dryRun,
+				MapCitations:  mapCitations,
+				SourceKeys:    convert.ParseFMRefKeys(sourceKeys),
+				MapDraft:      mapDraft,
+				WorkspaceRoot: workspaceRoot,
 			}
 			report, err := convert.Convert(args[0], output, opts)
 			if err != nil {
@@ -92,6 +94,7 @@ func newConvertCmd(codec okf.Codec) *cobra.Command {
 	cmd.Flags().StringVar(&sourceKeys, "source-keys", "", "frontmatter keys to map into sources entries, e.g. \"source,author\"")
 	cmd.Flags().BoolVar(&mapDraft, "map-draft", false, "map a draft:true marker to status:draft when status is absent")
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "emit the run report as deterministic JSON (schema "+clijson.SchemaVersion+") instead of prose")
+	cmd.Flags().StringVar(&workspaceRoot, "workspace-root", "", "boundary within which file:// links resolve to internal edges (default: the <src> root)")
 	return cmd
 }
 

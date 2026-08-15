@@ -31,6 +31,12 @@ type Options struct {
 	Now         time.Time         // clock for generated.at; controls determinism
 	DryRun      bool              // when true, write nothing
 
+	// WorkspaceRoot bounds file:// URI resolution (issue #6). A file:// target
+	// whose absolute path falls inside this root is treated as an internal edge
+	// candidate; targets outside stay external. Defaults to the corpus <src>
+	// root. Relative values are resolved against the process working directory.
+	WorkspaceRoot string
+
 	// Trust-mapping options (design-v2 §3.2 / Phase-2 point 7). All are OFF by
 	// default and deterministic; binder never fabricates provenance.
 	MapCitations bool     // map a body "# Citations" list to sources entries
@@ -66,6 +72,23 @@ func Convert(src, out string, opts Options) (*Report, error) {
 	files, err := walkCorpus(src)
 	if err != nil {
 		return nil, fmt.Errorf("convert: walking source: %w", err)
+	}
+
+	// Absolute corpus source root and workspace boundary for file:// resolution
+	// (issue #6). WorkspaceRoot defaults to the corpus <src> root; both are made
+	// absolute and cleaned so path comparisons in rewriteLinks are unambiguous.
+	absSrc, err := filepath.Abs(src)
+	if err != nil {
+		return nil, fmt.Errorf("convert: resolving source path %q: %w", src, err)
+	}
+	absSrc = filepath.Clean(absSrc)
+	absWorkspace := absSrc
+	if ws := strings.TrimSpace(opts.WorkspaceRoot); ws != "" {
+		absWorkspace, err = filepath.Abs(ws)
+		if err != nil {
+			return nil, fmt.Errorf("convert: resolving workspace root %q: %w", ws, err)
+		}
+		absWorkspace = filepath.Clean(absWorkspace)
 	}
 
 	// Initialize the report slices so an empty run serializes to [] rather than
@@ -133,13 +156,19 @@ func Convert(src, out string, opts Options) (*Report, error) {
 
 	// Pass 2: extract every relationship signal, merge tags, map trust where
 	// configured, stamp provenance, and project the typed trust view.
+	resolver := &linkResolver{
+		srcToOut: srcToOut,
+		srcRoot:  absSrc,
+		wsRoot:   absWorkspace,
+		warn:     report.addWarning,
+	}
 	var concepts []*okf.Concept
 	for _, it := range items {
 		c := it.c
 
-		// Standard markdown links (P1) + wikilinks (P2), both rewritten to
-		// bundle-relative-absolute form; unresolved links left in place.
-		body, links := rewriteLinks(c.Body, it.src, srcToOut)
+		// Standard markdown links (P1, incl. file:// URIs) + wikilinks (P2), both
+		// rewritten to bundle-relative-absolute form; unresolved links left in place.
+		body, links := resolver.rewrite(c.Body, it.src)
 		body, wlinks := rewriteWikilinks(body, path.Dir(it.out), index)
 		c.Body = body
 		links = append(links, wlinks...)
