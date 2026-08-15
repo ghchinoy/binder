@@ -13,10 +13,10 @@ bundle, extracts every relationship signal (wikilinks, anchor links, frontmatter
 refs, hashtags), maps corpus-native provenance into the trust vocabulary,
 generates per-directory index navigation, validates bundles against the spec's
 §11 conformance rules, and preserves trust frontmatter byte-for-byte on
-round-trip. It also reports and visualizes a bundle (`review`, `graph`),
-declaratively stamps trust/lifecycle metadata (`--status-map`,
-`--stale-after-map`, `--verified-by`), is configurable via `binder config`, and
-supports `--strict` CI gating.
+round-trip. It also reports and visualizes a bundle (`review`, `graph`), lints a
+source corpus before conversion (`lint`), declaratively stamps trust/lifecycle
+metadata (`--status-map`, `--stale-after-map`, `--verified-by`), is configurable
+via `binder config`, and supports `--strict` CI gating.
 
 ## Table of Contents
 
@@ -44,6 +44,9 @@ supports `--strict` CI gating.
   can add a type-grouped `# Catalog` to the root index (`--group-by-type`).
 - **`review`** summarizes a bundle: concepts by type, trust tiers,
   stale/attested, orphans, and unresolved links.
+- **`lint`** reports source-corpus health *before* conversion (writes nothing):
+  broken links (incl. `#anchors`), missing titles, orphans, stale concepts, and
+  schema violations. `--strict` gives a non-zero CI gate.
 - **`graph`** exports the concept graph (edges = resolved links) as
   dot/json/graphml/html.
 - **`config`** shows the resolved effective configuration (viper-backed) and
@@ -129,6 +132,10 @@ binder index path/to/bundle --group-by-type --include-backlinks --include-graph
 # orphans, and broken internal links.
 binder review path/to/bundle
 
+# Lint a SOURCE corpus (before conversion, writes nothing): broken links
+# (incl. #anchors), missing titles, orphans, stale, schema violations.
+binder lint path/to/corpus
+
 # Export the concept graph (edges = resolved links).
 binder graph path/to/bundle --format dot   # dot|json|graphml|html
 ```
@@ -141,10 +148,10 @@ RESULT: conformant (OKF 0.2)
 
 ### Machine-readable output (`--json`) and exit codes
 
-`convert`, `validate`, `review`, and `graph` accept `--json` for scripting and CI.
-Prose is the default and is byte-unchanged when `--json` is absent.
+`convert`, `validate`, `review`, `lint`, and `graph` accept `--json` for scripting
+and CI. Prose is the default and is byte-unchanged when `--json` is absent.
 
-`convert`, `validate`, and `review` wrap their existing report in a thin,
+`convert`, `validate`, `review`, and `lint` wrap their existing report in a thin,
 deterministic envelope (schema `binder.report/v1`) — same field names every run,
 2-space indent, sorted keys, a trailing newline, and any `SOURCE_DATE_EPOCH`
 honoured, so two runs on the same input are byte-identical:
@@ -236,6 +243,64 @@ catalog and the graph can never disagree:
   * backlink: [Beta](/patterns/beta.md)
   * link: [Setup](/guides/setup.md)
 ```
+
+### Linting a source corpus (`binder lint`)
+
+`binder lint <corpus>` is a **read-only** pass over a **source markdown corpus**
+(it writes nothing) that reports five health checks. It completes the command
+triad — each surface is single-purpose:
+
+| Command | Input | Purpose |
+|---|---|---|
+| `binder validate <bundle>` | emitted bundle | spec §11 **hard conformance** (always gates) |
+| `binder review <bundle>` | emitted bundle | human **summary** (tiers, orphans, stale…) |
+| `binder lint <corpus>` | **source** corpus | **pre-conversion** source health, writes nothing |
+
+`lint` is distinct because it sees the corpus **as authored**: a missing title or
+a missing `type:` is invisible in a bundle because `convert` *defaults* them.
+`lint` reuses the exact converter pipeline (`convert.Analyze`) and the single
+resolved-edge definition, so its "broken link" is by construction the converter's
+"unresolved link" — no second resolver.
+
+The five checks:
+
+1. **Broken links** — an unresolved internal `.md` reference, a resolved link
+   whose target concept is absent, a residual `[[wikilink]]`, and a broken
+   **`#anchor`** (`foo.md#bar` whose target concept has no `bar` heading, or a
+   same-doc `#bar`). `Detail` is the raw target.
+2. **Missing titles** — no authored `title:` and no first-level (`# `) heading.
+3. **Orphans** — a concept with **0 inbound AND 0 outbound** resolved edges (a
+   truly disconnected node; stricter than `review`'s inbound-only orphan).
+4. **Stale** — `stale_after` reached as of `--today` (or `SOURCE_DATE_EPOCH`).
+5. **Schema violations** — a missing `type:` (`Detail: "missing type"`), or
+   invalid frontmatter recovered under never-reject (`Detail: "invalid
+   frontmatter: <err>"`).
+
+**Anchor slug convention (GitHub-style, pinned):** an `#anchor` matches a heading
+slugged by: lowercase; strip HTML tags; drop every character except `[a-z0-9]`,
+space, hyphen; convert spaces to hyphens; collapse repeated hyphens; and give
+duplicate headings the suffixes `-1`, `-2`, … in document order (so a second
+`## Notes` is `#notes-1`). Slugging is code-region-aware — a `# heading` inside a
+fenced code block is not a heading. This lives in `okf.HeadingSlugs`.
+
+All findings are **spec-tolerated advisories**, so bare `binder lint` always exits
+`0` (§11 hard conformance stays `binder validate`'s job over a bundle). `--strict`
+gates **exit 1** when any finding is present — the same shared contract as
+`convert`/`review`. The report is always emitted before the gate signals.
+
+```bash
+binder lint path/to/corpus            # report; exit 0 even with findings
+binder lint path/to/corpus --strict   # exit 1 if any finding (CI)
+binder lint path/to/corpus --json     # deterministic envelope, command:"lint"
+```
+
+| Flag | Default | Purpose |
+|---|---|---|
+| `--strict` | `false` | Gate (exit 1) when any finding is present; otherwise lint never gates. |
+| `--today` | now (or `SOURCE_DATE_EPOCH`) | Date (`YYYY-MM-DD`) used for staleness. |
+| `--json` | `false` | Emit the report as deterministic JSON (schema `binder.report/v1`, `command:"lint"`). |
+
+A bad or non-directory `<corpus>` path is a usage error (exit 2).
 
 ### Relationship & trust flags (`convert`)
 
@@ -404,13 +469,13 @@ The following are **planned, not yet shipped**:
   agent tooling over the same OKF core.
 
 Declarative trust/lifecycle flags (`--status-map`, `--stale-after-map`,
-`--verified-by`; #7), `binder config` (#10), and `--strict` mode have **shipped**
-(see above). Remaining near-term `convert`/CLI enhancements are tracked as open
-issues (in-place enrichment and a standalone `lint`); the
+`--verified-by`; #7), `binder config` (#10), the standalone `binder lint` (#8),
+and `--strict` mode have **shipped** (see above). Remaining near-term
+`convert`/CLI enhancements are tracked as open issues (in-place enrichment); the
 [user guide](docs/user_guide.md#roadmap--planned-features) maps each to its issue.
 
-Today's shipped surface is the `convert`, `validate`, `index`, `review`, `graph`,
-and `config` CLI described above.
+Today's shipped surface is the `convert`, `validate`, `index`, `review`, `lint`,
+`graph`, and `config` CLI described above.
 
 ## Contributing
 
