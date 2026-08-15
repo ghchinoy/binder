@@ -67,7 +67,7 @@ func Convert(src, out string, opts Options) (*Report, error) {
 	// are never dropped (spec §3.1).
 	srcToOut, renameWarnings := planOutputPaths(files, opts.Codec)
 	for _, w := range renameWarnings {
-		report.Warnings = append(report.Warnings, w)
+		report.addWarning("%s", w)
 	}
 
 	var concepts []*okf.Concept

@@ -1,8 +1,9 @@
 package okf
 
 // Codec parses and serializes OKF concept documents and maps between
-// bundle-relative paths and concept IDs. Implementations (factileadapter today,
-// native later) satisfy this interface; the converter and CLI depend only on it.
+// bundle-relative paths and concept IDs. The native codec (internal/okf/native)
+// is binder's sole/default implementation; the converter and CLI depend only on
+// this interface, leaving a community-adapter slot open behind it.
 type Codec interface {
 	// ParseConcept splits frontmatter/body for the file at relPath, preserving
 	// key order and unknown keys, maps RelPath→ConceptID, and projects

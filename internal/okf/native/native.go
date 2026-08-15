@@ -9,10 +9,14 @@
 // against real-world YAML (the check that ruled factile out of Phase 1).
 //
 // Frontmatter fidelity (design-v2 §3.2 — byte-faithful round-trip): parsing
-// preserves every key/value and the top-level key order; unmodified frontmatter
+// preserves every key/value and the top-level key order. Unmodified frontmatter
 // is re-emitted from the original source bytes verbatim, so nested-mapping key
-// order and scalar quoting/folding style survive exactly. Only frontmatter the
-// converter actually changed is re-encoded, deterministically.
+// order and scalar quoting/folding style survive exactly. When the converter
+// changes or adds a TOP-LEVEL key (e.g. a `generated` stamp), the mapping is
+// rebuilt from the original order-preserving *yaml.Node: every unchanged
+// top-level key reuses its source subtree verbatim, so nested-map key order and
+// list-item order are preserved at every level; only the added/changed values
+// are encoded fresh, deterministically.
 package native
 
 import (
@@ -94,16 +98,54 @@ func (c *Codec) Serialize(con *okf.Concept) ([]byte, error) {
 }
 
 func (c *Codec) encodeFrontmatter(con *okf.Concept) ([]byte, error) {
-	// Fast path: if the frontmatter is byte-for-byte reproducible from the
-	// original source (nothing the converter touched changed it), emit it
-	// verbatim so nested order and scalar style are preserved exactly.
-	if len(con.OriginalFrontmatter) > 0 {
-		orig, err := parseFrontmatter(string(con.OriginalFrontmatter))
-		if err == nil && orderedMapEqual(orig, con.Frontmatter) {
-			return con.OriginalFrontmatter, nil
-		}
+	// No source frontmatter (converter-synthesised concept): encode the ordered
+	// map deterministically.
+	if len(con.OriginalFrontmatter) == 0 {
+		return encodeOrderedMap(con.Frontmatter)
 	}
-	return encodeOrderedMap(con.Frontmatter)
+
+	// Re-parse the original block to its order-preserving *yaml.Node tree (plus a
+	// plain-value OrderedMap for equality checks). If it is no longer a mapping we
+	// can round-trip, fall back to a clean encode.
+	origRoot, origOM, err := parseFrontmatterNode(string(con.OriginalFrontmatter))
+	if err != nil {
+		return encodeOrderedMap(con.Frontmatter)
+	}
+
+	// Fast path: nothing the converter touched changed the frontmatter — emit the
+	// original bytes verbatim, so scalar quoting/folding style is preserved too.
+	if orderedMapEqual(origOM, con.Frontmatter) {
+		return con.OriginalFrontmatter, nil
+	}
+
+	// Something changed at the TOP level (e.g. a synthesised `generated` stamp, a
+	// defaulted `type`/`title`). Rebuild the mapping node, but for every top-level
+	// key whose value is unchanged reuse the ORIGINAL value node verbatim: a
+	// yaml.Node preserves child order at every level, so nested maps and list
+	// items keep their source order even as we add a top-level key. Only
+	// added/changed top-level values are encoded fresh. This is the mechanism
+	// design-v2 §3.2 specifies — byte-faithful nested/list order, not a
+	// decode→re-encode that alphabetises nested keys.
+	origVals := topLevelNodes(origRoot)
+	root := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+	for _, k := range con.Frontmatter.Keys() {
+		v, _ := con.Frontmatter.Get(k)
+		keyNode := &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: k}
+		var valNode *yaml.Node
+		if orig, ok := origVals[k]; ok {
+			if ov, had := origOM.Get(k); had && reflect.DeepEqual(ov, v) {
+				valNode = orig // unchanged: reuse the source subtree (order + style)
+			}
+		}
+		if valNode == nil {
+			valNode = &yaml.Node{}
+			if err := valNode.Encode(v); err != nil {
+				return nil, fmt.Errorf("encode frontmatter key %q: %w", k, err)
+			}
+		}
+		root.Content = append(root.Content, keyNode, valNode)
+	}
+	return encodeNode(root)
 }
 
 // ConceptIDFromRel maps a bundle-relative path to a concept ID (path minus
@@ -226,26 +268,47 @@ func splitFrontmatter(text string) (fmText, body string, err error) {
 // parseFrontmatter parses a YAML frontmatter block into an OrderedMap, keeping
 // the top-level key order from the source. An empty block yields an empty map.
 func parseFrontmatter(fmText string) (*okf.OrderedMap, error) {
-	m := okf.NewOrderedMap()
 	if strings.TrimSpace(fmText) == "" {
-		return m, nil
+		return okf.NewOrderedMap(), nil
 	}
+	_, m, err := parseFrontmatterNode(fmText)
+	if err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+// parseFrontmatterNode parses a YAML frontmatter block into both its root
+// mapping *yaml.Node (order- and style-preserving, at every nesting level) and
+// an OrderedMap of plain values (for cheap top-level equality checks). It is the
+// order-preserving representation design-v2 §3.2 relies on.
+func parseFrontmatterNode(fmText string) (*yaml.Node, *okf.OrderedMap, error) {
+	m := okf.NewOrderedMap()
 	var doc yaml.Node
 	if err := yaml.Unmarshal([]byte(fmText), &doc); err != nil {
-		return nil, fmt.Errorf("invalid frontmatter: %w", err)
+		return nil, nil, fmt.Errorf("invalid frontmatter: %w", err)
 	}
+	empty := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
 	if len(doc.Content) == 0 {
-		return m, nil
+		return empty, m, nil
 	}
 	root := doc.Content[0]
 	if root.Kind != yaml.MappingNode {
-		return nil, fmt.Errorf("invalid frontmatter: expected a mapping at the top level")
+		return nil, nil, fmt.Errorf("invalid frontmatter: expected a mapping at the top level")
 	}
 	for i := 0; i+1 < len(root.Content); i += 2 {
-		key := root.Content[i].Value
-		m.Set(key, nodeToValue(root.Content[i+1]))
+		m.Set(root.Content[i].Value, nodeToValue(root.Content[i+1]))
 	}
-	return m, nil
+	return root, m, nil
+}
+
+// topLevelNodes indexes a mapping node's top-level keys to their value nodes.
+func topLevelNodes(root *yaml.Node) map[string]*yaml.Node {
+	out := make(map[string]*yaml.Node, len(root.Content)/2)
+	for i := 0; i+1 < len(root.Content); i += 2 {
+		out[root.Content[i].Value] = root.Content[i+1]
+	}
+	return out
 }
 
 // nodeToValue converts a yaml.Node to a plain Go value (map[string]any, []any,
@@ -315,6 +378,11 @@ func encodeOrderedMap(m *okf.OrderedMap) ([]byte, error) {
 		}
 		root.Content = append(root.Content, keyNode, valNode)
 	}
+	return encodeNode(root)
+}
+
+// encodeNode renders a yaml.Node with a stable 2-space indent.
+func encodeNode(root *yaml.Node) ([]byte, error) {
 	var buf bytes.Buffer
 	enc := yaml.NewEncoder(&buf)
 	enc.SetIndent(2)
