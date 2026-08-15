@@ -23,6 +23,7 @@ via `binder config`, and supports `--strict` CI gating.
 - [What it does](#what-it-does)
 - [Installation](#installation)
 - [Usage](#usage)
+- [Agent Skill / Plugin](#agent-skill--plugin)
 - [How it works](#how-it-works)
 - [Development](#development)
 - [Roadmap](#roadmap)
@@ -493,6 +494,56 @@ YAML or an unterminated fence) is preserved losslessly as a plain-markdown conce
 binder-namespaced marker `x_binder: { recovered: true, reason: ... }` in its
 emitted frontmatter; `binder review` reads that same marker (not a body-shape
 guess) to report recovered files, so `--report` and `review` always agree.
+
+## Agent Skill / Plugin
+
+binder ships an **Agent Plugin**, `okf-convert`, that teaches an AI agent to
+*drive* binder — to ingest a plain-markdown corpus into a conformant OKF v0.2
+bundle by reasoning over binder's `--json` output, with the ingestion-analysis
+judgment the deterministic CLI cannot encode (flag-choice triage, the
+`enrich`/`lint` remediation loop, and the never-fabricate-trust discipline). It
+lives in this repo under [`plugins/okf-convert/`](plugins/okf-convert/) and is
+standalone-installable.
+
+**Install** (in a plugin-aware host such as Claude Code):
+
+```text
+/plugin marketplace add ghchinoy/binder
+/plugin install okf-convert
+```
+
+This resolves binder's self-hosted marketplace
+([`.claude-plugin/marketplace.json`](.claude-plugin/marketplace.json)) and the
+`okf-convert` skill. The plugin **assumes the `binder` binary is installed** (see
+[Installation](#installation)) — it drives the CLI, it does not embed it.
+
+**Usage walkthrough.** A tiny sample corpus ships at
+[`plugins/okf-convert/skills/okf-convert/assets/sample-corpus/`](plugins/okf-convert/skills/okf-convert/assets/sample-corpus/)
+with three deliberate triage cases (an unresolved link, a missing-title file, a
+no-frontmatter file). Following the skill, an agent drives:
+
+```bash
+cd plugins/okf-convert/skills/okf-convert/assets/sample-corpus
+
+# 3. Dry-run triage — reason over structured output, never scrape prose
+binder convert . --dry-run --json | jq '.result | {num_concepts, num_unresolved, num_recovered}'
+binder lint . --json | jq '.result | {broken_links, missing_titles, schema_violations}'
+
+# 4. Remediate the source frontmatter (additive, byte-faithful; preview first)
+binder enrich . --dry-run --json | jq '.result.files'
+
+# 5. Convert and validate for §11 conformance
+binder convert . -o /tmp/sample-bundle --json | jq '.result.num_concepts'
+binder validate /tmp/sample-bundle --json | jq '.result.findings'   # [] ⇒ conformant (exit 0)
+```
+
+The plugin's boundary is deliberate: it is the **binder-driven** ingestion
+surface. For authoring or validating a *single* bundle by hand with no binaries,
+use the tool-agnostic `okf-author` / `okf-validate` skills in
+[`ghchinoy/agent-skills`](https://github.com/ghchinoy/agent-skills). The bundle
+is validated in CI against Agent Plugins 1.0.0 by
+[`scripts/validate-plugin.sh`](scripts/validate-plugin.sh) (the `plugin-validate`
+job), independent of the Go gate.
 
 ## How it works
 

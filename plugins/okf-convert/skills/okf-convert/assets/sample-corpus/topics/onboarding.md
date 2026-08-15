@@ -11,4 +11,8 @@ A short checklist for a new engineer's first week.
 
 1. Get access to the repositories.
 2. Read the [architecture overview](/topics/architecture.md).
-3. Ship a small change end to end.
+3. Follow the [deployment runbook](/topics/deploy.md) for your first release.
+4. Ship a small change end to end.
+
+> The link to the deployment runbook is **unresolved** — that concept is not yet
+> written. Broken links are legal in OKF; this one exercises the triage step.

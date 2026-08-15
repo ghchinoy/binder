@@ -36,23 +36,43 @@ drive binder you must hold the same line:
 - Do **not** write a credibility score or trust *tier* into any concept — tiers
   are *derived* on read, never stored.
 
-Propose trust to the user; defer all stamping to deterministic binder. (Fuller
-treatment lands in `references/trust-discipline.md`.)
+Propose trust to the user; defer all stamping to deterministic binder. The full
+treatment — including the `--verified-by` guardrail — is in
+[`references/trust-discipline.md`](references/trust-discipline.md), loaded at
+step 6.
+
+## Load these when you need them (progressive disclosure)
+
+Don't pull these into context up front — open each when the step calls for it:
+
+- [`references/binder-json-contract.md`](references/binder-json-contract.md) — the
+  exact `--json` envelope, exit codes, and every command's `result` shape with
+  `jq` examples. Load whenever you parse binder output.
+- [`references/ingestion-workflow.md`](references/ingestion-workflow.md) — the
+  pre-convert flag-choice triage, the `enrich`/`lint` remediation loop, and the
+  accept-vs-remediate decision table. Load for steps 2–5.
+- [`references/trust-discipline.md`](references/trust-discipline.md) — the
+  never-fabricate-trust discipline, derive-tiers rule, and the `--verified-by`
+  guardrail, with a by-name pointer to Layer A's `trust-vocabulary.md`. Load for
+  step 6.
 
 ## The binder JSON contract (what you parse)
 
-Every binder command accepts `--json` and prints one deterministic envelope:
+Every binder command accepts `--json`. `convert`, `enrich`, `validate`, `review`,
+and `lint` print one deterministic envelope:
 
 ```json
 { "binder": "binder/0.1.0", "command": "convert",
   "schema": "binder.report/v1", "result": { } }
 ```
 
-Reason over `.result` with `jq`; never parse the human prose. Exit codes are a
-4-value contract: **0** ok · **1** findings/gate tripped · **2** usage error ·
-**3** I/O error.
+Reason over `.result` with `jq`; never parse the human prose. Two exceptions:
+`graph --json` emits the **raw** `{nodes,edges}` export (not the envelope), and
+`config --json` uses schema `binder.config/v1`. Exit codes are a 4-value
+contract: **0** ok · **1** findings/gate tripped · **2** usage error · **3** I/O
+error. Full shapes: [`references/binder-json-contract.md`](references/binder-json-contract.md).
 
-## Procedure (minimal end-to-end path)
+## Procedure (the 7-step ingestion loop)
 
 ### 1. Detect binder and confirm the contract
 
@@ -65,50 +85,92 @@ If binder is **absent**, tell the user to install it — do **not** fake a
 conversion. (For by-hand single-bundle authoring with no binary, hand off to the
 `okf-author` skill.)
 
-### 2. Dry-run and read the structured triage
+### 2. Pre-convert triage — choose the flags (judgment)
 
-Never write a bundle blind. Run a dry-run first and reason over the report:
+The converter cannot infer your corpus's conventions; you must decide. Inspect
+the tree and pick the flags — all real (`binder convert --help`):
+
+- **Types:** `--default-type` (fallback) and `--type-map "docs=Guide,adr=Decision"`
+  (per-directory) so every concept gets a non-empty `type`.
+- **Edges:** `--fm-ref-keys "related,parent"` for frontmatter keys that are edges;
+  `--workspace-root` for the `file://` resolution boundary.
+- **Provenance:** `--source-keys`, `--map-citations` — map only *real* provenance
+  (see step 6 first).
+- **Lifecycle:** `--map-draft`, `--status-map`, `--stale-after-map` (set only when
+  absent).
+
+Full flag-choice triage: [`references/ingestion-workflow.md`](references/ingestion-workflow.md) §A.
+
+### 3. Dry-run and read the structured triage
+
+Never write a bundle blind. Dry-run writes nothing; reason over the report:
 
 ```bash
 binder convert <corpus> --dry-run --json > triage.json
 jq '.result | {num_concepts, num_links, num_unresolved, num_recovered}' triage.json
 jq '.result.unresolved' triage.json   # links that will not resolve
 jq '.result.warnings'   triage.json   # recovered/unparseable frontmatter, etc.
+binder lint <corpus> --json | jq '.result'   # corpus-as-authored: missing type/title, orphans
 ```
 
-Decide **remediate-source vs accept** *before* writing:
+Decide **remediate-source vs accept** *before* writing. Broken links and missing
+optional fields are **legal** — fix only what is genuinely wrong. Decision table:
+[`references/ingestion-workflow.md`](references/ingestion-workflow.md) §B.
 
-- **Unresolved links** — a real broken link in the source? Fix the source. A
-  legal link to not-yet-written knowledge? Accept it (broken links are legal in
-  OKF).
-- **Recovered frontmatter** (`num_recovered` > 0) — files whose frontmatter did
-  not parse were recovered as body. Inspect and fix the source frontmatter if
-  the loss matters.
-- **Type distribution** — every concept needs a non-empty `type`. If the corpus
-  has none, choose `--default-type` and/or `--type-map` (per-directory types)
-  now. (Full flag-choice triage: `references/ingestion-workflow.md`.)
+### 4. Remediate at the source — never fabricate
 
-### 3. Convert for real and validate for conformance
+- Missing required frontmatter (`type`/`title`/`generated`): prefer `binder
+  enrich` — additive, idempotent, frontmatter-only, byte-faithful. Preview first:
+
+  ```bash
+  binder enrich <corpus> --dry-run --json | jq '.result.files'
+  binder enrich <corpus> --json           # apply
+  ```
+
+- Structural/link issues: edit the source. Never invent a target to satisfy a
+  link. Trust fields are *proposed*, never invented — see step 6.
+
+### 5. Convert for real, then validate & review
 
 ```bash
 binder convert <corpus> -o <bundle> --json | jq '.result | {num_concepts, num_unresolved}'
-binder validate <bundle> --json | jq '.result.findings'
+binder validate <bundle> --json | jq '.result.findings'   # [] ⇒ conformant (exit 0)
+binder review   <bundle> --json | jq '.result | {by_type, tiers, orphans, stale, unresolved}'
 ```
 
 `binder validate` checks the OKF §11 hard rule (every non-reserved `.md` has
 parseable frontmatter with a **non-empty `type`**). A conformant bundle reports
 `findings: []` and **exits 0**. If `findings` is non-empty (exit 1), read each
-finding, fix the source or your flag choices, and re-run step 2→3 until validate
-is clean.
+finding, fix the source or your flag choices, and iterate 3→5 until validate is
+clean and the `review` advisories are understood. Optionally `binder lint
+<corpus> --json` for source health and `binder graph <bundle> --json` for the raw
+edge export.
 
-### 4. Hand off
+### 6. Trust-extraction review — the never-fabricate-trust crux
 
-Report the bundle location, what you remediated vs accepted, and any residual
-advisories (unresolved links, recovered files) so the user knows the bundle's
-state. Do not add trust you could not honestly assert (see the guardrail above).
+Load [`references/trust-discipline.md`](references/trust-discipline.md). binder
+only stamps an honest `generated: binder/<ver>`; it **never** stamps `verified`
+and **never** invents `sources`. Hold the same line:
+
+- No `--verified-by` unless a **real, named actor actually attests** — never
+  auto-pass it, never default it to yourself/the agent.
+- No invented provenance; enable `--source-keys`/`--map-citations` only for keys
+  that carry *real* provenance.
+- Never store a credibility score/tier — tiers are **derived** (`binder review`
+  computes them on read).
+
+Propose trust to the user; defer all stamping to deterministic binder.
+
+### 7. Hand off / summarize
+
+Report the bundle location, what you **remediated vs accepted**, and any residual
+advisories (unresolved links, orphans, recovered files) so the user knows the
+bundle's state. Do not add trust you could not honestly assert.
 
 ---
 
-*A tiny plain-markdown corpus you can practice on ships at
-[`assets/sample-corpus/`](assets/sample-corpus/): run steps 2–3 against it and
-`binder validate` should report a conformant bundle (exit 0).*
+*A plain-markdown corpus you can practice on ships at
+[`assets/sample-corpus/`](assets/sample-corpus/) — it deliberately contains an
+unresolved link, a missing-title file, and a no-frontmatter file to exercise the
+triage/enrich loop. Run steps 3–5 against it and, after enrich, `binder validate`
+reports a conformant bundle (exit 0).*
