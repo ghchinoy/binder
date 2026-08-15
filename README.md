@@ -61,3 +61,7 @@ validator in both directions and captures any disagreement. Install it with:
 ```sh
 make okf-install    # go install github.com/okfcli/okf/cmd/okf@v0.3.0
 ```
+
+## License
+
+Licensed under the [Apache License 2.0](LICENSE).
