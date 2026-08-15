@@ -1,10 +1,11 @@
 # binder user guide
 
 This is the deep reference for `binder`. The [README](../README.md) is the
-concise landing page (what it is, install, quickstart); this guide documents
-**every command and flag**, the OKF v0.2 output layout, the full trust
-vocabulary, the relationship-extraction rules, malformed-input recovery, CI
-usage, and worked end-to-end examples.
+concise landing page (what it is, install, quickstart), and the
+[tutorial](tutorial.md) is a hands-on, runnable walkthrough for a first-time
+user; this guide documents **every command and flag**, the OKF v0.2 output
+layout, the full trust vocabulary, the relationship-extraction rules,
+malformed-input recovery, CI usage, and worked end-to-end examples.
 
 `binder` converts a plain-markdown corpus into a conformant
 [Open Knowledge Format (OKF) v0.2](https://github.com/GoogleCloudPlatform/knowledge-catalog)
@@ -20,6 +21,7 @@ bundle and reports on OKF bundles. It is **Phase 2 complete**.
 - [Concepts and terminology](#concepts-and-terminology)
 - [Commands](#commands)
   - [`convert`](#convert)
+  - [`enrich`](#enrich)
   - [`validate`](#validate)
   - [`index`](#index)
   - [`review`](#review)
@@ -79,11 +81,13 @@ command and are the properties that make binder safe in a pipeline:
 
 ## Commands
 
-The binary exposes eight commands. All bundle-reading commands
+The binary exposes nine commands. All bundle-reading commands
 (`validate`/`index`/`review`/`graph`) load a bundle through the same codec, so
 their views of concepts, links, and trust always agree. `lint` and `enrich` are
 the exceptions: they read (and, for `enrich`, mutate) a **source corpus** (not a
-bundle) through the same converter machinery.
+bundle) through the same converter machinery. `mcp` is a transport rather than a
+corpus/bundle command; it exposes the additive verbs over stdio (see
+[MCP server](#mcp-server-binder-mcp)).
 
 ```text
 binder convert    Convert a markdown corpus into an OKF v0.2 bundle
@@ -94,6 +98,7 @@ binder review     Summarize a bundle: concepts, links, orphans, trust tiers, sta
 binder lint       Report source-corpus health before conversion (writes nothing)
 binder graph      Export the bundle's concept graph (dot|json|graphml|html)
 binder config     Show the resolved effective configuration and each value's source
+binder mcp        Run binder as a stdio MCP server (convert/validate/review/lint/graph)
 ```
 
 Every command supports `-h`/`--help`. The root binary supports `-v`/`--version`.
@@ -603,10 +608,15 @@ unstamped bundle.
 
 ```text
 binder config
-  config file: ./.binder.yaml
-  default_type: Note  (default)
-  verified_by:  human:ghchinoy  (file)
+  config file: .binder.yaml
+  default_type: "Guide" (source: file)
+  verified_by: "human:ghchinoy" (source: file)
 ```
+
+When no config file is found the first line reads
+`config file: (none; using defaults)` and each value's source is `default`
+(a missing config file is normal, never an error). Every value is quoted and
+tagged with its resolved `(source: flag|env|file|default)`.
 
 The `--json` form is stable for tooling (schema `binder.config/v1`): it reports
 the resolved config file and, per key, the effective value and its source (`flag`
