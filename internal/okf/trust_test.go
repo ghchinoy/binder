@@ -83,7 +83,7 @@ func TestIsStale(t *testing.T) {
 		today      string
 		want       bool
 	}{
-		{"", "2026-12-31", false},          // no stale_after ⇒ never stale
+		{"", "2026-12-31", false},           // no stale_after ⇒ never stale
 		{"2026-09-23", "2026-09-22", false}, // before
 		{"2026-09-23", "2026-09-23", true},  // on the day (today >= stale_after)
 		{"2026-09-23", "2026-09-24", true},  // after

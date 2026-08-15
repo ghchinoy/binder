@@ -19,22 +19,35 @@ var mdLinkRE = regexp.MustCompile(`(!?)\[([^\]]*)\]\(([^)]+)\)`)
 // MUST tolerate broken links). It returns the rewritten body and the extracted
 // edges in source order.
 //
+// Matches that fall inside code (fenced/indented blocks or inline code spans)
+// are ignored: link-like text there is not an edge. Code regions come from
+// goldmark via okf.CodeRegions, the same markdown-aware code path the codec's
+// LinkGraph uses, so the source and output sides agree on what a link is.
+//
 // srcRel is the current file's SOURCE-relative path; srcToOut maps every source
 // concept path to its output path (they differ only for renamed reserved files).
 func rewriteLinks(body, srcRel string, srcToOut map[string]string) (string, []okf.Link) {
 	var links []okf.Link
 	fromDir := path.Dir(srcRel)
+	code := okf.CodeRegions(body)
 
-	out := mdLinkRE.ReplaceAllStringFunc(body, func(match string) string {
-		m := mdLinkRE.FindStringSubmatch(match)
-		bang, text, target := m[1], m[2], strings.TrimSpace(m[3])
+	var out strings.Builder
+	last := 0
+	for _, idx := range mdLinkRE.FindAllStringSubmatchIndex(body, -1) {
+		matchStart, matchEnd := idx[0], idx[1]
+		if okf.InCodeRegion(matchStart, code) {
+			continue // link-like text inside code: leave untouched
+		}
+		bang := body[idx[2]:idx[3]]
+		text := body[idx[4]:idx[5]]
+		target := strings.TrimSpace(body[idx[6]:idx[7]])
 
 		if isExternal(target) || target == "" || strings.HasPrefix(target, "#") {
-			return match
+			continue
 		}
 		targetPath, frag := splitFragment(target)
 		if !strings.EqualFold(path.Ext(targetPath), ".md") {
-			return match
+			continue
 		}
 
 		srcTarget := resolveSourcePath(fromDir, targetPath)
@@ -47,15 +60,18 @@ func rewriteLinks(body, srcRel string, srcToOut map[string]string) (string, []ok
 		links = append(links, link)
 
 		if !ok {
-			return match // unresolved: leave untouched
+			continue // unresolved: leave untouched
 		}
 		newTarget := "/" + outRel
 		if frag != "" {
 			newTarget += "#" + frag
 		}
-		return bang + "[" + text + "](" + newTarget + ")"
-	})
-	return out, links
+		out.WriteString(body[last:matchStart])
+		out.WriteString(bang + "[" + text + "](" + newTarget + ")")
+		last = matchEnd
+	}
+	out.WriteString(body[last:])
+	return out.String(), links
 }
 
 func isExternal(target string) bool {

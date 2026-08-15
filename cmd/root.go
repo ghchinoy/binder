@@ -9,16 +9,15 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/ghchinoy/binder/internal/okf"
-	"github.com/ghchinoy/binder/internal/okf/factileadapter"
+	"github.com/ghchinoy/binder/internal/okf/native"
 )
 
 // Version is the binder version, stamped into generated.by ("binder/<version>").
 const Version = "0.1.0"
 
-// NewRootCmd builds the root command with the default (factile-backed) codec.
+// NewRootCmd builds the root command with the default (native) codec.
 func NewRootCmd() *cobra.Command {
-	adapter := factileadapter.New()
-	var codec okf.Codec = adapter
+	var codec okf.Codec = native.New()
 
 	root := &cobra.Command{
 		Use:           "binder",

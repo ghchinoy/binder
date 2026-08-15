@@ -122,6 +122,11 @@ func mapGet(fm *OrderedMap, key string) any {
 	return v
 }
 
+// AsString renders a frontmatter scalar value as a string, the same way trust
+// projection reads it. Codecs use it to read simple fields (e.g. type) without
+// re-implementing the conversion.
+func AsString(v any) string { return asString(v) }
+
 func asString(v any) string {
 	switch t := v.(type) {
 	case nil:

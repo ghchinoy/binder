@@ -88,8 +88,18 @@ type Concept struct {
 	Type        string      // REQUIRED, non-empty (the only hard field, spec §11)
 	Frontmatter *OrderedMap // ALL keys preserved, order-stable (spec §4/§11)
 	Body        string      // markdown after frontmatter
-	Links       []Link      // extracted edges (spec §6)
-	Trust       TrustSignals
+
+	// OriginalFrontmatter holds the exact bytes of the source frontmatter block
+	// (between the "---" fences), if the concept was parsed from an existing OKF
+	// document. It is codec-agnostic (opaque bytes) and lets Serialize reproduce
+	// unmodified frontmatter byte-for-byte, including nested-mapping key order and
+	// scalar quoting/folding style, which a decode→re-encode round-trip cannot
+	// preserve (design-v2 §3.2, byte-faithful round-trip). It is nil for concepts
+	// synthesised by the converter from plain markdown.
+	OriginalFrontmatter []byte
+
+	Links []Link // extracted edges (spec §6)
+	Trust TrustSignals
 }
 
 // Link is a directed edge from one concept to a link target (spec §6).
