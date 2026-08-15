@@ -26,6 +26,13 @@ func newReviewCmd(codec okf.Codec) *cobra.Command {
 			"stored (spec §5.1/§5.3).",
 		Args: exactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Validate --today up front as a usable date (exit 2). A malformed value
+			// would otherwise be silently accepted by okf.IsStale's string compare
+			// and misreport staleness. Uses the same YYYY-MM-DD parse the rest of the
+			// code uses (okf.IsValidISODate); okf.IsStale is left untouched.
+			if today != "" && !okf.IsValidISODate(today) {
+				return clijson.Usage(fmt.Errorf("--today %q is not a valid date (expected YYYY-MM-DD)", today))
+			}
 			b, err := bundle.Load(args[0], codec)
 			if err != nil {
 				return err

@@ -286,6 +286,9 @@ func deepCopyValue(v any) any {
 // original file's mode is preserved (or 0644 for a new file). An interrupt
 // leaves either the untouched original or the fully written replacement, never a
 // partial/corrupt file. The temp file is cleaned up on any error before rename.
+// After a successful rename the parent directory is fsync'd best-effort so the
+// rename is durably persisted across a crash; this only hardens durability (the
+// atomicity invariant already holds without it) and never fails the write.
 func atomicWrite(path string, data []byte) error {
 	dir := filepath.Dir(path)
 	mode := os.FileMode(0o644)
@@ -323,6 +326,15 @@ func atomicWrite(path string, data []byte) error {
 	if err := os.Rename(tmpName, path); err != nil {
 		os.Remove(tmpName)
 		return err
+	}
+	// Best-effort parent-directory fsync so the rename entry survives a crash.
+	// Many platforms/filesystems don't support directory fsync (and it is not
+	// portable), so any error opening or syncing the directory is deliberately
+	// ignored: the rename already succeeded and durability is a hardening, not a
+	// correctness, concern here.
+	if d, err := os.Open(dir); err == nil {
+		_ = d.Sync()
+		_ = d.Close()
 	}
 	return nil
 }

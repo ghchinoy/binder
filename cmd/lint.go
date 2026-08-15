@@ -32,6 +32,13 @@ func newLintCmd(codec okf.Codec) *cobra.Command {
 		Args: exactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			src := args[0]
+			// Validate --today up front as a usable date (exit 2). A malformed value
+			// would otherwise be silently accepted by okf.IsStale's string compare
+			// and misreport staleness. Uses the same YYYY-MM-DD parse the rest of the
+			// code uses (okf.IsValidISODate); okf.IsStale is left untouched.
+			if today != "" && !okf.IsValidISODate(today) {
+				return clijson.Usage(fmt.Errorf("--today %q is not a valid date (expected YYYY-MM-DD)", today))
+			}
 			if today == "" {
 				today = resolveNow().Format("2006-01-02")
 			}

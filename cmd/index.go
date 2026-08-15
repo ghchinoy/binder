@@ -30,6 +30,9 @@ func newIndexCmd(codec okf.Codec) *cobra.Command {
 			"reported so nothing is overwritten silently.",
 		Args: exactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// --include-backlinks/--include-graph only annotate the --group-by-type
+			// catalog; warn (stderr only) if passed without it. Never gates.
+			hintCatalogFlags(cmd, groupByType, includeBacklinks, includeGraph)
 			root := args[0]
 			b, err := bundle.Load(root, codec)
 			if err != nil {
