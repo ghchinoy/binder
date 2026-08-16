@@ -504,8 +504,13 @@ reported for context and never counted:
    one outbound edge; it is a root `README.md` or `index.md` (matched
    case-insensitively, and only at the corpus root — a nested `docs/README.md`
    is **not** recognized and stays a true orphan); or it was named with
-   `--entrypoint`. `review` applies the identical rule, so `lint` and `review`
-   never disagree.
+   `--entrypoint`. `review` applies the identical rule, but the two take
+   different inputs — `lint` a **source corpus**, `review` a **bundle** — and
+   only on those matched inputs do they agree. Aim `lint` at a bundle and it
+   will mislead rather than refuse: it re-converts the already-converted files,
+   including the bundle's generated `index.md` (which links to every concept),
+   so orphans collapse to `[]` and the reserved `index.md` re-derives as
+   `index-note-2`.
 5. **Stale** — `stale_after` reached as of `--today` (or `SOURCE_DATE_EPOCH`).
 6. **Schema violations** — a missing `type:` (`Detail: "missing type"`), or
    invalid frontmatter recovered under never-reject (`Detail: "invalid
