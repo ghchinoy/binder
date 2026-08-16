@@ -46,5 +46,3 @@
 ### Continuous Integration
 
 * add release pipeline (release-please + goreleaser) ([#30](https://github.com/ghchinoy/binder/issues/30)) ([11a6ac4](https://github.com/ghchinoy/binder/commit/11a6ac44d6f378bc1a31bd1b3131f915c86d91d5))
-
-## Changelog

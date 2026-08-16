@@ -509,26 +509,27 @@ reported for context and never counted:
    any other concept: an entrypoint when it links out (as a corpus index usually
    does), a true orphan when it does not. `review` applies the identical rule,
    but the two take different inputs — `lint` a **source corpus**, `review` a
-   **bundle** — and
-   only on those matched inputs do they agree. Aim `lint` at a bundle and it
-   will mislead rather than refuse: it re-converts the already-converted files,
-   including the bundle's generated per-directory `index.md` tree, which gives
-   every ordinary concept an inbound link from its own directory's index, each
-   directory index one from its **parent's** index, and the **root** index
-   none. So orphans collapse to `[]` on every corpus shape (flat or nested), and
-   the previously-generated root index — renamed to `index-note`, or
-   `index-note-2` when the source carried its own `index.md`, which takes
-   `index-note` first — has outbound edges and no inbound edge, which is why it,
-   and only it, is reported as an entrypoint.
+   **bundle** — and on those matched inputs they usually agree, but agreement is
+   **not guaranteed**: conversion sits in between, so `convert --fm-ref-keys
+   related` materializes edges `lint` has no flag to read and the two can differ
+   even then. Aim `lint` at a bundle and it will mislead rather than refuse: it
+   re-converts the already-converted files, including the bundle's generated
+   per-directory `index.md` tree, which gives every ordinary concept an inbound
+   link from its own directory's index, each directory index one from its
+   **parent's** index, and the **root** index none. So orphans collapse to `[]`
+   on every corpus shape (flat or nested), and the previously-generated root
+   index — renamed to `index-note`, or `index-note-2` when the source carried
+   its own `index.md`, which takes `index-note` first — has outbound edges and
+   no inbound edge, which is why it, and only it, is reported as an entrypoint.
 5. **Stale** — `stale_after` reached as of `--today` (or `SOURCE_DATE_EPOCH`).
 6. **Schema violations** — a missing `type:` (`Detail: "missing type"`), or
    invalid frontmatter recovered under never-reject (`Detail: "invalid
    frontmatter: <err>"`).
 
-> The prose report labels the section `entrypoints (outbound, no inbound):`.
-> That label under-describes the set: a root `README.md` with no links at all,
-> and anything passed to `--entrypoint`, are listed there too. The rule above is
-> the accurate one.
+> The prose report labels the section `entrypoints (no inbound links):`. The
+> label names the one property every listed concept shares, whatever put it on
+> the list — an outbound edge, the recognized root `README.md`, or
+> `--entrypoint`. The rule above is the full one.
 
 **Anchor slug convention (GitHub-style, pinned):** an `#anchor` matches a heading
 slugged by: lowercase; strip HTML tags; drop every character except `[a-z0-9]`,
@@ -899,13 +900,32 @@ It is a transport, not a report-producing command: it has no `--json` flag (its
 *outputs* are the structured tool payloads). It serves over stdio until the
 client disconnects.
 
-> **Output-routing flags are the deliberate 1:1 exception.** Every tool
-> parameter mirrors its CLI flag one-to-one *except* the output-routing flags
-> `--report` / `--output` / `--json`, which the tools do not expose: over MCP the
-> transport **is** the JSON channel, so there is nothing to route and no `--json`
-> flag to toggle. The tool payloads are byte-identical to the corresponding
-> `binder <cmd> --json`. (`convert`'s `out`/`dry_run` and `graph`'s `format`
-> select *what* is produced, not how the report is routed, so they remain.)
+> **Parity is a claim about the five verbs that have a CLI counterpart**, and
+> **output-routing flags are its deliberate exception.** For `convert`,
+> `validate`, `review`, `lint` and `graph`, every tool parameter mirrors its CLI
+> flag or positional argument one-to-one *except* the output-routing flags —
+> `convert --report`, `graph --output`, and the report-envelope `--json` of
+> `convert`, `validate`, `review` and `lint` — which the tools do not expose:
+> over MCP the transport **is** the JSON channel, so there is nothing to route
+> and no `--json` flag to toggle. The tool payloads are byte-identical to the
+> corresponding `binder <cmd> --json`, with `graph` the exception: its payload is
+> the raw export in whatever `format` was asked for, so it equals
+> `binder graph --json` only at `format:json`, and `binder graph --format dot` at
+> `format:dot`. (`convert`'s `out`/`dry_run` and `graph`'s `format` select *what*
+> is produced, not how the report is routed, so they remain — though `format` is
+> also the one parameter whose **default** diverges from its flag's: the CLI
+> defaults to `dot`, the tool to `json`. Two of those flag names mean different
+> things on different commands. `convert`'s `-o`/`--output` is the output
+> **bundle directory**, a destination rather than a report route, which is why it
+> is exposed as `out`; `graph`'s `-o`/`--output` writes the export to a file
+> instead of stdout and is genuinely routing. And `graph --json` is merely an
+> alias for `--format json` — a format selector, not the report envelope, which
+> `graph` never emits — so it is already covered by the exposed `format` param.
+> `lint` and `review` have no `--output` flag at all.)
+>
+> `list_graphs` and `query_graph` have **no CLI equivalent**: `binder list-graphs`
+> and `binder query-graph` are unknown commands. They are MCP-only tools, so
+> parity does not apply to any of their parameters.
 
 **Wire it into a harness** (Claude Code):
 
@@ -919,14 +939,17 @@ claude mcp add binder -- binder mcp
 { "mcpServers": { "binder": { "command": "binder", "args": ["mcp"] } } }
 ```
 
-**Tools** (each parameter mirrors the corresponding CLI flag 1:1):
+**Tools** (for the five verbs with a CLI counterpart, each parameter mirrors the
+corresponding CLI flag or positional argument 1:1, `graph`'s `format` **default**
+excepted — `dot` on the CLI, `json` here; the MCP-only `list_graphs` and
+`query_graph` have no CLI flags to mirror):
 
 | Tool | Key params | Returns |
 |---|---|---|
 | `convert` | `src` (req), `out` (req unless `dry_run`), `dry_run`, `default_type`, `type_map`, `fm_ref_keys`, `source_keys`, `map_citations`, `map_draft`, `status_map`, `canonicalize_status`, `stale_after_map`, `verified_by`, `workspace_root`, `external_root` (repeatable), `group_by_type`, `include_backlinks`, `include_graph`, `strict` | `convert` report envelope (`dry_run:true` → the ingestion-analysis preview, writes nothing) |
 | `validate` | `bundle` (req), `strict` | `validate` report envelope |
-| `review` | `bundle` (req), `entrypoints` (array of concept id or path), `today`, `strict` | `review` report envelope |
-| `lint` | `src` (req), `entrypoints` (array of concept id or path), `today`, `strict` | `lint` report envelope |
+| `review` | `bundle` (req), `entrypoints` (array of concept id or path — the parity param for the repeatable `--entrypoint`), `today`, `strict` | `review` report envelope |
+| `lint` | `src` (req), `entrypoints` (array of concept id or path — the parity param for the repeatable `--entrypoint`), `today`, `strict` | `lint` report envelope |
 | `graph` | `bundle` (req), `format` (`dot`\|`json`\|`graphml`\|`html`, default `json`), `today` | raw export bytes — `format:json` is the raw `{nodes,edges}`, **not** the report envelope |
 | `list_graphs` | `bundle` (req), `today`, `id_key` | `list_graphs` report envelope — the LPG **schema descriptor** (graph name, node labels = concept types, the single `LINKS` edge label, each with counts + property declarations). Read-only introspection derived from the same projection as `graph` |
 | `query_graph` | `bundle` (req), `op` (req: `lookup`\|`neighbors`\|`neighborhood`\|`pattern`\|`path`), `today`, `id_key`, `id`, `label`, `direction` (`out`\|`in`\|`both`, default `out`), `rel`, `depth` (`1..5`, required for `neighborhood`), `to_label`, `where` (`{prop, eq}`; `prop` ∈ `type`\|`tier`\|`stale`), `from`/`to`/`max_depth` (`1..5`, all required for `path`) | `query_graph` report envelope — bounded read-only traversal of the same projection. `additionalProperties: false` |

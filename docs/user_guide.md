@@ -621,7 +621,7 @@ binder review
   stale (as of 2023-11-14): 0
   attested computations: 0
   unparsed frontmatter (recovered as body): 0
-  entrypoints (outbound, no inbound): 2
+  entrypoints (no inbound links): 2
     README
     start
   orphans (no inbound or outbound links): 1
@@ -660,9 +660,11 @@ Both classifications are **advisory only** — entrypoints never gate, and the
 reclassification never changes an exit code that did not change before. `review`
 and `lint` apply the **same rule**, so with each used on its intended input —
 `review` on a bundle, `lint` on the source corpus that bundle was converted from
-— the two report the same entrypoints and the same orphans. Handing `lint` a
-bundle instead changes the graph rather than the rule, and the two then disagree;
-see [`lint`](#lint).
+— the two usually report the same entrypoints and the same orphans, though
+agreement is **not guaranteed**: the rule is shared, the graph is not, because
+conversion sits in between (see [`lint`](#lint) for the mechanism). Handing
+`lint` a bundle rather than a source corpus changes the graph wholesale, and the
+two then disagree systematically.
 
 ### `lint`
 
@@ -701,17 +703,21 @@ It reports these checks:
    **entrypoint** instead, reported separately and never as an orphan (issue #24).
    `review` applies the identical rule, so with each used on its intended input —
    `lint` on a source corpus, `review` on the bundle converted from it — the two
-   report the same orphans and the same entrypoints. `lint`'s input is a **source
-   corpus**, and given a bundle it misleads rather than refuses (binder never
-   rejects): it re-converts the bundle's files including its generated
-   per-directory `index.md` tree, in which each index links that directory's
-   concepts plus its subdirectory indexes. Each ordinary concept therefore gains
-   an inbound edge from its own directory's index, and each directory index gains
-   one from its **parent's** index (an index never links itself), leaving the
-   bundle's own **generated** root `index.md` as the only file with no inbound
-   edge: the orphan list collapses to empty, and that generated index — renamed by
-   the re-conversion, so not a recognized root — re-derives as an ordinary concept
-   reported as an entrypoint for its outbound edges.
+   usually report the same orphans and the same entrypoints, though agreement is
+   **not guaranteed**: same rule, different graph. `convert --fm-ref-keys
+   related` materializes edges out of a frontmatter key that `lint` has no flag
+   to read, so a note `lint` calls an orphan can reach `review` as an
+   entrypoint. `lint`'s input is a **source corpus**, and given a bundle it
+   misleads rather than refuses (binder never rejects): it re-converts the
+   bundle's files including its generated per-directory `index.md` tree, in
+   which each index links that directory's concepts plus its subdirectory
+   indexes. Each ordinary concept therefore gains an inbound edge from its own
+   directory's index, and each directory index gains one from its **parent's**
+   index (an index never links itself), leaving the bundle's own **generated**
+   root `index.md` as the only file with no inbound edge: the orphan list
+   collapses to empty, and that generated index — renamed by the re-conversion,
+   so not a recognized root — re-derives as an ordinary concept reported as an
+   entrypoint for its outbound edges.
 4. **Entrypoints** — no inbound resolved edge but not a true orphan: an outward
    index into the corpus (advisory only; entrypoints never gate).
 5. **Stale** — `stale_after` reached as of `--today` (honours `SOURCE_DATE_EPOCH`).
@@ -1661,13 +1667,32 @@ mutates the source tree — see [Behavior and invariants](#behavior-and-invarian
 positional args and has no `--json` flag (its *outputs* are the structured tool
 payloads). It serves over stdio until the client disconnects.
 
-> **Output-routing flags are the deliberate 1:1 exception.** Every tool
-> parameter mirrors its CLI flag one-to-one *except* the output-routing flags
-> `--report` / `--output` / `--json`, which the tools do not expose: over MCP the
-> transport **is** the JSON channel, so there is nothing to route and no `--json`
-> flag to toggle. The tool payloads are byte-identical to the corresponding
-> `binder <cmd> --json`. (`convert`'s `out`/`dry_run` and `graph`'s `format`
-> select *what* is produced, not how the report is routed, so they remain.)
+> **Parity is a claim about the five verbs that have a CLI counterpart**, and
+> **output-routing flags are its deliberate exception.** For `convert`,
+> `validate`, `review`, `lint` and `graph`, every tool parameter mirrors its CLI
+> flag or positional argument one-to-one *except* the output-routing flags —
+> `convert --report`, `graph --output`, and the report-envelope `--json` of
+> `convert`, `validate`, `review` and `lint` — which the tools do not expose:
+> over MCP the transport **is** the JSON channel, so there is nothing to route
+> and no `--json` flag to toggle. The tool payloads are byte-identical to the
+> corresponding `binder <cmd> --json`, with `graph` the exception: its payload is
+> the raw export in whatever `format` was asked for, so it equals
+> `binder graph --json` only at `format:json`, and `binder graph --format dot` at
+> `format:dot`. (`convert`'s `out`/`dry_run` and `graph`'s `format` select *what*
+> is produced, not how the report is routed, so they remain — though `format` is
+> also the one parameter whose **default** diverges from its flag's: the CLI
+> defaults to `dot`, the tool to `json`. Two of those flag names mean different
+> things on different commands. `convert`'s `-o`/`--output` is the output
+> **bundle directory**, a destination rather than a report route, which is why it
+> is exposed as `out`; `graph`'s `-o`/`--output` writes the export to a file
+> instead of stdout and is genuinely routing. And `graph --json` is merely an
+> alias for `--format json` — a format selector, not the report envelope, which
+> `graph` never emits — so it is already covered by the exposed `format` param.
+> `lint` and `review` have no `--output` flag at all.)
+>
+> `list_graphs` and `query_graph` have **no CLI equivalent**: `binder list-graphs`
+> and `binder query-graph` are unknown commands. They are MCP-only tools, so
+> parity does not apply to any of their parameters.
 
 ### Wiring it into a harness
 
@@ -1685,9 +1710,15 @@ claude mcp add binder -- binder mcp
 
 ### Tools and input schemas
 
-Every tool parameter mirrors the corresponding CLI flag 1:1. Map/list params
-(`type_map`, `fm_ref_keys`, …) use the same `"k=v,k=v"` / `"a,b"` grammar as the
-flags. Required params are marked **(req)**.
+For the five verbs that have a CLI counterpart — `convert`, `validate`,
+`review`, `lint` and `graph` — every tool parameter mirrors the corresponding
+CLI flag or positional argument 1:1, with one **default** divergence: `graph`'s
+`format` defaults to `dot` on the CLI and to `json` here. `list_graphs` and
+`query_graph` are **MCP-only**: there is no `binder list-graphs` and no
+`binder query-graph`, so none of their parameters mirrors a CLI flag,
+`query_graph`'s whole parameter set included. Map/list params (`type_map`,
+`fm_ref_keys`, …) use the same `"k=v,k=v"` / `"a,b"` grammar as the flags.
+Required params are marked **(req)**.
 
 | Tool | Params | Result |
 |---|---|---|
@@ -2835,7 +2866,7 @@ binder review
   stale (as of 2023-11-14): 0
   attested computations: 0
   unparsed frontmatter (recovered as body): 0
-  entrypoints (outbound, no inbound): 0
+  entrypoints (no inbound links): 0
   orphans (no inbound or outbound links): 0
   unresolved links: 0
 ```
