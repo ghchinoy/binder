@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/ghchinoy/binder/internal/okf"
 )
 
 // scalarTags walks a YAML frontmatter block and records "tag|style" for every
@@ -411,6 +413,145 @@ func TestByteFaithfulBlockMapSiblingOnAppend(t *testing.T) {
 	after := scalarTags(t, frontmatterOf(t, out))
 	if got := after[".verified[0].at"]; !strings.HasPrefix(got, "!!timestamp") {
 		t.Errorf("pre-existing verified[0].at was retyped to %q, want !!timestamp:\n%s", got, out)
+	}
+}
+
+// TestByteFaithfulBodyBoundary pins the frontmatter/body boundary for PARSED
+// concepts. Serialize must reproduce the body exactly as the source had it —
+// crucially, whether or not a blank line separated the closing fence from the
+// first body line. A pre-existing defect (shipped in v0.3.0) inserted a blank
+// line after the fence on EVERY rewrite — a value overwrite, an appended key,
+// even a pure round-trip — whenever the body abutted the fence. It lived in the
+// ENCODER (Serialize), not the splice, so it fired on the pure-overwrite path
+// where only a value changes and nothing is added, and a byte proxy that only
+// inspected the frontmatter region could not see it.
+//
+// The decisive assertion is that the reparsed body equals the original body: an
+// inserted blank shows up as a leading "\n" the source never had. Re-parseability
+// is asserted alongside, since the boundary must never yield an unreadable file.
+func TestByteFaithfulBodyBoundary(t *testing.T) {
+	cases := []struct {
+		name           string
+		raw            string
+		exactRoundTrip bool // pure round-trip is byte-identical (frontmatter round-trips cleanly)
+	}{
+		{"abuts_fence", "---\ntype: Note\n---\n# Body\ntext\n", true},
+		{"one_blank", "---\ntype: Note\n---\n\n# Body\ntext\n", true},
+		{"two_blank", "---\ntype: Note\n---\n\n\n# Body\n", true},
+		{"empty_body", "---\ntype: Note\n---\n", true},
+		// Parsed-but-EMPTY frontmatter: OriginalFrontmatter is non-nil (len 0), so
+		// the body-boundary gate treats it as a round-trip and inserts no blank. The
+		// pure round-trip is NOT byte-identical here for a SEPARATE, out-of-scope
+		// reason — an empty block re-emits as "{}" — so only the body boundary is
+		// asserted for this row.
+		{"empty_frontmatter_abuts", "---\n---\n# Body\ntext\n", false},
+	}
+	c := New()
+	// reparseBody serializes con and returns the body of the reparsed output.
+	reparseBody := func(t *testing.T, con *okf.Concept) string {
+		t.Helper()
+		out, err := c.Serialize(con)
+		if err != nil {
+			t.Fatalf("Serialize: %v", err)
+		}
+		re, err := c.ParseConcept("x.md", out)
+		if err != nil {
+			t.Fatalf("output does not re-parse (%v):\n%s", err, out)
+		}
+		return re.Body
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			orig, err := c.ParseConcept("x.md", []byte(tc.raw))
+			if err != nil {
+				t.Fatalf("ParseConcept: %v", err)
+			}
+			wantBody := orig.Body
+
+			// (1) PURE round-trip — no change at all.
+			if tc.exactRoundTrip {
+				out, err := c.Serialize(orig)
+				if err != nil {
+					t.Fatalf("Serialize: %v", err)
+				}
+				if string(out) != tc.raw {
+					t.Errorf("pure round-trip not byte-identical:\n want %q\n  got %q", tc.raw, string(out))
+				}
+			} else if got := reparseBody(t, orig); got != wantBody {
+				t.Errorf("pure round-trip changed body boundary:\n want %q\n  got %q", wantBody, got)
+			}
+
+			// (2) PURE VALUE OVERWRITE — an EXISTING key's value changes, no key is
+			// added. This is the path that proves the defect is in the encoder, not
+			// the splice.
+			ov, _ := c.ParseConcept("x.md", []byte(tc.raw))
+			if _, ok := ov.Frontmatter.Get("type"); ok {
+				ov.Frontmatter.Set("type", "Metric") // overwrite in place
+			} else {
+				ov.Frontmatter.Set("type", "Metric") // empty-fm row: no existing key
+			}
+			if got := reparseBody(t, ov); got != wantBody {
+				t.Errorf("value-overwrite changed body boundary:\n want %q\n  got %q", wantBody, got)
+			}
+
+			// (3) APPENDED KEY — the additive path enrich/convert take.
+			ad, _ := c.ParseConcept("x.md", []byte(tc.raw))
+			ad.Frontmatter.Set("status", "stable")
+			if got := reparseBody(t, ad); got != wantBody {
+				t.Errorf("key-append changed body boundary:\n want %q\n  got %q", wantBody, got)
+			}
+		})
+	}
+}
+
+// TestCharacterize_SynthesisedConceptGetsSeparatorBlank records CURRENT behaviour,
+// NOT an invariant: a converter-SYNTHESISED concept (OriginalFrontmatter nil — a
+// plain markdown file with no fence, as produced by convert.PlainConcept and used
+// by BOTH `convert` and `enrich` on fence-less files, enrich.go:251) gets a single
+// blank line inserted between the freshly synthesised frontmatter and the body.
+// This is the deliberate synthesis convention the converter goldens rely on; the
+// body-boundary gate keys the insertion on OriginalFrontmatter == nil so it fires
+// ONLY here and never on a parsed round-trip. Every original body byte survives
+// verbatim and in order — the blank is prepended, nothing is altered — and the
+// output re-parses. Named as characterization (not an invariant) because whether
+// enrich-of-a-plain-file should ALSO suppress this blank is a caller-side policy
+// question; a future change that suppresses it should update this test, not read a
+// red here as a regression it caused.
+func TestCharacterize_SynthesisedConceptGetsSeparatorBlank(t *testing.T) {
+	c := New()
+	// Mirrors convert.PlainConcept: empty ordered map, nil OriginalFrontmatter,
+	// Body = the whole user file (no fence).
+	con := &okf.Concept{
+		ID:          "x",
+		RelPath:     "x.md",
+		Frontmatter: okf.NewOrderedMap(),
+		Body:        "# Heading\n\nUser prose.\n",
+	}
+	con.Frontmatter.Set("type", "Note")
+
+	out, err := c.Serialize(con)
+	if err != nil {
+		t.Fatalf("Serialize: %v", err)
+	}
+	got := string(out)
+
+	// CURRENT behaviour: a separator blank sits between the synthesised fence and
+	// the body.
+	if !strings.Contains(got, "---\n\n# Heading\n") {
+		t.Errorf("synthesis separator blank not present (current behaviour):\n%s", got)
+	}
+	// The user's body bytes survive verbatim and in order.
+	if !strings.Contains(got, "# Heading\n\nUser prose.\n") {
+		t.Errorf("user body not preserved verbatim:\n%s", got)
+	}
+	// The output re-parses and the reparsed body is the original plus the one
+	// synthesis blank — pinning that nothing beyond that blank was inserted.
+	re, err := c.ParseConcept("x.md", out)
+	if err != nil {
+		t.Fatalf("synthesised output does not re-parse (%v):\n%s", err, got)
+	}
+	if re.Body != "\n# Heading\n\nUser prose.\n" {
+		t.Errorf("reparsed body not original+one-blank:\n want %q\n  got %q", "\n# Heading\n\nUser prose.\n", re.Body)
 	}
 }
 

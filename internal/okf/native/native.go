@@ -90,7 +90,20 @@ func (c *Codec) Serialize(con *okf.Concept) ([]byte, error) {
 		b.WriteString("\n")
 	}
 	b.WriteString("---\n")
-	if body != "" && !strings.HasPrefix(body, "\n") {
+	// Emit the body exactly as it arrived. The body already carries its own
+	// leading separator from the source (splitFrontmatter returns everything after
+	// the closing fence, blank line included when present), so for a PARSED concept
+	// re-encoding must add nothing here: inserting a blank line corrupts the
+	// frontmatter/body boundary on every rewrite — a value overwrite, an appended
+	// key, even a pure round-trip — turning a body that abutted the fence into one
+	// preceded by a spurious blank. The insertion below is a synthesis convenience
+	// for converter-built concepts ONLY (OriginalFrontmatter nil, e.g. plain
+	// markdown with no fence), where a blank conventionally separates the
+	// synthesised frontmatter from the body. The `== nil` gate is LOAD-BEARING, not
+	// redundant: dropping it re-introduces the round-trip corruption, and deleting
+	// the whole block regresses six converter-synthesis test artifacts that rely on
+	// that conventional blank. See TestByteFaithfulBodyBoundary.
+	if con.OriginalFrontmatter == nil && body != "" && !strings.HasPrefix(body, "\n") {
 		b.WriteString("\n")
 	}
 	b.WriteString(body)

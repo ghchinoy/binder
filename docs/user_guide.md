@@ -317,13 +317,18 @@ A plain-markdown file (no frontmatter fence) gets a fresh, valid block prepended
    which refreshes only the keys you name — trust keys are refused.
 2. **Idempotent.** A second run finds every key present → `unchanged` → **no
    write**. `generated.at` is stable across runs (set-when-absent).
-3. **Body + pre-existing keys byte-faithful.** enrich reuses the codec's
-   byte-faithful serializer: on a file it changes, every unchanged frontmatter
-   key is re-emitted **from its original source bytes** — nested-map and list
-   order, flow-vs-block style, interior spacing, scalar quoting/folding, YAML
-   tags (e.g. an `!!timestamp` never silently becomes an `!!str`), and comments
-   are all preserved — and only the **added or changed** keys are encoded fresh;
-   the body is re-emitted as-is.
+3. **Body + pre-existing keys byte-faithful (files that already have
+   frontmatter).** enrich reuses the codec's byte-faithful serializer: on a file
+   it changes, every unchanged frontmatter key is re-emitted **from its original
+   source bytes** — nested-map and list order, flow-vs-block style, interior
+   spacing, scalar quoting/folding, YAML tags (e.g. an `!!timestamp` never
+   silently becomes an `!!str`), and comments are all preserved — and only the
+   **added or changed** keys are encoded fresh. The **body** is re-emitted
+   exactly, *including the original frontmatter/body separator*: a body that
+   abutted the closing fence stays abutting it, and existing blank lines are
+   neither added nor removed. This guarantee is scoped to files that **already
+   have frontmatter** — see *Residual bounds* below for the byte-level cases it
+   does **not** cover.
 
    This extends to **sibling granularity**: when a container legitimately changes
    (e.g. a stamp appended to `verified`), the **pre-existing entries** are
@@ -369,10 +374,25 @@ A plain-markdown file (no frontmatter fence) gets a fresh, valid block prepended
 8. **Deterministic.** `generated.at` (and any resolved `stale_after`) honour
    `SOURCE_DATE_EPOCH`.
 
-> **Known normalization (only on files enrich changes):** the serializer
-> normalizes body `\r\n`→`\n` and the frontmatter/body separator to a single
-> blank line. A file that needs no key is never rewritten, so CRLF- or
-> spacing-only files are left exactly as-is. Because enrich mutates the source,
+> **Residual bounds (the body guarantee is bounded, not unconditional).** Even on
+> a file enrich changes, four byte-level deviations remain that the body guarantee
+> above does **not** cover:
+> 1. **CRLF → LF.** Body line endings are normalized `\r\n`→`\n`, so a CRLF file
+>    round-tripped is not byte-identical.
+> 2. **Trailing newline.** A file whose content ends without a trailing newline
+>    gains one on the closing `---` fence line.
+> 3. **Empty frontmatter re-emission.** A file whose frontmatter block is empty
+>    (`---` immediately followed by `---`) has that empty block re-emitted as
+>    `{}`. The body boundary is still preserved.
+> 4. **No frontmatter at all (synthesis, not round-trip).** A file with no
+>    frontmatter is not a round-trip: enrich **synthesizes** a header and inserts a
+>    single blank line between it and the body. Every body byte survives verbatim
+>    and in order, but a blank is prepended — which is why the byte-faithfulness
+>    guarantee is scoped to files that already have frontmatter, and does not apply
+>    here.
+>
+> A file that needs no key is never rewritten, so untouched files (including CRLF-
+> or spacing-only ones) are left exactly as-is. Because enrich mutates the source,
 > run it on a clean working tree (git is your backup) and review the diff.
 
 #### Flags
