@@ -62,6 +62,14 @@ type Options struct {
 	StaleAfterMap map[string]string // directory-prefix → validated relative-date spec (+Nd/+Nm/+Ny)
 	VerifiedBy    string            // actor to append as a verified actorstamp (empty = no stamp)
 
+	// StatusNotes are pre-computed, deterministically-ordered status-vocabulary
+	// messages (issue #23): non-conformant --status-map values and any opt-in
+	// canonicalization rewrites, resolved once at the CLI/MCP boundary by
+	// ResolveStatusVocabulary. They are surfaced additively in the report and
+	// never alter emitted bundle bytes. Empty (the default) keeps output
+	// byte-identical.
+	StatusNotes []string
+
 	// Index-catalog options (issue #9). All OFF by default → generated index.md
 	// output is byte-identical to before. See IndexOptions.
 	GroupByType      bool // append the additive "# Catalog" to the root index.md
@@ -172,12 +180,19 @@ func Analyze(src string, opts Options) (concepts []*okf.Concept, facts []SourceF
 
 	// Initialize the report slices so an empty run serializes to [] rather than
 	// null in --json mode (#13 empty-slice policy). Prose output is unaffected.
+	// StatusNotes is always emitted (issue #23); a nil opts value becomes [] so
+	// the envelope shape is stable and never marshals to null.
+	statusNotes := opts.StatusNotes
+	if statusNotes == nil {
+		statusNotes = []string{}
+	}
 	report := &Report{
-		Src:        src,
-		DryRun:     opts.DryRun,
-		Concepts:   []ConceptReport{},
-		Warnings:   []string{},
-		Unresolved: []UnresolvedLink{},
+		Src:         src,
+		DryRun:      opts.DryRun,
+		Concepts:    []ConceptReport{},
+		Warnings:    []string{},
+		Unresolved:  []UnresolvedLink{},
+		StatusNotes: statusNotes,
 	}
 
 	// Phase 1: resolve output paths, renaming reserved-name source files so they

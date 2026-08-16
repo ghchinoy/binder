@@ -18,22 +18,23 @@ import (
 
 func newConvertCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 	var (
-		output        string
-		defaultType   string
-		typeMapRaw    string
-		statusMapRaw  string
-		staleAfterRaw string
-		verifiedBy    string
-		fmRefKeysRaw  string
-		dryRun        bool
-		reportPath    string
-		mapCitations  bool
-		sourceKeys    string
-		mapDraft      bool
-		jsonOut       bool
-		strict        bool
-		workspaceRoot string
-		externalRoots []string
+		output           string
+		defaultType      string
+		typeMapRaw       string
+		statusMapRaw     string
+		staleAfterRaw    string
+		verifiedBy       string
+		fmRefKeysRaw     string
+		dryRun           bool
+		reportPath       string
+		mapCitations     bool
+		sourceKeys       string
+		mapDraft         bool
+		canonicalizeStat bool
+		jsonOut          bool
+		strict           bool
+		workspaceRoot    string
+		externalRoots    []string
 
 		groupByType      bool
 		includeBacklinks bool
@@ -60,9 +61,14 @@ func newConvertCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 			if err != nil {
 				return clijson.Usage(err)
 			}
-			statusMap, statusDefault, err := convert.ParseStatusMap(statusMapRaw)
+			// Malformed map shapes/values are usage errors (exit 2). Non-conformant
+			// §5.4 status values warn on the default path and gate under --strict,
+			// BEFORE any file is written (issue #23); --canonicalize-status opts into
+			// the fixed alias rewrite. resolveStatusMap wraps a malformed argument in
+			// clijson.Usage internally, so a bare return preserves the exit-2 contract.
+			statusMap, statusDefault, statusNotes, err := resolveStatusMap(statusMapRaw, canonicalizeStat, strict)
 			if err != nil {
-				return clijson.Usage(err)
+				return err
 			}
 			staleAfterMap, err := convert.ParseStaleAfterMap(staleAfterRaw)
 			if err != nil {
@@ -102,6 +108,7 @@ func newConvertCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 				TypeMap:       typeMap,
 				StatusMap:     statusMap,
 				StatusDefault: statusDefault,
+				StatusNotes:   statusNotes,
 				StaleAfterMap: staleAfterMap,
 				VerifiedBy:    verifiedBy,
 				FMRefKeys:     convert.ParseFMRefKeys(fmRefKeysRaw),
@@ -163,6 +170,7 @@ func newConvertCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 	cmd.Flags().BoolVar(&mapCitations, "map-citations", false, "map a body \"# Citations\" list into sources entries")
 	cmd.Flags().StringVar(&sourceKeys, "source-keys", "", "frontmatter keys to map into sources entries, e.g. \"source,author\"")
 	cmd.Flags().BoolVar(&mapDraft, "map-draft", false, "map a draft:true marker to status:draft when status is absent")
+	cmd.Flags().BoolVar(&canonicalizeStat, "canonicalize-status", false, "opt-in: rewrite known --status-map aliases to the OKF §5.4 vocabulary (active->stable, wip/in-progress->draft, archived/legacy->deprecated); off by default, each rewrite is reported")
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "emit the run report as deterministic JSON (schema "+clijson.SchemaVersion+") instead of prose")
 	cmd.Flags().BoolVar(&strict, "strict", false, "gate (exit 1) on unresolved links or recovery warnings; without it these never gate (never-reject)")
 	cmd.Flags().StringVar(&workspaceRoot, "workspace-root", "", "boundary within which file:// links resolve to internal edges (default: the <src> root)")

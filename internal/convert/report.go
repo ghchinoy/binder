@@ -22,6 +22,13 @@ type Report struct {
 	NumUnresolved int              `json:"num_unresolved"`
 	NumRecovered  int              `json:"num_recovered"` // files whose unparseable frontmatter was preserved as body (§4.6)
 	DryRun        bool             `json:"dry_run"`
+	// StatusNotes carries the OKF §5.4 status-vocabulary notes for a run (issue
+	// #23): non-conformant --status-map values (a warning naming the value, its
+	// key and the legal set) and any opt-in canonicalization rewrites. It is
+	// additive and always emitted, initialised to [] on a conformant run so the
+	// binder.report/v1 envelope keeps a stable shape (matching PR #56's
+	// empty-array fix for infer.warnings); a nil slice would marshal to null.
+	StatusNotes []string `json:"status_notes"`
 }
 
 // UnresolvedLink is one link whose target is not a concept in the bundle. It is
@@ -101,6 +108,12 @@ func (r *Report) String() string {
 		b.WriteString("\nWarnings:\n")
 		for _, w := range r.Warnings {
 			fmt.Fprintf(&b, "  - %s\n", w)
+		}
+	}
+	if len(r.StatusNotes) > 0 {
+		b.WriteString("\nStatus vocabulary (OKF §5.4):\n")
+		for _, n := range r.StatusNotes {
+			fmt.Fprintf(&b, "  - %s\n", n)
 		}
 	}
 	return b.String()

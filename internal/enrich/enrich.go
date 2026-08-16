@@ -59,6 +59,12 @@ type Options struct {
 	StaleAfterMap map[string]string
 	VerifiedBy    string
 
+	// StatusNotes are pre-computed OKF §5.4 status-vocabulary messages (issue #23)
+	// — non-conformant --status-map values and any opt-in canonicalization
+	// rewrites — resolved once at the CLI boundary and surfaced additively in the
+	// report. Empty (the default) keeps output byte-identical.
+	StatusNotes []string
+
 	// OverwriteKeys is the opt-in set of frontmatter keys to REFRESH in place
 	// even when already present (issue #22). Empty (the default) preserves the
 	// additive/never-clobber behavior byte-for-byte. Scoped strictly to the named
@@ -97,6 +103,12 @@ type Report struct {
 	// (issue #7): the authored value is preserved unchanged and reported here
 	// rather than silently dropped. Each is "path: message". Initialized to [].
 	Warnings []string `json:"warnings"`
+	// StatusNotes carries the OKF §5.4 status-vocabulary notes for a run (issue
+	// #23): non-conformant --status-map values and any opt-in canonicalization
+	// rewrites. It is additive and always emitted, initialised to [] on a
+	// conformant run so the envelope shape is stable (matching PR #56's
+	// empty-array fix); a nil slice would marshal to null.
+	StatusNotes []string `json:"status_notes"`
 }
 
 // NumFindings returns the count of advisory findings enrich produces: skipped
@@ -167,11 +179,18 @@ func Enrich(src string, opts Options) (*Report, error) {
 		return nil, fmt.Errorf("enrich: walking source: %w", err)
 	}
 
+	// StatusNotes is always emitted (issue #23); a nil opts value becomes [] so
+	// the envelope shape is stable and never marshals to null (mirrors Warnings).
+	statusNotes := opts.StatusNotes
+	if statusNotes == nil {
+		statusNotes = []string{}
+	}
 	rep := &Report{
-		Src:      src,
-		DryRun:   opts.DryRun,
-		Files:    []FileResult{},
-		Warnings: []string{},
+		Src:         src,
+		DryRun:      opts.DryRun,
+		Files:       []FileResult{},
+		Warnings:    []string{},
+		StatusNotes: statusNotes,
 	}
 
 	codec := opts.Codec
