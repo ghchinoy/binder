@@ -332,7 +332,12 @@ sorted sub-list of inbound / outbound edges. The list is capped at **20 edges
 per entry**; when an entry has more, exactly 20 are rendered followed by a single
 `… and N more` line (the full edge set is always available via `binder graph`).
 These annotations derive from the **same resolved-edge set** `binder graph` uses
-(resolved links only), so the catalog and the graph can never disagree.
+(resolved links only), so the catalog and the graph can never disagree. For a
+worked example of that edge set, a tiny runnable bundle and the committed
+`binder graph` and `list_graphs` outputs derived from it live in
+[`docs/examples/graph-sample/`](docs/examples/graph-sample/), which the user
+guide's [graph surface](docs/user_guide.md#the-graph-surface) examples are
+reproducible against.
 
 Each sub-list entry is suffixed with the **link text in parentheses** — the
 relationship label that produced the edge:
