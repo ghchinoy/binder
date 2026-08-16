@@ -22,6 +22,15 @@ type Result struct {
 	NumConcepts int           `json:"num_concepts"`
 	NumReserved int           `json:"num_reserved"`
 	Findings    []okf.Finding `json:"findings"`
+
+	// ReservedStructureChecked reports whether the structure of reserved files
+	// (index.md, log.md; spec §8/§9) was examined. It is false in this release:
+	// structural validation of reserved files is not yet implemented (#77 item
+	// 2, deferred). It is emitted so the verdict's scope is explicit — a
+	// `conformant` result must not be read as covering a surface the validator
+	// never examined (invariant: never fabricate trust). num_reserved reports
+	// how many such files were present but structurally unexamined.
+	ReservedStructureChecked bool `json:"reserved_structure_checked"`
 }
 
 // Conformant reports whether the bundle satisfies the hard conformance rules

@@ -90,6 +90,33 @@ func TestValidateHardFailures(t *testing.T) {
 	})
 }
 
+// TestReservedStructureUnchecked pins the scope contract for #77 item 1: the
+// validator counts reserved files but does not examine their structure, so the
+// Result must report that fact (ReservedStructureChecked=false) rather than let
+// a `conformant` verdict imply a surface it never inspected. When structural
+// validation of reserved files lands (#77 item 2, v0.4.0) this expectation is
+// what flips.
+func TestReservedStructureUnchecked(t *testing.T) {
+	dir := writeBundle(t, map[string]string{
+		"a.md":     "---\ntype: concept\ntitle: A\n---\n\nBody\n",
+		"index.md": "arbitrary garbage, no structure\n",
+		"log.md":   "arbitrary garbage, no structure\n",
+	})
+	res, err := validate.Bundle(dir, native.New(), okf.SpecV02)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Conformant() {
+		t.Fatalf("garbage reserved files must not reject (never-reject): %v", res.Errors())
+	}
+	if res.NumReserved != 2 {
+		t.Fatalf("NumReserved = %d, want 2", res.NumReserved)
+	}
+	if res.ReservedStructureChecked {
+		t.Error("ReservedStructureChecked = true, want false: reserved-file structure is not examined in this release")
+	}
+}
+
 func TestValidateNeverRejectsOptional(t *testing.T) {
 	// Unknown keys, unknown type values, broken links, and total trust absence
 	// are all tolerated (spec §11): a minimal but well-formed concept is conformant.

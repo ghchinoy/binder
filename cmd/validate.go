@@ -52,6 +52,13 @@ func newValidateCmd(codec okf.Codec) *cobra.Command {
 
 			fmt.Fprintf(out, "bundle: %s\n", result.Root)
 			fmt.Fprintf(out, "concepts: %d, reserved files: %d\n", result.NumConcepts, result.NumReserved)
+			// Make the unchecked scope explicit so `conformant` is not read as
+			// covering the reserved files, which are counted but not structurally
+			// examined (spec §8/§9 deferred, #77). Never fabricate trust: the
+			// verdict must not silently claim a surface it never inspected.
+			if !result.ReservedStructureChecked && result.NumReserved > 0 {
+				fmt.Fprintf(out, "scope: reserved-file structure (index.md, log.md) not validated; verdict covers concept files only\n")
+			}
 			for _, f := range result.Advisories() {
 				fmt.Fprintf(out, "%s\n", f)
 			}
