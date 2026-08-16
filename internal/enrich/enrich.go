@@ -29,6 +29,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/ghchinoy/binder/internal/convert"
@@ -57,14 +58,28 @@ type Options struct {
 	StatusDefault string
 	StaleAfterMap map[string]string
 	VerifiedBy    string
+
+	// OverwriteKeys is the opt-in set of frontmatter keys to REFRESH in place
+	// even when already present (issue #22). Empty (the default) preserves the
+	// additive/never-clobber behavior byte-for-byte. Scoped strictly to the named
+	// keys: every other pre-existing key, custom frontmatter, key order, and
+	// surrounding bytes stay untouched. Trust/attestation-carrying keys
+	// (okf.ProtectedTrustKeys) are refused at the CLI, never here.
+	OverwriteKeys map[string]bool
 }
 
 // FileResult is the per-file outcome of an enrichment run.
 type FileResult struct {
-	Path   string   `json:"path"`             // source-relative
-	Status string   `json:"status"`           // enriched | unchanged | would-enrich | skipped
-	Added  []string `json:"added,omitempty"`  // keys injected, sorted
-	Reason string   `json:"reason,omitempty"` // for skipped, e.g. "unparseable frontmatter: <err>"
+	Path string `json:"path"`   // source-relative
+	Status string `json:"status"` // enriched | unchanged | would-enrich | skipped
+	// Added lists keys injected because they were ABSENT (additive/never-clobber),
+	// sorted. Overwritten lists keys REFRESHED in place because they were named in
+	// --overwrite-keys and their value changed (issue #22), sorted. Overwritten is
+	// omitted (nil) when --overwrite-keys is not used, so default output is
+	// byte-identical.
+	Added       []string `json:"added,omitempty"`
+	Overwritten []string `json:"overwritten,omitempty"`
+	Reason      string   `json:"reason,omitempty"` // for skipped, e.g. "unparseable frontmatter: <err>"
 }
 
 // Report summarizes an enrichment run. Slices are always initialized so --json
@@ -88,6 +103,37 @@ type Report struct {
 // files (unparseable frontmatter) plus preserve-or-advise warnings. All are
 // advisory — the run always completes; under --strict they gate (exit 1).
 func (r *Report) NumFindings() int { return r.NumSkipped + len(r.Warnings) }
+
+// ParseOverwriteKeys parses a --overwrite-keys value of the form
+// "status,stale_after" into a set of keys to refresh in place (issue #22). Empty
+// input yields a nil set (the flag is off → additive/never-clobber default).
+// Keys are trimmed; empty entries are ignored. Naming a trust/attestation-carrying
+// key (okf.ProtectedTrustKeys) is REFUSED LOUDLY as a usage error that names the
+// offending key — overwriting such a key could destroy a human attestation and
+// violate the never-fabricate-trust invariant, so it is never silently ignored.
+func ParseOverwriteKeys(s string) (map[string]bool, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil, nil
+	}
+	out := map[string]bool{}
+	for _, part := range strings.Split(s, ",") {
+		key := strings.TrimSpace(part)
+		if key == "" {
+			continue
+		}
+		if okf.IsProtectedTrustKey(key) {
+			return nil, fmt.Errorf("--overwrite-keys: refusing to overwrite trust-provenance key %q "+
+				"(protected: %s); these can carry human attestations and overwriting them would violate the "+
+				"never-fabricate-trust invariant", key, strings.Join(okf.ProtectedTrustKeys(), ", "))
+		}
+		out[key] = true
+	}
+	if len(out) == 0 {
+		return nil, nil
+	}
+	return out, nil
+}
 
 // Enrich walks src and injects missing frontmatter into each non-reserved file
 // in place (unless opts.DryRun). It returns the run Report. A bad/unreadable src
@@ -208,6 +254,13 @@ func enrichFile(codec okf.Codec, f convert.SourceFile, raw []byte, opts Options)
 	advisory := convert.ApplyVerifiedBy(c, cOpts)
 	convert.StampGenerated(c.Frontmatter, opts.Version, opts.Now)
 
+	// Opt-in overwrite pass (issue #22): refresh ONLY the named keys, in place.
+	// This runs AFTER the additive injectors so it is a no-op when
+	// --overwrite-keys is unused (default behavior stays byte-identical).
+	if len(opts.OverwriteKeys) > 0 {
+		applyOverwrites(c, f, cOpts, opts)
+	}
+
 	changed := changedKeys(before, c.Frontmatter)
 	if len(changed) == 0 {
 		// Nothing changed → no write (no mtime/git churn). An advisory (a
@@ -215,8 +268,10 @@ func enrichFile(codec okf.Codec, f convert.SourceFile, raw []byte, opts Options)
 		return FileResult{Path: f.Rel, Status: StatusUnchanged}, advisory, nil
 	}
 
+	added, overwritten := splitChanged(before, changed, opts.OverwriteKeys)
+
 	if opts.DryRun {
-		return FileResult{Path: f.Rel, Status: StatusWouldEnrich, Added: changed}, advisory, nil
+		return FileResult{Path: f.Rel, Status: StatusWouldEnrich, Added: added, Overwritten: overwritten}, advisory, nil
 	}
 
 	out, serr := codec.Serialize(c)
@@ -226,7 +281,68 @@ func enrichFile(codec okf.Codec, f convert.SourceFile, raw []byte, opts Options)
 	if err := atomicWrite(f.Abs, out); err != nil {
 		return FileResult{}, "", fmt.Errorf("enrich: writing %q: %w", f.Rel, err)
 	}
-	return FileResult{Path: f.Rel, Status: StatusEnriched, Added: changed}, advisory, nil
+	return FileResult{Path: f.Rel, Status: StatusEnriched, Added: added, Overwritten: overwritten}, advisory, nil
+}
+
+// applyOverwrites refreshes the frontmatter keys named in opts.OverwriteKeys with
+// the values the declarative injectors WOULD produce for a fresh file, updating
+// each IN PLACE so key order and every other key stay byte-faithful (issue #22).
+//
+// It computes the fresh values on a throwaway candidate concept whose frontmatter
+// is a deep copy of c's with the overwrite keys removed, so the set-when-absent
+// injectors recompute them from --type-map/--default-type and the lifecycle maps.
+// A key is only written back when the candidate actually produced a value; if the
+// run supplies no source for it (e.g. `status` named with no --status-map), the
+// authored value is left untouched rather than clobbered to empty. Trust keys are
+// refused at the CLI, so they never reach here.
+func applyOverwrites(c *okf.Concept, f convert.SourceFile, cOpts convert.Options, opts Options) {
+	cand := &okf.Concept{
+		Frontmatter: cloneFMExcluding(c.Frontmatter, opts.OverwriteKeys),
+		Body:        c.Body,
+	}
+	convert.EnsureType(cand.Frontmatter, f.Rel, opts.TypeMap, opts.DefaultType)
+	convert.EnsureTitle(cand.Frontmatter, f.Rel, cand.Body)
+	convert.ApplyLifecycleMaps(cand, f.Rel, cOpts)
+
+	for key := range opts.OverwriteKeys {
+		if v, ok := cand.Frontmatter.Get(key); ok {
+			// Set preserves position for an existing key (OrderedMap.Set), so the
+			// refreshed value lands in place; for an absent key this is an additive
+			// add, identical to the default injector outcome.
+			c.Frontmatter.Set(key, v)
+		}
+	}
+}
+
+// cloneFMExcluding returns a deep copy of fm omitting the given keys, so the
+// set-when-absent injectors recompute fresh values for them.
+func cloneFMExcluding(fm *okf.OrderedMap, exclude map[string]bool) *okf.OrderedMap {
+	out := okf.NewOrderedMap()
+	for _, k := range fm.Keys() {
+		if exclude[k] {
+			continue
+		}
+		v, _ := fm.Get(k)
+		out.Set(k, deepCopyValue(v))
+	}
+	return out
+}
+
+// splitChanged partitions the changed keys into additive adds and in-place
+// overwrites: a key is an overwrite when it was named in overwriteKeys AND was
+// already present before injection; everything else is an add. With no
+// overwriteKeys every changed key is an add, so Added keeps its original meaning
+// and Overwritten stays nil.
+func splitChanged(before fmSnapshot, changed []string, overwriteKeys map[string]bool) (added, overwritten []string) {
+	for _, k := range changed {
+		_, existedBefore := before[k]
+		if overwriteKeys[k] && existedBefore {
+			overwritten = append(overwritten, k)
+		} else {
+			added = append(added, k)
+		}
+	}
+	return added, overwritten
 }
 
 // fmSnapshot captures a frontmatter's values by deep copy so a later comparison

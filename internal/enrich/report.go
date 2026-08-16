@@ -27,9 +27,9 @@ func (r *Report) String() string {
 	for _, f := range r.Files {
 		switch f.Status {
 		case StatusEnriched:
-			fmt.Fprintf(&b, "  enriched %s (added: %s)\n", f.Path, strings.Join(f.Added, ", "))
+			fmt.Fprintf(&b, "  enriched %s%s\n", f.Path, changeSuffix("added", "overwritten", f))
 		case StatusWouldEnrich:
-			fmt.Fprintf(&b, "  would enrich %s (add: %s)\n", f.Path, strings.Join(f.Added, ", "))
+			fmt.Fprintf(&b, "  would enrich %s%s\n", f.Path, changeSuffix("add", "overwrite", f))
 		case StatusSkipped:
 			fmt.Fprintf(&b, "  skipped %s (%s)\n", f.Path, f.Reason)
 		}
@@ -38,4 +38,22 @@ func (r *Report) String() string {
 		fmt.Fprintf(&b, "  advisory: %s\n", w)
 	}
 	return b.String()
+}
+
+// changeSuffix renders the "(added: …)" / "(add: … ; overwrite: …)" tail of a
+// per-file enriched/would-enrich line. The overwrite clause is present only when
+// keys were refreshed in place (--overwrite-keys), so default output is
+// unchanged. addVerb/owVerb differ between the applied and dry-run phrasings.
+func changeSuffix(addVerb, owVerb string, f FileResult) string {
+	var parts []string
+	if len(f.Added) > 0 {
+		parts = append(parts, fmt.Sprintf("%s: %s", addVerb, strings.Join(f.Added, ", ")))
+	}
+	if len(f.Overwritten) > 0 {
+		parts = append(parts, fmt.Sprintf("%s: %s", owVerb, strings.Join(f.Overwritten, ", ")))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return " (" + strings.Join(parts, "; ") + ")"
 }
