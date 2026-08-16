@@ -824,6 +824,24 @@ whole of stdout is a valid `--type-map` argument. Diagnostics go to **stderr**,
 so they never contaminate the substitution. Use `--json` when you want the
 per-directory rationale, the `warnings` array, and the tier attribution.
 
+**For scripting, read `result.type_map` out of `--json`.** It is the same string
+the prose form prints, on a stable, parseable path, and it is `""` when no
+directory mapping is inferred:
+
+```console
+$ binder infer testdata/corpus-rich --json | jq -r '.result.type_map'
+attested=Attested Computation,guides=Guide,tables=BigQuery Table
+$ binder infer testdata/corpus-lint-entrypoints --json | jq -r '.result.type_map'
+
+```
+
+That extraction substitutes directly into `--type-map`:
+
+```bash
+binder convert path/to/corpus -o path/to/bundle \
+  --type-map "$(binder infer path/to/corpus --json | jq -r '.result.type_map')"
+```
+
 #### The Gemini tier: degrade by default, `--gemini-required` to fail
 
 The opt-in Gemini tier (`--gemini`) is the only part of `infer` that can fail for
