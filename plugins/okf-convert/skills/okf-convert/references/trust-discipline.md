@@ -9,7 +9,7 @@ fabricate it; defer all stamping to the deterministic tool.**
 - binder stamps an **honest** `generated: binder/<version>` provenance mark on
   what it produces. That is a true statement about how the file was generated.
 - binder **never invents** a `verified` actor or `sources`. Trust mapping is off
-  by default and byte-faithful — it only maps signals you explicitly point it at
+  by default — it only maps signals you explicitly point it at
   (`--source-keys`, `--map-citations`), and only from real corpus content.
 - **binder is safe by default (`binder/0.3.1`+): no flag and no default *you*
   set means no `verified` stamp.** A stamp is written without the flag only from

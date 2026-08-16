@@ -159,7 +159,7 @@ binder lint <corpus> --json | jq '.result | {broken_links, missing_titles, schem
 ```
 
 `status` ∈ `enriched | unchanged | would-enrich | skipped`. `added` is the sorted
-list of injected keys; byte-faithful.
+list of injected keys.
 
 **`.result.verified` is the run-level trust disclosure (0.3.1+).** It is `actor:
 "", source: "none"` when nothing was stamped. A stamp is written only from an
