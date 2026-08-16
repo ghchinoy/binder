@@ -105,6 +105,11 @@ binder config     Manage configuration (show, get, set, unset)
 binder mcp        Run binder as a stdio MCP server (convert/validate/review/lint/graph/list_graphs/query_graph)
 ```
 
+Two further built-ins come from the CLI framework rather than from binder's own
+surface, and are not counted among the ten: `binder help [command]` and
+`binder completion <bash|zsh|fish|powershell>` (see
+[Discovery surface](#discovery-surface---version----help)).
+
 Every command supports `-h`/`--help`. The root binary supports `-v`/`--version`.
 `validate`, `review`, `lint`, `convert`, `enrich`, and `infer` also support
 `--strict` to gate advisories in CI (see [Strict mode](#strict-mode)); configuration is resolved
@@ -149,6 +154,7 @@ Output is required unless you pass `--dry-run`.
 | `--status-map` | — | Per-directory `status`, e.g. `"archive=deprecated,drafts=draft,default=active"`. Longest-prefix match; `default=` is the fallback. Set **only when `status` is absent** (never clobbers an authored value). See [Declarative trust & lifecycle](#declarative-trust--lifecycle-flags). |
 | `--stale-after-map` | — | Per-directory `stale_after` relative to now, e.g. `"07-benchmarks=+6m,legacy=+0d"`. Grammar `+Nd`/`+Nm`/`+Ny` (days/months/years, UTC `YYYY-MM-DD`). Longest-prefix match; set **only when `stale_after` is absent**. |
 | `--verified-by` | config `verified_by` | Actor appended as a `verified` stamp, e.g. `"human:ghchinoy"` or `"binder/0.3.0"`. Validated with the actor grammar; an invalid value is a usage error (exit 2). Appends only — never rewrites the derived tier. See [Declarative trust & lifecycle](#declarative-trust--lifecycle-flags). |
+| `--canonicalize-status` | `false` | **Opt-in**: rewrite a known `--status-map` alias to the OKF §5.4 vocabulary (`active`→`stable`, `wip`/`in-progress`→`draft`, `archived`/`legacy`→`deprecated`). The vocabulary **check** is always on; this flag controls only the rewrite. Each rewrite is reported in `status_notes`. See [Status vocabulary and `--canonicalize-status`](#status-vocabulary-and---canonicalize-status). |
 | `--fm-ref-keys` | — | Frontmatter keys treated as relationship edges, e.g. `"related,parent"`. |
 | `--workspace-root` | `<src>` root | Boundary within which `file://` links resolve to internal edges. See [`file://` link resolution](#file-link-resolution). |
 | `--external-root` | — | Declare a **known** sibling-workspace root (repeatable). A `file://` link that resolves under it stays external (never internalized) but its outside-root advisory is suppressed. An empty value is a usage error (exit 2). See [`file://` link resolution](#file-link-resolution). |
@@ -337,6 +343,7 @@ A plain-markdown file (no frontmatter fence) gets a fresh, valid block prepended
 | `--status-map` | — | Per-directory `status`, e.g. `"archive=deprecated,default=active"`; `default=` is the fallback. Set **only when `status` is absent**. |
 | `--stale-after-map` | — | Per-directory `stale_after` relative to the run clock (grammar `+Nd`/`+Nm`/`+Ny`, UTC `YYYY-MM-DD`); set **only when absent**. Malformed → exit 2. |
 | `--verified-by` | config `verified_by` | Actor appended as a `verified` stamp, e.g. `"human:ghchinoy"`. Invalid actor → exit 2. Appends only (dedup by `by,at`). |
+| `--canonicalize-status` | `false` | **Opt-in**: rewrite a known `--status-map` alias to the OKF §5.4 vocabulary (`active`→`stable`, `wip`/`in-progress`→`draft`, `archived`/`legacy`→`deprecated`). The vocabulary **check** is always on; this flag controls only the rewrite. Each rewrite is reported in `status_notes`. See [Status vocabulary and `--canonicalize-status`](#status-vocabulary-and---canonicalize-status). |
 | `--overwrite-keys` | — | **Opt-in** comma-separated keys to **refresh in place even when present**, e.g. `"status,stale_after"`. Default is additive/never-clobber. Scoped strictly to the named keys; trust keys are **refused** (exit 2). See [Opt-in refresh](#opt-in-refresh---overwrite-keys). |
 | `--strict` | `false` | Gate (exit 1) when any file is skipped or a preserve-or-advise finding is present. Without it these never gate (exit 0). |
 | `--json` | `false` | Emit the run report as deterministic JSON (schema `binder.report/v1`, `command:"enrich"`) instead of prose. |
@@ -386,6 +393,14 @@ Rules that make it safe to run on a git-tracked tree:
   actually produces a value for it (e.g. `status` needs `--status-map`/
   `--default-type`; `stale_after` needs `--stale-after-map`). Naming a key with
   no source leaves the authored value untouched — it is never blanked.
+- **The effective refreshable set is exactly four keys: `type`, `title`,
+  `status`, `stale_after`.** Those are the only keys `enrich` ever computes, so
+  they are the only keys `--overwrite-keys` can refresh. Naming any *other*
+  non-trust key — `--overwrite-keys owner`, `--overwrite-keys foo` — is
+  **accepted silently**: the run exits `0`, the named key is left exactly as
+  authored, and nothing is reported. There is no "unknown key" diagnostic, so
+  check your spelling. (Naming a *trust* key is the opposite: a loud refusal,
+  exit `2`, nothing written — see **Trust keys are refused** below.)
 - **Respects `--dry-run`, skip-unchanged, and the atomic write.** Refreshing a
   key to the value it already has rewrites nothing and is not counted as
   modified; two runs are byte-identical (`SOURCE_DATE_EPOCH`-deterministic).
@@ -774,6 +789,48 @@ binder enrich path/to/corpus --type-map "$(binder infer path/to/corpus)"
 | `--json` | `false` | Emit the report as deterministic JSON (schema `binder.report/v1`). |
 | `--strict` | `false` | Gate (exit 1) if any warning or inference failure occurs. |
 
+#### Prose output: a bare `--type-map` string
+
+`infer` is the one command whose default output is **not** a report. It writes a
+single line to stdout — the proposed `--type-map` value and nothing else, no
+header, no counts, no trailing prose:
+
+```console
+$ binder infer testdata/corpus-rich
+attested=Attested Computation,guides=Guide,tables=BigQuery Table
+```
+
+That is precisely why the `"$(binder infer …)"` substitution above works: the
+whole of stdout is a valid `--type-map` argument. Diagnostics go to **stderr**,
+so they never contaminate the substitution. Use `--json` when you want the
+per-directory rationale, the `warnings` array, and the tier attribution.
+
+#### The Gemini tier: degrade by default, `--gemini-required` to fail
+
+The opt-in Gemini tier (`--gemini`) is the only part of `infer` that can fail for
+reasons outside the corpus. Two flags decide what a failure means, and they map
+onto three different exit codes:
+
+| Invocation | On a Gemini failure |
+|---|---|
+| `binder infer <src> --gemini` | **Degrades** to the deterministic tiers, still prints the proposal, exits **0**. In prose mode the degradation is **silent** — the reason is recorded only in the `--json` `warnings` array. |
+| `binder infer <src> --gemini --strict` | Degrades and still prints the proposal on stdout, then gates: `binder: infer encountered 1 warning(s) (--strict)` on stderr, exit **1**. |
+| `binder infer <src> --gemini --gemini-required` | Does **not** degrade. Nothing on stdout; `binder: gemini semantic inference: <error>` on stderr; exit **3** — the io/external-failure code, not `1` or `2`. |
+
+So a prose `--gemini` run that quietly returns a deterministic-looking proposal
+may in fact be a degraded one. If it matters whether the model was actually
+consulted, use `--json` and inspect `warnings` (and `mappings[].source`), or make
+the failure loud with `--gemini-required` / `--strict`.
+
+`--gemini-required` without `--gemini` has no effect: the Gemini tier is never
+attempted, so there is nothing to require, and the run is an ordinary
+deterministic exit `0`.
+
+Unlike every other binder output, a **Gemini-tier proposal is not
+deterministic** — the same corpus can yield different `suggested_type` values on
+successive runs. The deterministic tiers (1–3) are reproducible; tier 4 is a
+model call. Do not pin CI on `--gemini` output.
+
 ### `config`
 
 ```text
@@ -792,6 +849,12 @@ flag  >  environment variable  >  config file  >  built-in default
 - **Config files:**
   - Local repository config: `./.binder.yaml`
   - Global user config: `$XDG_CONFIG_HOME/binder/config.yaml` (fallback `$HOME/.config/binder/config.yaml`)
+
+  Exactly **one** file is loaded — the two are not merged. If `./.binder.yaml`
+  exists it is the config file, and the global file is ignored in its entirety
+  (not just for the keys the local file sets). `binder config` prints the file
+  actually in effect on its `config file:` line, so that line is the way to tell
+  which one you are editing.
 - **Environment variables** use the `BINDER_` prefix, e.g. `BINDER_VERIFIED_BY`, `BINDER_DEFAULT_TYPE`, `BINDER_GEMINI_PROJECT`.
 
 #### Configuration Keys
@@ -831,6 +894,221 @@ binder config unset gemini.project
 |---|---|---|
 | `--json` | `false` | Emit the configuration report as deterministic JSON (schema `binder.config/v1`). |
 | `-g`, `--global` | `false` | (`set`/`unset` only) Target global user config (`~/.config/binder/config.yaml`) instead of `./.binder.yaml`. |
+
+#### Key spellings: `gemini.project` and `gemini_project`
+
+Every Gemini key has two accepted spellings — dotted (`gemini.project`) and
+snake_case (`gemini_project`) — and they are the **same key**, not two keys.
+Whichever you type, the config file is always written in snake_case and every
+report echoes the snake_case name:
+
+```console
+$ binder config set gemini.project my-gcp-project
+Set gemini_project = "my-gcp-project" in .binder.yaml
+
+$ cat .binder.yaml
+gemini_project: my-gcp-project
+
+$ binder config get gemini_project
+my-gcp-project
+```
+
+So a value written with one spelling reads back with the other. The dotted form
+is a **key spelling on the command line only** — it is not YAML nesting. A
+hand-edited file containing
+
+```yaml
+gemini:
+  project: nested-project
+```
+
+is parsed without error but the value is **not picked up**: `binder config` still
+reports `gemini_project: "" (source: default)`. Only the flat snake_case keys are
+read, so prefer `binder config set` over editing the file by hand.
+
+#### `config` prose output
+
+`binder config` (equivalently `binder config list`) prints a header line, the
+config file in effect, and one line per key with its value and attribution
+source (`flag`, `env`, `file`, or `default`). With nothing configured anywhere:
+
+```console
+$ binder config
+binder config
+  config file: (none; using defaults)
+  default_type: "Note" (source: default)
+  verified_by: "" (source: default)
+  gemini_model: "gemini-3.5-flash-lite" (source: default)
+  gemini_location: "global" (source: default)
+  gemini_project: "" (source: default)
+  gemini_backend: "auto" (source: default)
+```
+
+…and after `binder config set gemini.project my-gcp-project`, with
+`BINDER_DEFAULT_TYPE=Guide` exported:
+
+```console
+$ BINDER_DEFAULT_TYPE=Guide binder config
+binder config
+  config file: .binder.yaml
+  default_type: "Guide" (source: env)
+  verified_by: "" (source: default)
+  gemini_model: "gemini-3.5-flash-lite" (source: default)
+  gemini_location: "global" (source: default)
+  gemini_project: "my-gcp-project" (source: file)
+  gemini_backend: "auto" (source: default)
+```
+
+The mutating subcommands each print a single confirmation line naming the file
+they touched, and `get` prints the bare value with no decoration — which is what
+makes it safe in a shell substitution:
+
+```console
+$ binder config set gemini.project my-gcp-project
+Set gemini_project = "my-gcp-project" in .binder.yaml
+
+$ binder config get gemini.project
+my-gcp-project
+
+$ binder config unset gemini.project
+Unset gemini_project in .binder.yaml (reverted to default)
+```
+
+Unsetting a key that is not set is a **no-op, not an error** — it prints
+`Key <name> is not set in .binder.yaml` and exits `0`. Removing the last key
+from a config file removes the file itself rather than leaving an empty one.
+
+#### `config --json` — the `binder.config/v1` payloads
+
+`config` uses the envelope shape described under
+[JSON output](#json-output---json-and-the-exit-code-contract) but with
+`schema: "binder.config/v1"`, and `command` distinguishes the four subcommands.
+Each `result` is a different object.
+
+**`binder config --json` / `binder config list --json`** — `command: "config"`.
+`config_file` is the file in effect (`""` when none), and `values` is a **map**,
+so its keys are sorted alphabetically (unlike the struct-backed envelope, which
+is field-ordered):
+
+```json
+{
+  "binder": "binder/0.3.0",
+  "command": "config",
+  "schema": "binder.config/v1",
+  "result": {
+    "config_file": ".binder.yaml",
+    "values": {
+      "default_type": {
+        "value": "Note",
+        "source": "default"
+      },
+      "gemini_backend": {
+        "value": "auto",
+        "source": "default"
+      },
+      "gemini_location": {
+        "value": "global",
+        "source": "default"
+      },
+      "gemini_model": {
+        "value": "gemini-3.5-flash-lite",
+        "source": "default"
+      },
+      "gemini_project": {
+        "value": "my-gcp-project",
+        "source": "file"
+      },
+      "verified_by": {
+        "value": "",
+        "source": "default"
+      }
+    }
+  }
+}
+```
+
+Every key is always present, `value` is always a string (`""` when unset), and
+`source` ∈ `flag` | `env` | `file` | `default`.
+
+**`binder config get <key> --json`** — `command: "config get"`; `result` carries
+the resolved `key` (always the snake_case spelling), its `source`, and its
+`value`:
+
+```json
+{
+  "binder": "binder/0.3.0",
+  "command": "config get",
+  "schema": "binder.config/v1",
+  "result": {
+    "key": "gemini_project",
+    "source": "file",
+    "value": "my-gcp-project"
+  }
+}
+```
+
+**`binder config set <key> <value> --json`** — `command: "config set"`; `result`
+names the `file` written, the `key`, the `value`, and a `status`:
+
+```json
+{
+  "binder": "binder/0.3.0",
+  "command": "config set",
+  "schema": "binder.config/v1",
+  "result": {
+    "file": ".binder.yaml",
+    "key": "default_type",
+    "status": "updated",
+    "value": "Guide"
+  }
+}
+```
+
+**`binder config unset <key> --json`** — `command: "config unset"`; `result` is
+the same minus `value`. `status` is `removed` when the key was present and
+`noop` when it was not (both exit `0`):
+
+```json
+{
+  "binder": "binder/0.3.0",
+  "command": "config unset",
+  "schema": "binder.config/v1",
+  "result": {
+    "file": ".binder.yaml",
+    "key": "default_type",
+    "status": "removed"
+  }
+}
+```
+
+#### `config` error semantics
+
+`config` fails fast and it fails as a **usage error** (exit `2`), never as a
+findings code. Both failure classes print a plain `binder: …` line on stderr and
+emit **no envelope** — even under `--json`, so a consumer must branch on the exit
+code, not on parsing stdout.
+
+An unrecognized key, on any of `get`/`set`/`unset`, is rejected with the valid
+set listed:
+
+```console
+$ binder config get nope; echo $?
+binder: unknown configuration key "nope" (valid keys: default_type, verified_by, gemini_model, gemini_location, gemini_project, gemini_backend)
+2
+```
+
+`verified_by` is validated against the actor grammar at **write** time, so an
+invalid actor can never be persisted:
+
+```console
+$ binder config set verified_by "bogus actor!"; echo $?
+binder: invalid actor "bogus actor!"; valid forms: human:<id>, process:<id>, team:<id>, or <producer>/<version> (e.g. binder/0.3.0)
+2
+```
+
+The same validation runs again at config-**load**, so a `verified_by` that was
+hand-edited into the file is caught on the next run rather than silently stamped
+into a bundle.
 
 ## JSON output (`--json`) and the exit-code contract
 
@@ -905,6 +1183,7 @@ always present, so a parser sees a stable shape regardless of the bundle.
 | `num_unresolved` | int | Links left unresolved (reported, not dropped). |
 | `num_recovered` | int | Files whose unparseable frontmatter was preserved as body (§4.6). |
 | `dry_run` | bool | Whether this was a `--dry-run`. |
+| `status_notes` | array of string | Status-vocabulary messages — canonicalization rewrites and non-conformance warnings — sorted. Always present; `[]` on a conformant run. See [Status vocabulary and `--canonicalize-status`](#status-vocabulary-and---canonicalize-status). |
 
 Each `concepts[]` object: `rel_path`, `type`, `title`, `num_links`,
 `num_unresolved`. Each `unresolved[]` object: `from` (source concept rel path),
@@ -922,6 +1201,7 @@ Each `concepts[]` object: `rel_path`, `type`, `title`, `num_links`,
 | `num_skipped` | int | Files skipped (unparseable frontmatter), never mutated. |
 | `files` | array | One object per file (see below), sorted by path. |
 | `warnings` | array of string | Preserve-or-advise notices (`path: message`). |
+| `status_notes` | array of string | Status-vocabulary messages — canonicalization rewrites and non-conformance warnings — sorted. Always present; `[]` on a conformant run. See [Status vocabulary and `--canonicalize-status`](#status-vocabulary-and---canonicalize-status). |
 
 Each `files[]` object: `path` (source-relative), `status` ∈
 `enriched|unchanged|would-enrich|skipped`, `added` (sorted keys injected),
@@ -1049,6 +1329,30 @@ finding is present. See the [exit-code contract](#exit-code-contract).
 
 - **`type_map`** (`string`) — comma-separated `dir=Type` string formatted for `--type-map`.
 - **`mappings`** (`[]object`) — list of per-directory proposals with `dir`, `suggested_type`, `source` (`folder` | `pattern` | `frontmatter` | `gemini`), `rationale`, and optional `sample_files`, `model`, `backend`.
+- **`warnings`** (`[]string`) — always present, `[]` on a clean run. A degraded
+  Gemini tier lands here as `gemini inference warning: <error>`; in prose mode
+  this is the **only** place the degradation is visible.
+
+`model` and `backend` appear **only** on entries the Gemini tier produced
+(`"source": "gemini"`) — they name the model actually called and the auth
+backend that was resolved for the call. A tier-4 entry looks like:
+
+```json
+{
+  "dir": "attested",
+  "suggested_type": "Reference",
+  "source": "gemini",
+  "rationale": "suggested by Gemini semantic analysis",
+  "sample_files": [
+    "attested/calc.md"
+  ],
+  "model": "gemini-3.5-flash-lite",
+  "backend": "vertex"
+}
+```
+
+`suggested_type` in a tier-4 entry is model output and will not necessarily
+repeat run to run; the deterministic tiers will.
 
 ### graph JSON — a raw export, not the envelope
 
@@ -1078,7 +1382,7 @@ Every command maps its outcome onto four stable codes. The code is about the
 | `0` | success | Completed with no gating findings. Advisories may be present — they are reported but never gate. | all commands, normal case |
 | `1` | findings-present | A gating condition: `validate` spec §11 non-conformance (unparseable frontmatter or a missing/empty `type`), or — under [`--strict`](#strict-mode) — any advisory promoted to a gating finding. | `validate`, `review`, `lint`, `convert`, `enrich`, `infer` (with `--strict`) |
 | `2` | usage-error | Bad flags/args — an unknown subcommand or flag, a missing/extra argument, a conflicting `--json`/`--format`, an unparseable `--today`, a malformed `--status-map`, or an `--overwrite-keys` list naming a trust-provenance key. Also: a missing source path for `lint`/`enrich`/`infer` (see below). | any command |
-| `3` | io-error | Cannot read the corpus/bundle, a write failure, or an internal error. Includes a missing path for `convert`/`validate`/`review`/`index`/`graph` (see below). | any command |
+| `3` | io-error | Cannot read the corpus/bundle, a write failure, an external-service failure, or an internal error. Includes a missing path for `convert`/`validate`/`review`/`index`/`graph` (see below), and a failing Gemini tier under [`infer --gemini-required`](#the-gemini-tier-degrade-by-default---gemini-required-to-fail). | any command |
 
 #### The missing-path asymmetry (`2` vs `3`)
 
@@ -1165,7 +1469,7 @@ The `--status-map` vocabulary gate is the one that fires **before** anything is
 written: `convert --strict` exits `1` without creating the output directory, and
 `enrich --strict` exits `1` without touching a single source file. Adding
 `--canonicalize-status` resolves a known alias and the run returns to exit `0`.
-See [Declarative trust & lifecycle](#declarative-trust--lifecycle-flags).
+See [Status vocabulary and `--canonicalize-status`](#status-vocabulary-and---canonicalize-status).
 
 `--strict` is available on `validate`, `review`, `lint`, `convert`, `enrich`, and
 `infer`. A clean run stays exit `0` even with `--strict` set, so the flag is safe
@@ -1192,6 +1496,22 @@ An agent or script can enumerate binder's surface without parsing prose reports:
   command's `Usage:` line and a `Flags:` section (name, shorthand, default,
   description) — a stable, documented shape sufficient to discover every flag,
   including `--json`.
+- **`binder completion <bash|zsh|fish|powershell>`** writes a shell-completion
+  script to stdout. It is the stock generator supplied by the CLI framework, with
+  no binder-specific behaviour and no `--json`; it is not a report-producing
+  command and emits no envelope:
+
+  ```console
+  $ binder completion bash | head -1
+  # bash completion V2 for binder                               -*- shell-script -*-
+  ```
+
+  Install it the way your shell expects — e.g.
+  `binder completion bash > /etc/bash_completion.d/binder`, or
+  `binder completion zsh > "${fpath[1]}/_binder"`. Note that `binder completion`
+  with a missing or unrecognized shell prints the sub-command list and exits `0`
+  rather than failing as a usage error, so check the output rather than the exit
+  code when scripting it.
 
 A structured tool/flag catalog (a machine-readable command manifest) is not part
 of this surface; it is delivered natively by the [MCP server mode](#mcp-server-binder-mcp)
@@ -1245,12 +1565,24 @@ flags. Required params are marked **(req)**.
 
 | Tool | Params | Result |
 |---|---|---|
-| `convert` | `src` **(req)**, `out` (req unless `dry_run`), `dry_run`, `default_type`, `type_map`, `fm_ref_keys`, `source_keys`, `map_citations`, `map_draft`, `status_map`, `stale_after_map`, `verified_by`, `workspace_root`, `group_by_type`, `include_backlinks`, `include_graph`, `strict` | `convert` report envelope. `dry_run:true` → `convert.Analyze`, the ingestion-analysis preview (writes nothing); `dry_run:false` → writes the bundle to `out`. |
+| `convert` | `src` **(req)**, `out` (req unless `dry_run`), `dry_run`, `default_type`, `type_map`, `fm_ref_keys`, `source_keys`, `map_citations`, `map_draft`, `status_map`, `canonicalize_status`, `stale_after_map`, `verified_by`, `workspace_root`, `external_root`, `group_by_type`, `include_backlinks`, `include_graph`, `strict` | `convert` report envelope. `dry_run:true` → `convert.Analyze`, the ingestion-analysis preview (writes nothing); `dry_run:false` → writes the bundle to `out`. |
 | `validate` | `bundle` **(req)**, `strict` | `validate` report envelope. |
 | `review` | `bundle` **(req)**, `today`, `strict` | `review` report envelope. |
 | `lint` | `src` **(req)**, `today`, `strict` | `lint` report envelope (read-only source-corpus health). |
 | `graph` | `bundle` **(req)**, `format` (`dot`\|`json`\|`graphml`\|`html`, default `json`), `today` | The **raw** export bytes. `format:json` is the raw `{nodes,edges}` object — **not** the report envelope (see [graph JSON](#graph-json--a-raw-export-not-the-envelope)). |
 | `list_graphs` | `bundle` **(req)**, `today`, `id_key` | `list_graphs` report envelope: the LPG **schema descriptor** for the graph binder projects from the bundle — graph name, `node_key` strategy, counts, node labels (the concept `type`s present) and the single `LINKS` edge label, each with property declarations. Read-only introspection derived from the same `graph.Build` projection; `id_key` prefers an authored stable-id frontmatter key as the node key when present, else path identity (never minted). |
+| `query_graph` | `bundle` **(req)**, `op` **(req)** (`lookup`\|`neighbors`\|`neighborhood`\|`pattern`\|`path`), `today`, `id_key`, `id`, `label` (**req for `pattern`**), `direction` (`out`\|`in`\|`both`, default `out`), `rel`, `depth` (**req for `neighborhood`**, `1..5`), `to_label`, `where` (`{prop, eq}`, both required; `prop` ∈ `type`\|`tier`\|`stale`), `from` and `to` (**both req for `path`**), `max_depth` (**req for `path`**, `1..5`) | `query_graph` report envelope, one result shape per `op`. Which params apply depends on `op`; `id_key` is accepted for parity with `list_graphs` but is **never honored** here (the response echoes `node_key.honored: false`). The five operations, their per-`op` result shapes and the bounds are documented in full under [`query_graph`: asking questions of the graph](#query_graph-asking-questions-of-the-graph). |
+
+`convert`'s `canonicalize_status` is the MCP parity param for the CLI's
+`--canonicalize-status` — same always-on check, same opt-in rewrite, same
+`status_notes` in the payload (see
+[Status vocabulary and `--canonicalize-status`](#status-vocabulary-and---canonicalize-status)).
+`external_root` is the parity param for the repeatable `--external-root` flag.
+
+`query_graph`'s JSON schema marks only `bundle` and `op` as `required`; the
+per-`op` requirements marked **(req for …)** above are enforced at call time
+instead and come back as tool errors — `pattern requires label`,
+`path requires from and to`, `depth must be in 1..5`.
 
 `strict` is accepted for parity with the CLI flag, but since a tool call has no
 exit code it does **not** change the payload (the report is returned either way).
@@ -1266,6 +1598,14 @@ transport over the existing internal functions:
   MCP error. Tool errors are reserved for **usage** (bad/missing params, an
   invalid `verified_by`, an unknown `graph` format) and **IO** (an unreadable
   path).
+- **A zero-match query is a result, not an error.** `query_graph` extends the
+  never-reject rule to the query surface: a `lookup` for an id that does not
+  exist returns `isError: false` with the normal envelope and
+  `result.not_found: true`. What *is* a tool error is malformed usage — an
+  unknown `op` (`unknown op "bogus" (want lookup|neighbors|neighborhood|pattern|path)`)
+  or an out-of-range `depth` (`depth must be in 1..5`) come back as
+  `isError: true` with **plain text**, not the envelope. So a consumer must
+  check `isError` before attempting to parse the content as JSON.
 - **Never-fabricate-trust.** `verified_by` is applied **only** when explicitly
   passed; the server never auto-stamps `verified` and never invents `sources`.
   An invalid actor is a usage-class tool error.
@@ -1274,6 +1614,14 @@ transport over the existing internal functions:
 - **Additive only.** Source-mutating verbs (`enrich`, `emit_concept`) and
   read/search tools are deliberately **not** exposed: the read surface belongs to
   the knowledge store, and authoring over MCP is a later concern.
+- **`infer` is not exposed either.** A `tools/list` returns exactly the seven
+  tools above — no `enrich`, and no `infer`. `infer` writes nothing, so it is not
+  excluded for the mutation reason `enrich` is; two consequences follow for a
+  harness. First, there is no MCP route to a proposed `--type-map`: derive one
+  yourself (the harness already has a model) and pass it to the `convert` tool's
+  `type_map` param. Second, every payload on the MCP surface stays reproducible,
+  because `infer`'s Gemini tier — the one binder output that is not
+  byte-identical run to run — is not reachable over it.
 
 ## The graph surface
 
@@ -1923,7 +2271,9 @@ the same discipline as the trust-mapping flags: deterministic, additive, and
   **longest-first** (the most specific directory wins); the reserved `default=`
   key is the fallback for anything unmatched. `status` is set **only when the
   concept has none** — an authored `status` is always preserved. Values are the
-  spec `status` enum.
+  spec `status` enum (`draft`, `stable`, `deprecated`) — a value outside it is
+  **checked and reported** on every run, and rewritten only if you ask. See
+  [Status vocabulary and `--canonicalize-status`](#status-vocabulary-and---canonicalize-status).
 
 - **`--stale-after-map "07-benchmarks=+6m,legacy=+0d"`** — assigns `stale_after`
   by directory prefix (same longest-first matching). Values use the relative-date
@@ -1953,6 +2303,195 @@ the same discipline as the trust-mapping flags: deterministic, additive, and
 
 These flags leave `binder validate` conformant: stamped output round-trips
 byte-faithfully and never introduces a hard violation.
+
+### Status vocabulary and `--canonicalize-status`
+
+OKF §5.4 fixes the `status` enum at `draft` | `stable` | `deprecated`, but the
+vocabularies real corpora use rarely match — `wip`, `active`, `archived`. Binder
+splits this into two separate behaviours, and the distinction is the whole point
+of the feature:
+
+- **The check is always on.** Every `--status-map` value is compared against the
+  §5.4 enum on every `convert` and `enrich` run, whether or not you pass a flag.
+- **The rewrite is opt-in.** `--canonicalize-status` is the only thing that
+  changes a value. Without it binder **writes your value unchanged** and tells
+  you what it would have mapped it to. Binder never silently rewrites a status.
+
+The alias table is **fixed and closed** — there is no way to extend it, and
+anything not in it is never rewritten:
+
+| Authored value | Canonicalizes to |
+|---|---|
+| `active` | `stable` |
+| `wip` | `draft` |
+| `in-progress` | `draft` |
+| `archived` | `deprecated` |
+| `legacy` | `deprecated` |
+
+`--canonicalize-status` is a `bool`, default `false`, and is available on **both**
+`convert` and `enrich`.
+
+The transcripts below all run against `testdata/corpus-clean` from a checkout of
+this repository, whose `overview.md` has no authored `status` (so `default=wip`
+applies to it) and whose `metrics/revenue.md` has `status: stable` (so it is
+never touched).
+
+**Default: warn, write unchanged, exit `0`.** `convert` reports under a
+`Status vocabulary (OKF §5.4):` heading; the written frontmatter really does keep
+`status: wip`:
+
+```console
+$ binder convert testdata/corpus-clean -o /tmp/q/a --status-map default=wip; echo $?
+binder convert
+  source: testdata/corpus-clean
+  output: /tmp/q/a
+  concepts: 2
+  links: 2 (resolved 2, unresolved 0)
+
+Concepts:
+  metrics/revenue.md  [type=Metric]
+  overview.md  [type=Note]
+
+Status vocabulary (OKF §5.4):
+  - status value "wip" (from --status-map key "default") is not one of draft|stable|deprecated (OKF §5.4); wrote it unchanged — pass --canonicalize-status to map it to "draft"
+0
+
+$ grep '^status:' /tmp/q/a/overview.md
+status: wip
+```
+
+**With the flag: rewrite, report, exit `0`.** Only the `Status vocabulary` block
+and the written value change:
+
+```console
+$ binder convert testdata/corpus-clean -o /tmp/q/b --status-map default=wip --canonicalize-status; echo $?
+binder convert
+  source: testdata/corpus-clean
+  output: /tmp/q/b
+  concepts: 2
+  links: 2 (resolved 2, unresolved 0)
+
+Concepts:
+  metrics/revenue.md  [type=Metric]
+  overview.md  [type=Note]
+
+Status vocabulary (OKF §5.4):
+  - status value "wip" (from --status-map key "default") canonicalized to "draft" (OKF §5.4)
+0
+
+$ grep '^status:' /tmp/q/b/overview.md
+status: draft
+```
+
+The check is on the **map value**, not on what was ultimately written: a
+`--status-map` entry whose directory contains only concepts with an authored
+`status` still produces a note, even though nothing was assigned from it.
+
+`enrich` performs exactly the same check and rewrite, and folds the note into its
+per-run warnings with a `status:` prefix instead of a separate heading:
+
+```console
+$ cp -r testdata/corpus-clean /tmp/enrsrc
+$ binder enrich /tmp/enrsrc --status-map default=wip --canonicalize-status; echo $?
+enrich /tmp/enrsrc
+2 file(s): 1 enriched, 1 unchanged, 0 skipped
+  enriched overview.md (added: generated, status, title, type)
+  status: status value "wip" (from --status-map key "default") canonicalized to "draft" (OKF §5.4)
+0
+
+$ grep '^status:' /tmp/enrsrc/overview.md
+status: draft
+```
+
+**A non-alias value is never rewritten, even with the flag on.** It is warned
+about and written through, and the `— pass --canonicalize-status …` hint is
+suppressed because the flag is already set:
+
+```console
+$ binder convert testdata/corpus-clean -o /tmp/q/c --status-map default=frobnicate --canonicalize-status; echo $?
+binder convert
+  source: testdata/corpus-clean
+  output: /tmp/q/c
+  concepts: 2
+  links: 2 (resolved 2, unresolved 0)
+
+Concepts:
+  metrics/revenue.md  [type=Metric]
+  overview.md  [type=Note]
+
+Status vocabulary (OKF §5.4):
+  - status value "frobnicate" (from --status-map key "default") is not one of draft|stable|deprecated (OKF §5.4); wrote it unchanged
+0
+
+$ grep '^status:' /tmp/q/c/overview.md
+status: frobnicate
+```
+
+**Under `--strict`, a non-conformant value gates — and it gates before any
+write.** The output directory is never created; on `enrich`, no source file is
+touched:
+
+```console
+$ binder convert testdata/corpus-clean -o /tmp/q/d --strict --status-map default=wip; echo $?
+binder: --status-map has non-conformant status value(s) and --strict is set: status value "wip" (from --status-map key "default") is not one of draft|stable|deprecated (OKF §5.4) — pass --canonicalize-status to map it to "draft"
+1
+
+$ ls /tmp/q/d
+ls: cannot access '/tmp/q/d': No such file or directory
+```
+
+Combining the two flags resolves a known alias and the run returns to exit `0`:
+
+```console
+$ binder convert testdata/corpus-clean -o /tmp/q/e --strict --canonicalize-status --status-map default=wip; echo $?
+binder convert
+  source: testdata/corpus-clean
+  output: /tmp/q/e
+  concepts: 2
+  links: 2 (resolved 2, unresolved 0)
+
+Concepts:
+  metrics/revenue.md  [type=Metric]
+  overview.md  [type=Note]
+
+Status vocabulary (OKF §5.4):
+  - status value "wip" (from --status-map key "default") canonicalized to "draft" (OKF §5.4)
+0
+```
+
+A **malformed** `--status-map` — a missing `=`, not a bad vocabulary value — is a
+usage error and is caught before anything else, with or without either flag:
+
+```console
+$ binder convert testdata/corpus-clean -o /tmp/q/f --status-map default; echo $?
+binder: invalid --status-map entry "default" (want dir=value)
+2
+```
+
+Summary of the four outcomes:
+
+| Run | Frontmatter written | Exit |
+|---|---|---|
+| non-conformant, no flags | value unchanged | `0` |
+| non-conformant alias, `--canonicalize-status` | rewritten to the §5.4 value | `0` |
+| non-conformant, `--strict` | **nothing written** | `1` |
+| non-conformant alias, `--strict --canonicalize-status` | rewritten to the §5.4 value | `0` |
+
+Under `--json`, both `convert` and `enrich` carry every one of these messages in
+`result.status_notes` — always present, sorted, and `[]` on a conformant run:
+
+```json
+[
+  "status value \"legacy\" (from --status-map key \"metrics\") canonicalized to \"deprecated\" (OKF §5.4)",
+  "status value \"wip\" (from --status-map key \"default\") canonicalized to \"draft\" (OKF §5.4)"
+]
+```
+
+(from `binder convert testdata/corpus-clean -o /tmp/q/g --status-map
+"default=wip,metrics=legacy" --canonicalize-status --json`.)
+
+Over MCP the same behaviour is reachable as the `convert` tool's
+`canonicalize_status` boolean — see [Tools and input schemas](#tools-and-input-schemas).
 
 ### Trust well-formedness (advisories)
 
@@ -2210,6 +2749,34 @@ section for each as it lands; today each links to its tracking issue.
   default) for actor identity and defaults, so common flags need not be passed
   every run. See [`config`](#config).
   [#10](https://github.com/ghchinoy/binder/issues/10)
+- **Config mutation** — ✅ shipped: `binder config set`/`get`/`unset` with
+  `--global`/local scoping write single keys into `./.binder.yaml` or the user
+  config file, validated fail-fast, so `config` is no longer read-only. See
+  [`config`](#config).
+  [#47](https://github.com/ghchinoy/binder/issues/47)
+- **`binder infer`** — ✅ shipped: proposal-only type-map inference over a source
+  corpus, with a deterministic three-tier signal ladder and an opt-in Gemini
+  semantic tier. Writes nothing. See [`infer`](#infer).
+  [#38](https://github.com/ghchinoy/binder/issues/38),
+  [#43](https://github.com/ghchinoy/binder/issues/43)
+- **Opt-in refresh (`--overwrite-keys`)** — ✅ shipped: `enrich` can refresh named
+  keys in place instead of only adding absent ones, while still refusing every
+  trust-provenance key. See [Opt-in refresh](#opt-in-refresh---overwrite-keys).
+  [#22](https://github.com/ghchinoy/binder/issues/22)
+- **Status-vocabulary check and `--canonicalize-status`** — ✅ shipped: every
+  `--status-map` value is checked against the OKF §5.4 enum on `convert` and
+  `enrich`, with an opt-in flag to rewrite the known aliases. See
+  [Status vocabulary and `--canonicalize-status`](#status-vocabulary-and---canonicalize-status).
+  [#23](https://github.com/ghchinoy/binder/issues/23)
+- **Entrypoints vs orphans** — ✅ shipped: `review` and `lint` now separate true
+  orphans from entrypoints (outbound-only nodes, a root `README.md`/`index.md`,
+  or anything named via `--entrypoint`), so an outbound-only node no longer gates
+  under `--strict`. See [`review`](#review) and [`lint`](#lint).
+  [#24](https://github.com/ghchinoy/binder/issues/24)
+- **`--external-root`** — ✅ shipped: declare a known sibling-workspace root so
+  `file://` links under it stay external without raising an outside-root
+  advisory. See [`file://` link resolution](#file-link-resolution).
+  [#25](https://github.com/ghchinoy/binder/issues/25)
 
 ### Codec adapter and the reachability layer
 
@@ -2230,6 +2797,13 @@ on already-settled `--json` payloads rather than the reverse.
   over stdio (no read/search
   re-implementation), returning the same `binder.report/v1` payloads as `--json`.
   See [MCP server (`binder mcp`)](#mcp-server-binder-mcp).
+- **Graph introspection and query over MCP** — ✅ shipped: `list_graphs`
+  ([#32](https://github.com/ghchinoy/binder/issues/32), a #15 follow-on) returns
+  the LPG schema descriptor for the graph binder projects from a bundle, and
+  `query_graph` ([#33](https://github.com/ghchinoy/binder/issues/33)) answers
+  data questions about that graph through five read-only traversal operations.
+  Both are **MCP-only** — there is no CLI equivalent. See
+  [`query_graph`](#query_graph-asking-questions-of-the-graph).
 
 This guide is seeded per [issue #11](https://github.com/ghchinoy/binder/issues/11)
 and grows alongside each feature above.
