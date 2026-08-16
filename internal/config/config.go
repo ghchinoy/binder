@@ -57,7 +57,7 @@ const defaultType = "Note"
 // ActorFormsHint lists the valid actor forms for --verified-by / verified_by.
 // It is shared by the flag validator and the config-load validator so the two
 // surfaces emit an identical, helpful message (design option (a)).
-const ActorFormsHint = "valid forms: human:<id>, process:<id>, team:<id>, or <producer>/<version> (e.g. binder/0.1.0)"
+const ActorFormsHint = "valid forms: human:<id>, process:<id>, team:<id>, or <producer>/<version> (e.g. binder/0.3.0)"
 
 // InvalidActorError returns a usage error (exit 2) for an actor value that does
 // not satisfy okf.IsValidActor, listing the valid forms.

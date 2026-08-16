@@ -118,7 +118,7 @@ func newEnrichCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 	cmd.Flags().StringVar(&typeMapRaw, "type-map", "", "per-directory type overrides, e.g. \"docs=Guide,adr=Decision\"")
 	cmd.Flags().StringVar(&statusMapRaw, "status-map", "", "per-directory status, e.g. \"archive=deprecated,drafts=draft,default=active\" (set only when status absent)")
 	cmd.Flags().StringVar(&staleAfterRaw, "stale-after-map", "", "per-directory stale_after relative to now, e.g. \"07-benchmarks=+6m,legacy=+0d\" (grammar +Nd/+Nm/+Ny; set only when absent)")
-	cmd.Flags().StringVar(&verifiedBy, "verified-by", "", "actor to append as a verified stamp, e.g. \"human:ghchinoy\" or \"binder/0.1.0\" (defaults to config verified_by; "+config.ActorFormsHint+")")
+	cmd.Flags().StringVar(&verifiedBy, "verified-by", "", "actor to append as a verified stamp, e.g. \"human:ghchinoy\" or \"binder/0.3.0\" (defaults to config verified_by; "+config.ActorFormsHint+")")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "report what would be enriched without writing anything")
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "emit the run report as deterministic JSON (schema "+clijson.SchemaVersion+") instead of prose")
 	cmd.Flags().BoolVar(&strict, "strict", false, "gate (exit 1) when any file is skipped; without it enrich never gates (never-reject)")
