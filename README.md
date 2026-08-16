@@ -531,12 +531,20 @@ reported for context and never counted:
 > the list — an outbound edge, the recognized root `README.md`, or
 > `--entrypoint`. The rule above is the full one.
 
-**Anchor slug convention (GitHub-style, pinned):** an `#anchor` matches a heading
-slugged by: lowercase; strip HTML tags; drop every character except `[a-z0-9]`,
-space, hyphen; convert spaces to hyphens; collapse repeated hyphens; and give
-duplicate headings the suffixes `-1`, `-2`, … in document order (so a second
-`## Notes` is `#notes-1`). Slugging is code-region-aware — a `# heading` inside a
-fenced code block is not a heading. This lives in `okf.HeadingSlugs`.
+**Anchor slug convention (GitHub-style, single-sourced):** an `#anchor` matches
+a heading slugged by: lowercase; strip HTML tags; keep only `[a-z0-9_]`
+(underscores survive — `## snake_case` is `#snake_case`), spaces and hyphens,
+dropping every other character; turn each space into a hyphen **without
+collapsing runs** (so `## Agent Skill / Plugin` is `#agent-skill--plugin`); and
+give duplicate headings the suffixes `-1`, `-2`, … in document order (a second
+`## Notes` is `#notes-1`). Slugging is code-region-aware — a `# heading` inside
+a fenced code block is not a heading. Letters and digits are ASCII-only, so
+non-ASCII headings slug unlike GitHub (`## Café` → `#caf`,
+`## 配置` → empty) and their GitHub-correct anchors false-positive as broken
+([#85](https://github.com/ghchinoy/binder/issues/85)).
+The convention has a single implementation, `okf.HeadingSlugs`, that every anchor
+check resolves through — that single source is the commitment, not the character
+set above, which v0.3.0 changed.
 
 All findings are **spec-tolerated advisories**, so bare `binder lint` always exits
 `0` (§11 hard conformance stays `binder validate`'s job over a bundle). `--strict`
