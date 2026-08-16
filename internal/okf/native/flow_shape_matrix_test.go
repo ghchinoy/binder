@@ -164,6 +164,16 @@ func TestByteFaithfulShapeMatrix(t *testing.T) {
 			"type: Metric\nverified:\n  - { by: human:x, at: 2024-02-01T09:30:00Z }\n\n  - { by: human:y, at: 2024-03-01T09:30:00Z }\n",
 			"  - { by: human:y, at: 2024-03-01T09:30:00Z }\n", "!!timestamp",
 		},
+		{
+			// A '#' inside a QUOTED scalar is not a comment. This is the single most
+			// likely place the comment-aware scanner regresses: it pins that a quoted
+			// hash survives an append verbatim (bytes + !!str tag) rather than being
+			// mistaken for a comment and truncated. See also TestCommentEnd and
+			// TestSplitFlowSeqItems_CommentAware for the rule in isolation.
+			"U_flowseq_multiline_quoted_hash",
+			"type: Metric\nverified: [\n  { by: \"human:x #1\", at: \"2024-02-01T09:30:00Z\" },\n  { by: human:y, at: 2024-03-01T09:30:00Z },\n]\n",
+			"  - { by: \"human:x #1\", at: \"2024-02-01T09:30:00Z\" }\n", "!!str",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -278,6 +288,22 @@ func TestCharacterize_ChangedContainerLosesInterleavedFormatting(t *testing.T) {
 			"N_flowmap_trailing_comment",
 			"type: Metric\nverified: { by: human:x, at: 2024-02-01T09:30:00Z } # trailing\n",
 			"  - { by: human:x, at: 2024-02-01T09:30:00Z }\n", "# trailing",
+		},
+		{
+			// Previously UNPARSEABLE: the interior comment's bytes were scanned into the
+			// flow value, so the rebuilt collection did not parse. The comment-aware
+			// scanner now drops the interior comment and preserves the entries; comment
+			// loss on a CHANGED container is the same limit recorded by E/F/N.
+			"P_flowseq_multiline_comment_between",
+			"type: Metric\nverified: [\n  { by: human:x, at: 2024-02-01T09:30:00Z }, # mid\n  { by: human:y, at: 2024-03-01T09:30:00Z },\n]\n",
+			"  - { by: human:x, at: 2024-02-01T09:30:00Z }\n", "# mid",
+		},
+		{
+			// The comment carries a stray ']' — the exact byte that used to be counted
+			// into the flow depth and corrupt the scan. It is dropped whole.
+			"V_flowseq_multiline_comment_with_bracket",
+			"type: Metric\nverified: [\n  { by: human:x, at: 2024-02-01T09:30:00Z }, # note ]\n  { by: human:y, at: 2024-03-01T09:30:00Z },\n]\n",
+			"  - { by: human:x, at: 2024-02-01T09:30:00Z }\n", "# note ]",
 		},
 		{
 			"T_blank_line_between_items",

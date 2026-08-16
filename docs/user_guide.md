@@ -357,8 +357,15 @@ A plain-markdown file (no frontmatter fence) gets a fresh, valid block prepended
    > or beside its entries — are **not carried onto the rebuilt value**. This is a
    > limit of the underlying YAML node model (that trivia is not attached to the
    > entry nodes the serializer copies), not a deliberate normalization; comments
-   > on **unchanged** keys are preserved as above. Relatedly, an empty flow mapping
-   > (`verified: {}`) is reshaped to a block item (`- {}`) when a stamp is appended.
+   > on **unchanged** keys are preserved as above. A comment interleaved in a
+   > *changed* multi-line **flow sequence** (`verified: [` … `]` over several
+   > lines) is likewise dropped — this used to make the output **unparseable** and
+   > no longer does. Relatedly, an empty flow mapping (`verified: {}`) is reshaped
+   > to a block item (`- {}`) when a stamp is appended, and a changed multi-line
+   > flow **mapping** (`verified: {` … `}` over several lines) is copied into the
+   > first block item from its source bytes **without re-indentation** — its
+   > interior lines and closing `}` keep their original columns, so the output
+   > re-parses but is not cleanly re-indented.
 4. **Skip-unchanged (no git churn).** A file that needs no key is **not written
    at all** — no spurious diffs, no mtime bumps. Critical for git-tracked trees.
 5. **Skip-unparseable.** A file whose frontmatter will not parse (invalid YAML or

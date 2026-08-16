@@ -477,9 +477,35 @@ func scanFlowValue(region string) (string, bool) {
 	return region[start : end+1], true
 }
 
+// commentEnd reports whether the '#' at s[i] begins a YAML comment and, if so,
+// returns the index of the '\n' that ends it (or len(s) if the comment runs to
+// the end of s). Per the YAML rule, a '#' begins a comment only when it is at the
+// start of the line OR is preceded by whitespace; a '#' with a non-space neighbour
+// ("a#b") is an ordinary character. The caller must only invoke this OUTSIDE a
+// quoted scalar, so a '#' inside quotes ("x #1") is never treated as a comment.
+// The terminating newline is a structural separator and is NOT part of the span.
+func commentEnd(s string, i int) (int, bool) {
+	if i < 0 || i >= len(s) || s[i] != '#' {
+		return 0, false
+	}
+	if i > 0 {
+		switch s[i-1] {
+		case ' ', '\t', '\n', '\r':
+		default:
+			return 0, false // "a#b": not a comment
+		}
+	}
+	if nl := strings.IndexByte(s[i:], '\n'); nl >= 0 {
+		return i + nl, true
+	}
+	return len(s), true
+}
+
 // matchFlow returns the index of the flow delimiter that closes the one at
-// position start, honoring nested delimiters and quoted scalars. ok is false if
-// start is not a '{'/'[' or the delimiters never balance.
+// position start, honoring nested delimiters, quoted scalars, and interior YAML
+// comments (a '#' comment can carry a stray ']' or '}' that must not be counted
+// into the depth). ok is false if start is not a '{'/'[' or the delimiters never
+// balance.
 func matchFlow(s string, start int) (int, bool) {
 	if start < 0 || start >= len(s) {
 		return 0, false
@@ -499,6 +525,12 @@ func matchFlow(s string, start int) (int, bool) {
 			}
 			continue
 		}
+		if c == '#' {
+			if e, ok := commentEnd(s, i); ok {
+				i = e - 1 // skip the comment; the loop's i++ lands on the newline
+				continue
+			}
+		}
 		switch c {
 		case '\'', '"':
 			q = c
@@ -516,42 +548,62 @@ func matchFlow(s string, start int) (int, bool) {
 
 // splitFlowSeqItems splits a flow sequence ("[ … ]") into its top-level item
 // substrings, honoring nested flow delimiters and quoted scalars, and trims the
-// surrounding whitespace of each. It returns ok=false if seq is not a flow
-// sequence. An empty sequence ("[]") yields no items.
+// surrounding whitespace of each. Interior YAML comments are dropped: a '#'
+// comment (outside quotes, at line-start or after whitespace) is excluded from
+// item text and its content — including any comma or bracket it carries — never
+// affects the split. It returns ok=false if seq is not a flow sequence. An empty
+// sequence ("[]") yields no items.
 func splitFlowSeqItems(seq string) ([]string, bool) {
 	if len(seq) < 2 || seq[0] != '[' || seq[len(seq)-1] != ']' {
 		return nil, false
 	}
 	inner := seq[1 : len(seq)-1]
 	var items []string
+	var cur strings.Builder
 	depth := 0
 	var q byte
-	last := 0
+	flush := func() {
+		if s := strings.TrimSpace(cur.String()); s != "" {
+			items = append(items, s)
+		}
+		cur.Reset()
+	}
 	for i := 0; i < len(inner); i++ {
 		c := inner[i]
 		if q != 0 {
+			cur.WriteByte(c)
 			if c == q {
 				q = 0
 			}
 			continue
 		}
+		if c == '#' {
+			if e, ok := commentEnd(inner, i); ok {
+				i = e - 1 // skip the comment; the loop's i++ lands on the newline
+				continue
+			}
+		}
 		switch c {
 		case '\'', '"':
 			q = c
+			cur.WriteByte(c)
 		case '{', '[':
 			depth++
+			cur.WriteByte(c)
 		case '}', ']':
 			depth--
+			cur.WriteByte(c)
 		case ',':
 			if depth == 0 {
-				items = append(items, strings.TrimSpace(inner[last:i]))
-				last = i + 1
+				flush()
+			} else {
+				cur.WriteByte(c)
 			}
+		default:
+			cur.WriteByte(c)
 		}
 	}
-	if tail := strings.TrimSpace(inner[last:]); tail != "" {
-		items = append(items, tail)
-	}
+	flush()
 	return items, true
 }
 
