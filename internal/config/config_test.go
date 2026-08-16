@@ -155,3 +155,47 @@ func containsAll(s string, subs ...string) bool {
 	}
 	return true
 }
+
+func TestGeminiConfigDefaults(t *testing.T) {
+	isolate(t)
+	c := &Config{}
+	if err := c.Load(); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got := c.GetString(KeyGeminiModel); got != "gemini-3.5-flash-lite" {
+		t.Errorf("gemini_model = %q, want gemini-3.5-flash-lite", got)
+	}
+	if got := c.GetString(KeyGeminiLocation); got != "global" {
+		t.Errorf("gemini_location = %q, want global", got)
+	}
+	if got := c.GetString(KeyGeminiProject); got != "" {
+		t.Errorf("gemini_project = %q, want empty", got)
+	}
+	if got := c.GetString(KeyGeminiBackend); got != "auto" {
+		t.Errorf("gemini_backend = %q, want auto", got)
+	}
+}
+
+func TestGeminiConfigFromEnv(t *testing.T) {
+	isolate(t)
+	t.Setenv("BINDER_GEMINI_MODEL", "custom-model")
+	t.Setenv("BINDER_GEMINI_PROJECT", "test-project")
+	t.Setenv("BINDER_GEMINI_LOCATION", "us-central1")
+	t.Setenv("BINDER_GEMINI_BACKEND", "vertex")
+	c := &Config{}
+	if err := c.Load(); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got := c.GetString(KeyGeminiModel); got != "custom-model" {
+		t.Errorf("gemini_model = %q, want custom-model", got)
+	}
+	if got := c.GetString(KeyGeminiProject); got != "test-project" {
+		t.Errorf("gemini_project = %q, want test-project", got)
+	}
+	if got := c.GetString(KeyGeminiLocation); got != "us-central1" {
+		t.Errorf("gemini_location = %q, want us-central1", got)
+	}
+	if got := c.GetString(KeyGeminiBackend); got != "vertex" {
+		t.Errorf("gemini_backend = %q, want vertex", got)
+	}
+}

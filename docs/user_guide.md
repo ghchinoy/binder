@@ -27,6 +27,7 @@ bundle and reports on OKF bundles. It is **Phase 2 complete**.
   - [`review`](#review)
   - [`lint`](#lint)
   - [`graph`](#graph)
+  - [`infer`](#infer)
   - [`config`](#config)
 - [JSON output (`--json`) and the exit-code contract](#json-output---json-and-the-exit-code-contract)
   - [Strict mode](#strict-mode)
@@ -569,6 +570,50 @@ digraph okf {
 }
 ```
 
+### `infer`
+
+```text
+binder infer <corpus> [flags]
+```
+
+Inspects a source markdown corpus and proposes a `--type-map` string (e.g.
+`"docs=Guide,subsystems=Subsystem"`) and structured JSON report.
+
+`infer` evaluates a tiered signal ladder from cheapest/deterministic to richest:
+1. **Tier 1 (Folder):** Humanizes and singularizes directory names (`subsystems/` → `Subsystem`, `runbooks/` → `Runbook`, `proposals/` → `Proposal`).
+2. **Tier 2 (Patterns):** Inspects filename and heading conventions (`*-spec.md` → `Specification`, `troubleshooting*` → `Runbook`, `adr-*` → `Decision`).
+3. **Tier 3 (Frontmatter):** Recognizes authored frontmatter type majorities and key hints (`goal:` → `Proposal`, `runtime:` → `Attested Computation`).
+4. **Tier 4 (Gemini):** Opt-in semantic inference (`--gemini`) sending directory names and sample titles to Gemini, supporting both API key and Google Cloud Vertex AI.
+
+`infer` is strictly **proposal-only** and writes nothing to disk. Review the
+proposal, then apply it with `convert` or `enrich`:
+
+```bash
+# Deterministic proposal:
+binder infer path/to/corpus
+
+# With Gemini semantic inference:
+binder infer path/to/corpus --gemini
+
+# Apply proposal to conversion:
+binder convert path/to/corpus -o path/to/bundle --type-map "$(binder infer path/to/corpus)"
+
+# Or stamp types into the source tree in place:
+binder enrich path/to/corpus --type-map "$(binder infer path/to/corpus)"
+```
+
+| Flag | Default | Purpose |
+|---|---|---|
+| `--default-type` | `Note` | Fallback concept type when none is inferred or mapped. |
+| `--gemini` | `false` | Enable Gemini semantic inference tier. |
+| `--gemini-model` | `gemini-3.5-flash-lite` | Gemini model name for semantic inference. |
+| `--location` | `global` | Google Cloud location for Vertex AI. |
+| `--project` | — | Google Cloud project for Vertex AI (defaults to ADC / `GOOGLE_CLOUD_PROJECT`). |
+| `--backend` | `auto` | Gemini auth backend: `auto`, `api`, or `vertex`. |
+| `--gemini-required` | `false` | Fail on Gemini inference error instead of degrading to deterministic tiers. |
+| `--json` | `false` | Emit the report as deterministic JSON (schema `binder.report/v1`). |
+| `--strict` | `false` | Gate (exit 1) if any warning or inference failure occurs. |
+
 ### `config`
 
 ```text
@@ -597,6 +642,10 @@ flag  >  environment variable  >  config file  >  built-in default
   |---|---|---|---|
   | `default_type` | `BINDER_DEFAULT_TYPE` | `Note` | Type applied by `convert` when none is present or mapped (overridable per-run by `--default-type`). |
   | `verified_by` | `BINDER_VERIFIED_BY` | — | Default actor appended as a `verified` stamp by `convert` (overridable per-run by `--verified-by`). Validated with the actor grammar **at config-load** — an invalid configured value fails fast. |
+  | `gemini_model` | `BINDER_GEMINI_MODEL` | `gemini-3.5-flash-lite` | Default Gemini model for `binder infer --gemini`. |
+  | `gemini_location` | `BINDER_GEMINI_LOCATION` | `global` | Default Google Cloud location for Vertex AI in `binder infer --gemini`. |
+  | `gemini_project` | `BINDER_GEMINI_PROJECT` | — | Default Google Cloud project for Vertex AI in `binder infer --gemini`. |
+  | `gemini_backend` | `BINDER_GEMINI_BACKEND` | `auto` | Default Gemini backend (`auto`, `api`, or `vertex`) in `binder infer --gemini`. |
 
 A configured `verified_by` is validated the moment the config loads, so a typo in
 the file surfaces immediately on any command rather than silently producing an
@@ -754,6 +803,29 @@ Empty arrays serialize as `[]`.
 All list fields are `[]` when empty. `lint`'s exit code follows the shared
 contract: `0` by default (findings are advisories), `1` under `--strict` when any
 finding is present. See the [exit-code contract](#exit-code-contract).
+
+### `infer --json` — `result` fields
+
+```json
+{
+  "src": "path/to/corpus",
+  "type_map": "docs=Guide,subsystems=Subsystem",
+  "default_type": "Note",
+  "mappings": [
+    {
+      "dir": "subsystems",
+      "suggested_type": "Subsystem",
+      "source": "folder",
+      "rationale": "well-known directory name "subsystems"",
+      "sample_files": ["subsystems/audio.md"]
+    }
+  ],
+  "warnings": []
+}
+```
+
+- **`type_map`** (`string`) — comma-separated `dir=Type` string formatted for `--type-map`.
+- **`mappings`** (`[]object`) — list of per-directory proposals with `dir`, `suggested_type`, `source` (`folder` | `pattern` | `frontmatter` | `gemini`), `rationale`, and optional `sample_files`, `model`, `backend`.
 
 ### graph JSON — a raw export, not the envelope
 

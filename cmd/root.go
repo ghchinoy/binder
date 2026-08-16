@@ -85,6 +85,7 @@ func NewRootCmd() *cobra.Command {
 	root.AddCommand(newLintCmd(codec))
 	root.AddCommand(newGraphCmd(codec))
 	root.AddCommand(newMCPCmd(codec))
+	root.AddCommand(newInferCmd(codec, cfg))
 	root.AddCommand(newConfigCmd(cfg))
 	return root
 }
