@@ -645,18 +645,18 @@ schemas and examples.
 git clone https://github.com/ghchinoy/binder.git
 cd binder
 make build        # -> bin/binder
-make check        # offline gate: gofmt + go vet + go test ./...
+make check        # gate: gofmt + go vet + go test ./...
 ```
 
-Requires **Go 1.26+**. Dependencies are vendored (`vendor/`), so the offline
-gate needs no network access.
+Requires **Go 1.26+**. Dependencies are pinned via `go.mod`/`go.sum` and
+fetched from the Go module proxy at build time (network required).
 
 The full exit gate additionally cross-checks binder's verdicts against the
 external `okfcli/okf` validator:
 
 ```bash
 make okf-install  # go install github.com/okfcli/okf/cmd/okf@v0.3.0
-make gate         # offline checks + external differential validation
+make gate         # local checks + external differential validation
 ```
 
 `make gate` runs `scripts/interop.sh`, which compares binder's and `okf`'s
