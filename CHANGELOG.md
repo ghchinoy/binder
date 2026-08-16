@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/ghchinoy/binder/compare/v0.1.0...v0.2.0) (2026-08-16)
+
+
+### Features
+
+* **infer:** binder infer — propose type-map from corpus signals ([#38](https://github.com/ghchinoy/binder/issues/38)) ([#43](https://github.com/ghchinoy/binder/issues/43)) ([092a7dc](https://github.com/ghchinoy/binder/commit/092a7dc9bbc747c01b34ed0e335364d890834f62))
+
 ## 0.1.0 (2026-08-16)
 
 
