@@ -70,7 +70,7 @@ type Options struct {
 
 // FileResult is the per-file outcome of an enrichment run.
 type FileResult struct {
-	Path string `json:"path"`   // source-relative
+	Path   string `json:"path"`   // source-relative
 	Status string `json:"status"` // enriched | unchanged | would-enrich | skipped
 	// Added lists keys injected because they were ABSENT (additive/never-clobber),
 	// sorted. Overwritten lists keys REFRESHED in place because they were named in

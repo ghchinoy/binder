@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -126,5 +127,77 @@ func TestEnrichBadStatusMapExit2(t *testing.T) {
 	_, code := runCLI(t, "enrich", src, "--status-map", "no-equals-sign", "--dry-run")
 	if code != clijson.ExitUsage {
 		t.Fatalf("exit = %d, want %d (usage) for a bad --status-map", code, clijson.ExitUsage)
+	}
+}
+
+// TestEnrichOverwriteTrustKeyExit2 is acceptance criterion 4: naming a
+// trust-provenance key in --overwrite-keys is a usage error (exit 2) whose
+// message names the offending key, and NO file is modified.
+func TestEnrichOverwriteTrustKeyExit2(t *testing.T) {
+	t.Setenv("SOURCE_DATE_EPOCH", "1700000000")
+	src := t.TempDir()
+	doc := "---\ntype: Note\ntitle: A\nverified:\n  - by: human:me\n    at: '2020-01-01T00:00:00Z'\n---\n\n# A\n\nBody.\n"
+	p := filepath.Join(src, "a.md")
+	mustWrite(t, p, doc)
+
+	for _, key := range []string{"verified", "verified_by", "sources", "generated"} {
+		// The root silences error text (SilenceErrors), so assert on the returned
+		// error itself: it must be a usage error (exit 2) naming the offending key.
+		root := NewRootCmd()
+		root.SetOut(&bytes.Buffer{})
+		root.SetErr(&bytes.Buffer{})
+		root.SetArgs([]string{"enrich", src, "--overwrite-keys", "status," + key})
+		err := root.Execute()
+		if code := clijson.ExitCode(err); code != clijson.ExitUsage {
+			t.Fatalf("%s: exit = %d, want %d (usage)", key, code, clijson.ExitUsage)
+		}
+		if err == nil || !strings.Contains(err.Error(), key) {
+			t.Errorf("%s: refusal message does not name the key: %v", key, err)
+		}
+	}
+	if got, err := os.ReadFile(p); err != nil || string(got) != doc {
+		t.Errorf("file modified by a refused overwrite (want byte-identical):\n%s", string(got))
+	}
+}
+
+// TestEnrichOverwriteEndToEnd is criteria 3/5 through the CLI: --overwrite-keys
+// status,stale_after refreshes the two keys in place (and --dry-run previews
+// without writing).
+func TestEnrichOverwriteEndToEnd(t *testing.T) {
+	t.Setenv("SOURCE_DATE_EPOCH", "1700000000")
+	src := t.TempDir()
+	doc := "---\ntype: Note\ntitle: A\nstatus: stable\nstale_after: 2019-05-05\n---\n\n# A\n\nBody.\n"
+	p := filepath.Join(src, "notes", "a.md")
+	mustWrite(t, p, doc)
+
+	// --dry-run writes nothing.
+	out, code := runCLI(t, "enrich", src,
+		"--status-map", "notes=deprecated", "--stale-after-map", "notes=+6m",
+		"--overwrite-keys", "status,stale_after", "--dry-run")
+	if code != clijson.ExitSuccess {
+		t.Fatalf("dry-run exit = %d, want 0; out:\n%s", code, out)
+	}
+	if !strings.Contains(out, "overwrite") {
+		t.Errorf("dry-run report does not mention overwrite:\n%s", out)
+	}
+	if got, _ := os.ReadFile(p); string(got) != doc {
+		t.Fatalf("dry-run modified the file")
+	}
+
+	// Real run refreshes the two keys.
+	if _, code := runCLI(t, "enrich", src,
+		"--status-map", "notes=deprecated", "--stale-after-map", "notes=+6m",
+		"--overwrite-keys", "status,stale_after"); code != clijson.ExitSuccess {
+		t.Fatalf("run exit = %d, want 0", code)
+	}
+	got, _ := os.ReadFile(p)
+	if !strings.Contains(string(got), "status: deprecated") {
+		t.Errorf("status not refreshed:\n%s", got)
+	}
+	if strings.Contains(string(got), "stale_after: 2019-05-05") {
+		t.Errorf("stale_after not refreshed:\n%s", got)
+	}
+	if !strings.Contains(string(got), "title: A") {
+		t.Errorf("unrelated key not preserved:\n%s", got)
 	}
 }
