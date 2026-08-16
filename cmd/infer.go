@@ -81,8 +81,9 @@ func newInferCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 				// Zero mappings: the human-readable diagnostic goes to stderr so
 				// stdout stays machine-consumable and empty. This keeps the
 				// documented `--type-map "$(binder infer SRC)"` idiom working —
-				// the substitution yields "" and enrich/convert treat it as a
-				// no-op. Exit stays 0: this is not a failure condition.
+				// the substitution yields "", which enrich/convert accept as a
+				// --type-map that maps nothing (they still do the rest of their
+				// work). Exit stays 0: this is not a failure condition.
 				fmt.Fprint(cmd.ErrOrStderr(), rep.String())
 			} else {
 				fmt.Fprint(cmd.OutOrStdout(), rep.String())
