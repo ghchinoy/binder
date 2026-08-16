@@ -111,6 +111,38 @@ func TestInferCmdJSONWarningsStable(t *testing.T) {
 	}
 }
 
+// TestInferCmdJSONMappingsStable locks the same stable-envelope guarantee for
+// mappings: an empty corpus (no directory type mappings) must emit "mappings"
+// as an empty array, never null and never an omitted key — the identical defect
+// class as warnings (U8), in the same envelope.
+func TestInferCmdJSONMappingsStable(t *testing.T) {
+	// An empty (but readable) corpus yields no mappings and no warnings.
+	dir := t.TempDir()
+	out, code := runCLI(t, "infer", dir, "--json")
+	if code != clijson.ExitSuccess {
+		t.Fatalf("exit = %d, want 0; out:\n%s", code, out)
+	}
+	if !strings.Contains(out, `"mappings": []`) {
+		t.Errorf("mappings not emitted as []; output:\n%s", out)
+	}
+
+	var env struct {
+		Result map[string]json.RawMessage `json:"result"`
+	}
+	if err := json.Unmarshal([]byte(out), &env); err != nil {
+		t.Fatalf("invalid json: %v\n%s", err, out)
+	}
+	for _, key := range []string{"mappings", "warnings"} {
+		raw, present := env.Result[key]
+		if !present {
+			t.Fatalf("%s key omitted; output:\n%s", key, out)
+		}
+		if string(raw) != "[]" {
+			t.Errorf("%s = %s, want []", key, raw)
+		}
+	}
+}
+
 func TestInferCmdJSONDeterministic(t *testing.T) {
 	dir := setupInferCorpus(t)
 	out1, c1 := runCLI(t, "infer", dir, "--json")

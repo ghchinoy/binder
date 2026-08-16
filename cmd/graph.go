@@ -42,12 +42,20 @@ func newGraphCmd(codec okf.Codec) *cobra.Command {
 			}
 			// An invalid --format value is a usage error (exit 2), validated up
 			// front so it fails the same way whether or not the bundle is
-			// readable. graph.Export applies the identical normalization; a genuine
+			// readable. graph.Export applies the identical normalization and treats
+			// "" as "dot", so "" is permitted here too (exit 0); a genuine
 			// IO/marshal failure from Export still surfaces as exit 3.
 			switch strings.ToLower(strings.TrimSpace(format)) {
-			case "dot", "json", "graphml", "html":
+			case "", "dot", "json", "graphml", "html":
 			default:
 				return clijson.Usage(fmt.Errorf("unknown graph format %q (want dot|json|graphml|html)", format))
+			}
+			// Validate --today up front as a usable date (exit 2). A malformed value
+			// would otherwise be silently accepted by okf.IsStale's string compare
+			// and misreport staleness. Uses the same YYYY-MM-DD parse the rest of the
+			// code uses (okf.IsValidISODate); okf.IsStale is left untouched.
+			if today != "" && !okf.IsValidISODate(today) {
+				return clijson.Usage(fmt.Errorf("--today %q is not a valid date (expected YYYY-MM-DD)", today))
 			}
 			b, err := bundle.Load(args[0], codec)
 			if err != nil {

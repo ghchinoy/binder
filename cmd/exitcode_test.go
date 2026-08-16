@@ -29,7 +29,14 @@ func TestExitCodeContract(t *testing.T) {
 		{"usage-unknown-subcommand-args", []string{"bogus", "arg"}, clijson.ExitUsage},
 		{"usage-graph-bad-format", []string{"graph", "../testdata/expected-rich", "--format", "bogus"}, clijson.ExitUsage},
 		{"usage-graph-bad-format-missing-bundle", []string{"graph", "../testdata/does-not-exist", "--format", "bogus"}, clijson.ExitUsage},
+		{"usage-graph-bad-today", []string{"graph", "../testdata/expected-rich", "--today", "notadate"}, clijson.ExitUsage},
 		{"usage-convert-bad-type-map", []string{"convert", "../testdata/corpus-basic", "--dry-run", "--type-map", "docs"}, clijson.ExitUsage},
+
+		// Valid values on the same flags must still succeed — the validation above
+		// must not over-reach. graph --format "" is accepted (== dot) exactly as
+		// graph.Export treats it, so it must not regress to a usage error.
+		{"success-graph-valid-today", []string{"graph", "../testdata/expected-rich", "--today", "2026-08-15"}, clijson.ExitSuccess},
+		{"success-graph-empty-format", []string{"graph", "../testdata/expected-rich", "--format", ""}, clijson.ExitSuccess},
 
 		// Regression: genuine IO/internal failures must stay ExitIO (exit 3),
 		// not get reclassified as usage errors by the wiring above.

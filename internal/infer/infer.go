@@ -221,7 +221,10 @@ func Infer(ctx context.Context, src string, codec okf.Codec, opts Options) (*Rep
 	}
 	sort.Strings(sortedDirs)
 
-	var mappings []Mapping
+	// Non-nil so an empty corpus marshals mappings as [] rather than null,
+	// matching warnings and keeping the whole JSON envelope's shape stable
+	// (docs/user_guide.md; same defect class as U8).
+	mappings := []Mapping{}
 	var typeMapParts []string
 
 	for _, dir := range sortedDirs {
