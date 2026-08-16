@@ -1,0 +1,20 @@
+// §1 — the LPG example. Styled: Material light theme + Google Sans Flex.
+// Palette tokens (Material light): surface #F9FAEF, onSurface #1A1C16,
+//   primaryContainer #CDEDA3 / primary #4C662B / onPrimaryContainer #354E16,
+//   tertiaryContainer #BCECE7 / tertiary #386663 / onTertiaryContainer #1F4E4B,
+//   onSurfaceVariant #44483D (edges), secondary #586249 (edge properties).
+// NOTE: requires the "Google Sans Flex" font installed (fonts.google.com).
+digraph LPG {
+  rankdir=LR;
+  bgcolor="#F9FAEF";
+  node [shape=box, style="rounded,filled", fontname="Google Sans Flex", fontsize=11, margin="0.20,0.11", penwidth=1.4, fontcolor="#1A1C16"];
+  edge [fontname="Google Sans Flex", fontsize=10, color="#44483D", fontcolor="#4C662B", penwidth=1.3];
+
+  alice [label=<<b>:Person</b><br/><font point-size="10" color="#1A1C16">name = "Alice"</font>>, fillcolor="#BCECE7", color="#386663", fontcolor="#1F4E4B"];
+  bob   [label=<<b>:Person</b><br/><font point-size="10" color="#1A1C16">name = "Bob"</font>>,   fillcolor="#BCECE7", color="#386663", fontcolor="#1F4E4B"];
+  acme  [label=<<b>:Company</b><br/><font point-size="10" color="#1A1C16">industry = "tech"</font>>, fillcolor="#CDEDA3", color="#4C662B", fontcolor="#354E16"];
+
+  alice -> acme [label=<<b>WORKS_AT</b><br/><font point-size="9" color="#586249">since = 2021</font>>];
+  alice -> bob  [label=<<b>KNOWS</b><br/><font point-size="9" color="#586249">since = 2019</font>>];
+  bob   -> acme [label=<<b>FOUNDED</b>>];
+}

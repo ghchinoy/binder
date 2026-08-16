@@ -1,0 +1,35 @@
+// §1 — the thesis contrast. Styled: Material light theme + Google Sans Flex.
+// "Alice worked at Acme SINCE 2021": RDF must reify; LPG puts it ON the edge.
+// NOTE: requires the "Google Sans Flex" font installed (fonts.google.com).
+digraph contrast {
+  rankdir=LR;
+  bgcolor="#F9FAEF";
+  fontname="Google Sans Flex";
+  node [fontname="Google Sans Flex", fontsize=10, fontcolor="#1A1C16"];
+  edge [fontname="Google Sans Flex", fontsize=9, color="#44483D", fontcolor="#44483D"];
+
+  subgraph cluster_lpg {
+    label=<<b>LPG: the property rides ON the edge</b>>;
+    labeljust="l"; fontname="Google Sans Flex"; fontsize=12; fontcolor="#354E16";
+    color="#4C662B"; style="rounded"; penwidth=1.6; bgcolor="#F3F4E9";
+    node [shape=box, style="rounded,filled", penwidth=1.4];
+    l_alice [label=<<b>:Person</b>  Alice>, fillcolor="#BCECE7", color="#386663", fontcolor="#1F4E4B"];
+    l_acme  [label=<<b>:Company</b>  Acme>, fillcolor="#CDEDA3", color="#4C662B", fontcolor="#354E16"];
+    l_alice -> l_acme [label=<<b><font color="#4C662B">WORKS_AT</font></b><br/><font point-size="9" color="#586249">{ since: 2021 }</font>>, color="#4C662B", penwidth=1.7];
+  }
+
+  subgraph cluster_rdf {
+    label=<<b>RDF: the edge can't hold properties → reify</b>>;
+    labeljust="l"; fontname="Google Sans Flex"; fontsize=12; fontcolor="#44483D";
+    color="#75796C"; style="rounded"; penwidth=1.4; bgcolor="#EEEFE3";
+    node [shape=ellipse, style=filled, fillcolor="#E1E4D5", color="#75796C", fontcolor="#44483D"];
+    r_alice [label="Alice"];
+    r_acme  [label="Acme"];
+    r_stmt  [label=<Statement<br/><font point-size="8">(blank node)</font>>, shape=box, style="rounded,filled", fillcolor="#FFDAD6", color="#BA1A1A", fontcolor="#93000A", penwidth=1.4];
+    r_since [label="\"2021\"", shape=box, style=filled, fillcolor="#FFFFFF", color="#C5C8BA", fontcolor="#1A1C16"];
+    r_alice -> r_stmt [label="subject"];
+    r_stmt  -> r_acme [label="object"];
+    r_stmt  -> r_since [label="since"];
+    r_stmt  -> r_acme [label="predicate: worksAt", style=dashed, constraint=false];
+  }
+}
