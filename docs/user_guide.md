@@ -79,7 +79,7 @@ command and are the properties that make binder safe in a pipeline:
 | **Corpus** | A directory of ordinary `.md` files — the input to `convert`. |
 | **Bundle** | A conformant OKF v0.2 directory tree — the output of `convert` and the input to `validate`/`index`/`review`/`graph`. |
 | **Concept** | One non-reserved `.md` document. Its ID is its bundle-relative path minus `.md` (e.g. `metrics/revenue`). |
-| **Reserved file** | `index.md` and `log.md`. These are structural, not concepts, and are not required to carry a `type`. |
+| **Reserved file** | `index.md` and `log.md`. These are structural rather than concepts: they are not required to carry a `type`, and their structure is not examined by `validate`. |
 | **Frontmatter** | The YAML block between `---` fences at the top of a concept. It is authoritative: `type` and the trust view are projections of it. |
 | **Link / edge** | A directed relationship between concepts. Edges come from body markdown links (spec §6); resolved edges name a concept that exists in the bundle. |
 | **Trust signals** | The v0.2 provenance/lifecycle vocabulary (`sources`, `generated`, `verified`, `status`, `stale_after`, …). |
@@ -461,18 +461,28 @@ binder validate <bundle>
 ```
 
 Checks the **hard conformance rules** (spec §11): every non-reserved `.md` has a
-parseable frontmatter block with a non-empty `type`. Everything else — trust
-well-formedness, actor conventions, date shapes — is reported as an **advisory**
-and never rejects the bundle.
+parseable frontmatter block with a non-empty `type`. Everything else it
+checks — trust well-formedness, actor conventions, date shapes — is reported as
+an **advisory** and never rejects the bundle.
 
 `validate` exits non-zero only when there is at least one hard violation
 (unparseable frontmatter or a missing/empty `type`), which makes it a clean CI
 gate. Reserved files (`index.md`/`log.md`) are counted but not required to carry
-a `type`.
+a `type`, and their structure (spec §8/§9) is not examined — so a `conformant`
+verdict covers the concept files only.
+
+When the bundle contains at least one reserved file, `validate` prints a
+`scope:` line immediately after the counts line, ahead of any findings and the
+`RESULT:` line; with no reserved files the line is omitted. It is a disclosure,
+not a finding: it never affects the verdict or the exit code. Under `--json`
+the same fact is the `reserved_structure_checked` field, which every result
+carries regardless of the reserved count — see
+[JSON output](#json-output---json-and-the-exit-code-contract).
 
 ```text
 bundle: /tmp/bundle
 concepts: 2, reserved files: 2
+scope: reserved-file structure (index.md, log.md) not validated; verdict covers concept files only
 RESULT: conformant (OKF 0.2)
 ```
 
@@ -524,8 +534,9 @@ subheaders:
   linked by its bundle-relative-absolute path, `* [Title](/path/to/concept.md)`,
   because the catalog spans directories.
 - The section is deterministic and idempotent: re-running `convert`/`index` on
-  identical input yields a byte-identical `index.md`, and `binder validate` still
-  passes — the root index stays the sole `okf_version` carrier (spec §8/§12).
+  identical input yields a byte-identical `index.md`.
+- Adding the catalog does not change the bundle's frontmatter layout: the root
+  index stays the sole `okf_version` carrier (spec §8/§12).
 
 `--include-backlinks` and `--include-graph` add, under each catalog entry, a
 bounded, sorted sub-list of **inbound** (who links to it) and **outbound** (its
@@ -1390,12 +1401,18 @@ binder enrich src --overwrite-keys status --status-map "archive=stable" --json
 |---|---|---|
 | `root` | string | Bundle path. |
 | `num_concepts` | int | Non-reserved concepts checked. |
-| `num_reserved` | int | Reserved files (`index.md`/`log.md`) counted, not required to carry a `type`. |
+| `num_reserved` | int | Reserved files (`index.md`/`log.md`) counted, not required to carry a `type`, and not structurally examined. |
 | `findings` | array | Each `{ concept_id, severity, message }`. |
+| `reserved_structure_checked` | bool | Whether the structure of the reserved files (spec §8/§9) was examined. Always `false`: reserved-file structure is outside `validate`'s scope. |
 
 `severity` is `error` (a hard §11 violation — gates the exit code) or `advisory`
 (trust/lifecycle well-formedness — reported, never gates). See the
 [exit-code contract](#exit-code-contract).
+
+`reserved_structure_checked` is **unconditional** — every `validate --json`
+result carries it, including one where `num_reserved` is `0`. The prose output
+states the same fact as a `scope:` line, but only when `num_reserved` is
+greater than zero.
 
 ### `review --json` — `result` fields
 
@@ -2755,9 +2772,11 @@ The same variable seeds the default `--today` used by `review`, `lint`, and
 
 ## CI usage
 
-`validate` is the CI gate: it exits non-zero only on a hard conformance
-violation (see the [exit-code contract](#exit-code-contract)). A typical pipeline
-converts, then validates:
+`validate` is the CI gate: on a well-formed run it exits non-zero only on a
+hard conformance violation, and under [`--strict`](#strict-mode) also on
+advisories (see the [exit-code contract](#exit-code-contract)). The gate covers
+concept files; reserved-file structure is outside its scope — see
+[`validate`](#validate). A typical pipeline converts, then validates:
 
 ```bash
 set -euo pipefail
@@ -2881,8 +2900,12 @@ binder validate bundle
 ```text
 bundle: bundle
 concepts: 2, reserved files: 2
+scope: reserved-file structure (index.md, log.md) not validated; verdict covers concept files only
 RESULT: conformant (OKF 0.2)
 ```
+
+Both generated indexes are counted but not examined, so the verdict covers
+`overview.md` and `metrics/revenue.md`.
 
 **3. Review** (revenue is human-reviewed via `verified.by: human:alice`;
 overview is unverified). Keep the clock pinned here too — `review` derives its

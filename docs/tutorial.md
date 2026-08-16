@@ -288,9 +288,10 @@ binder review
     topics/onboarding -> /topics/deploy.md
 ```
 
-`validate` checks the bundle against the OKF v0.2 §11 conformance rules. The only
-hard requirement is that every non-reserved concept has a parseable frontmatter
-block with a non-empty `type`; everything else is an advisory:
+`validate` checks the bundle's concept files against the OKF v0.2 §11
+conformance rules. The only hard requirement is that every non-reserved concept
+has a parseable frontmatter block with a non-empty `type`; everything else it
+checks is an advisory:
 
 ```bash
 binder validate /tmp/tut-bundle
@@ -300,9 +301,19 @@ echo "exit=$?"
 ```text
 bundle: /tmp/tut-bundle
 concepts: 5, reserved files: 3
+scope: reserved-file structure (index.md, log.md) not validated; verdict covers concept files only
 RESULT: conformant (OKF 0.2)
 exit=0
 ```
+
+The `scope:` line tells you how far to trust the verdict. The bundle's three
+reserved files — the generated `index.md` in each directory — were counted, but
+their structure was not examined, so `conformant` here is a claim about the
+five concept files and nothing else. That line appears only when a bundle
+contains reserved files; under `--json` the same fact is the
+`reserved_structure_checked` field, which every result carries — always
+`false` — regardless of the reserved count. It is a disclosure, not a
+finding — it does not change the verdict or the exit code.
 
 The bundle is conformant and exits `0` even though it still has broken links and
 orphans. That is the never-reject posture: advisories are reported, not gated,
