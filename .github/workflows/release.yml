@@ -4,8 +4,8 @@ name: release
 # release-please creates when its release PR is merged (see release-please.yml).
 # goreleaser builds reproducible cross-platform binaries (pinned via
 # go.mod/go.sum + SOURCE_DATE_EPOCH; deps fetched from the module proxy at build
-# time), stamps the version from the tag, and publishes to the GitHub Release,
-# the Homebrew tap, and winget.
+# time), stamps the version from the tag, and publishes to the GitHub Release
+# and the Homebrew tap.
 on:
   push:
     tags:
@@ -45,4 +45,3 @@ jobs:
           # Downstream publishers use the single fine-grained PAT stored under
           # RELEASE_TOKEN (brief: one secret name for all cross-repo tokens).
           HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
-          WINGET_GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}

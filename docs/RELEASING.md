@@ -9,7 +9,7 @@ binder is released with two interlocking pieces of automation:
   a GitHub Release shell.
 - **[goreleaser](https://goreleaser.com) (v2)** owns *building & publishing*:
   triggered by the `vX.Y.Z` tag, it builds reproducible cross-platform binaries
-  and publishes them to the GitHub Release, the Homebrew tap, and winget.
+  and publishes them to the GitHub Release and the Homebrew tap.
 
 The boundary between them is the **git tag**: release-please owns the tag,
 the tag is the only trigger for goreleaser. Nobody hand-edits a version string.
@@ -24,7 +24,6 @@ to this one name:
 |---|---|---|
 | `release-please` action | `token:` | `${{ secrets.RELEASE_TOKEN }}` |
 | goreleaser Homebrew publish | `HOMEBREW_TAP_GITHUB_TOKEN` | `${{ secrets.RELEASE_TOKEN }}` |
-| goreleaser winget publish | `WINGET_GITHUB_TOKEN` | `${{ secrets.RELEASE_TOKEN }}` |
 | GitHub Release upload | `GITHUB_TOKEN` | built-in `${{ secrets.GITHUB_TOKEN }}` (not `RELEASE_TOKEN`) |
 
 **Why a PAT and not the default `GITHUB_TOKEN` for release-please?** A tag pushed
@@ -36,9 +35,7 @@ goreleaser gotcha.)
 The token needs write access to:
 
 - **this repo** (`ghchinoy/binder`) — create branches, PRs, tags, releases;
-- **`ghchinoy/homebrew-tap`** — commit the updated formula;
-- **`ghchinoy/winget-pkgs`** (the fork of `microsoft/winget-pkgs`) — push a
-  branch and open the upstream PR.
+- **`ghchinoy/homebrew-tap`** — commit the updated formula.
 
 ## The release flow
 
@@ -51,10 +48,12 @@ The token needs write access to:
 4. The tag triggers `release.yml` → `goreleaser release --clean`, which:
    - builds `linux/darwin/windows × amd64/arm64` binaries, uploads archives +
      `checksums.txt` to the GitHub Release;
-   - updates the Homebrew formula in `ghchinoy/homebrew-tap`;
-   - opens a winget PR to `microsoft/winget-pkgs` (id `ghchinoy.binder`).
-5. (Optional) After the winget PR is accepted, run the **Verify winget install**
-   workflow (`workflow_dispatch`) as a smoke test.
+   - updates the Homebrew formula in `ghchinoy/homebrew-tap`.
+
+> **winget is temporarily unavailable.** The winget publisher was removed until
+> the cross-repo PAT can open a PR to `microsoft/winget-pkgs` (the fine-grained
+> token 403'd on the upstream PR). Tracked in
+> [#40](https://github.com/ghchinoy/binder/issues/40).
 
 ## Versioning posture (pre-1.0)
 

@@ -70,28 +70,6 @@ brews:
     test: |
       system "#{bin}/binder", "--version"
 
-winget:
-  - name: binder
-    publisher: ghchinoy
-    publisher_url: "https://github.com/ghchinoy"
-    publisher_support_url: "https://github.com/ghchinoy/binder/issues"
-    short_description: "Convert a plain-markdown corpus into a conformant OKF bundle"
-    license: "Apache-2.0"
-    homepage: "https://github.com/ghchinoy/binder"
-    package_identifier: ghchinoy.binder
-    repository:
-      owner: ghchinoy
-      name: winget-pkgs            # the user's microsoft/winget-pkgs fork.
-      token: "{{ .Env.WINGET_GITHUB_TOKEN }}"
-      branch: "automated-ghchinoy.binder-{{.Version}}"
-      pull_request:
-        enabled: true
-        draft: false
-        base:
-          owner: microsoft
-          name: winget-pkgs
-          branch: master
-
 changelog:
   # release-please owns the human CHANGELOG.md; this only shapes the GitHub
   # Release body. Mirror a2acli's filters.
