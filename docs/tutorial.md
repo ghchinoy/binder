@@ -821,10 +821,17 @@ that stamped nothing is distinguishable from a run that never tried. When an
 agent drives binder, the same rule binds the agent: do not stamp trust you cannot
 assert.
 
-One origin this part did not exercise: `BINDER_VERIFIED_BY` in the environment
-also permits a stamp without the flag. Such a stamp is disclosed like any other
-and names `env` as its source, and binder will not co-sign from it. The
-[user guide](user_guide.md#binder_verified_by) has the details, and
+One case this part did not exercise: `BINDER_VERIFIED_BY` in the environment does
+**not** authorize a stamp either. It is refused for the same reason the
+repo-local file is, and refused the same way — the run writes no `verified` key
+and discloses the value it declined:
+
+```text
+Trust (verified stamps):
+  note: ignored BINDER_VERIFIED_BY "process:nightly-ingest": an environment default does not authorize stamping (pass --verified-by to stamp)
+```
+
+The [user guide](user_guide.md#binder_verified_by) has that case in full, and
 [the full rules](user_guide.md#writing-a-verified-stamp) cover the JSON
 disclosure fields.
 
