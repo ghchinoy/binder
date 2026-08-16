@@ -603,7 +603,7 @@ staleness are derived on demand, never stored.
 | `--today` | now | Date (`YYYY-MM-DD`) used for the staleness check; honours `SOURCE_DATE_EPOCH`. |
 | `--json` | `false` | Emit the review report as deterministic JSON (schema `binder.report/v1`) instead of prose. See [JSON output](#json-output---json-and-the-exit-code-contract). |
 | `--strict` | `false` | Gate (exit 1) when any review finding is present (orphans, stale, unresolved, or unparsed-frontmatter recoveries). Entrypoints are advisory and never gate. Without it `review` never gates (exit 0). See [Strict mode](#strict-mode). |
-| `--entrypoint` | — | Concept id or path (repeatable) to treat as an **entrypoint**, not an orphan, in addition to the general rule and the recognized roots. |
+| `--entrypoint` | — | Concept id or path (repeatable) to treat as an **entrypoint**, not an orphan, in addition to the general rule and the recognized root. |
 
 ```console
 $ SOURCE_DATE_EPOCH=1700000000 binder convert testdata/corpus-lint-entrypoints -o /tmp/ep >/dev/null
@@ -639,13 +639,22 @@ are never reported.
 is classified by whether it links outward:
 
 - **Entrypoint** — no inbound but **has outbound** resolved edges (it indexes into
-  the corpus rather than being linked into), *or* it is a recognized root
-  entrypoint (`README.md` / `index.md` at the corpus root), *or* it was named via
+  the corpus rather than being linked into), *or* it is the recognized root
+  entrypoint (`README.md` at the corpus root), *or* it was named via
   `--entrypoint`. A root `README.md` that links out is an entrypoint, **not** an
   orphan — reporting it as an orphan was a false positive (issue #24).
 - **Orphan** — a **true** orphan has **no inbound AND no outbound** resolved edges:
   a genuinely disconnected node, reported for you to wire up or accept, never
   removed.
+
+`README.md` is the only name recognized this way, and only at the corpus root.
+An **authored** root `index.md` is a reserved name: it is renamed to
+`index-note.md` on conversion so binder can generate its own index (spec §3.1;
+see [OKF v0.2 output structure](#okf-v02-output-structure)), so it never matches
+by name and is classified on its **edges** like any other concept — one that
+links out is still reported as an entrypoint, while one that links nothing is
+reported as an orphan.
+[#71](https://github.com/ghchinoy/binder/issues/71)
 
 Both classifications are **advisory only** — entrypoints never gate, and the
 reclassification never changes an exit code that did not change before. `review`
@@ -687,8 +696,8 @@ It reports these checks:
 2. **Missing titles** — no authored `title:` **and** no first-level (`# `)
    heading (`convert` would humanize the filename; `lint` flags the gap).
 3. **Orphans** — a concept with **0 inbound AND 0 outbound** resolved edges: a
-   truly disconnected node. A concept with no inbound but **outbound** edges (or a
-   recognized root `README.md`/`index.md`, or one named via `--entrypoint`) is an
+   truly disconnected node. A concept with no inbound but **outbound** edges (or
+   the recognized root `README.md`, or one named via `--entrypoint`) is an
    **entrypoint** instead, reported separately and never as an orphan (issue #24).
    `review` applies the identical rule, so with each used on its intended input —
    `lint` on a source corpus, `review` on the bundle converted from it — the two
@@ -716,7 +725,7 @@ It reports these checks:
 | `--today` | now | Date (`YYYY-MM-DD`) used for the staleness check; honours `SOURCE_DATE_EPOCH`. |
 | `--json` | `false` | Emit the report as deterministic JSON (schema `binder.report/v1`, `command:"lint"`). See [JSON output](#json-output---json-and-the-exit-code-contract). |
 | `--strict` | `false` | Gate (exit 1) when any finding is present. Entrypoints are advisory and never gate. Without it `lint` never gates (exit 0). See [Strict mode](#strict-mode). |
-| `--entrypoint` | — | Concept id or path (repeatable) to treat as an **entrypoint**, not an orphan, in addition to the general rule and the recognized roots. |
+| `--entrypoint` | — | Concept id or path (repeatable) to treat as an **entrypoint**, not an orphan, in addition to the general rule and the recognized root. |
 
 All findings are **spec-tolerated advisories**: bare `binder lint` always exits
 `0` even with findings (§11 hard conformance stays `validate`'s job over a
@@ -1356,7 +1365,7 @@ binder enrich src --overwrite-keys status --status-map "archive=stable" --json
 | `by_type` | object | `{ "<type>": count }` (types with no value show as `(none)`). |
 | `tiers` | object | `{ "<tier>": count }` over `unverified` / `machine-confirmed` / `human-reviewed`. |
 | `orphans` | array of string | Concept IDs with **no inbound AND no outbound** resolved edges (true orphans). |
-| `entrypoints` | array of string | Concept IDs with no inbound edge that are not orphans: outbound edges, a recognized root (`README.md`/`index.md`), or designated via `--entrypoint` (issue #24). Advisory; never gates. |
+| `entrypoints` | array of string | Concept IDs with no inbound edge that are not orphans: outbound edges, the recognized root (`README.md`), or designated via `--entrypoint` (issue #24). Advisory; never gates. |
 | `stale` | array of string | Concept IDs stale as of `today`. |
 | `attested` | array of string | Attested-Computation concept IDs. |
 | `unresolved` | array | Broken concept references, each `{ from, raw_target, text }`. |
@@ -1375,7 +1384,7 @@ binder enrich src --overwrite-keys status --status-map "archive=stable" --json
 | `broken_links` | array | Each `{ concept, detail }`; `detail` is the raw target. |
 | `missing_titles` | array of string | Concept IDs with no authored title and no `# H1`. |
 | `orphans` | array of string | Concept IDs with 0 inbound **and** 0 outbound resolved edges (true orphans). |
-| `entrypoints` | array of string | Concept IDs with 0 inbound edge that are not orphans: outbound edges, a recognized root (`README.md`/`index.md`), or designated via `--entrypoint` (issue #24). Advisory; never gates. |
+| `entrypoints` | array of string | Concept IDs with 0 inbound edge that are not orphans: outbound edges, the recognized root (`README.md`), or designated via `--entrypoint` (issue #24). Advisory; never gates. |
 | `stale` | array of string | Concept IDs stale as of `today`. |
 | `schema_violations` | array | Each `{ concept, detail }` — `"missing type"` or `"invalid frontmatter: <err>"`. |
 
@@ -1697,8 +1706,8 @@ flags. Required params are marked **(req)**.
 `external_root` is the parity param for the repeatable `--external-root` flag.
 `review`'s and `lint`'s `entrypoints` is the parity param for the repeatable
 `--entrypoint` flag: named concepts move out of `orphans` and into
-`entrypoints`, exactly as on the CLI. A root `README.md`/`index.md` is still
-recognized automatically without naming it.
+`entrypoints`, exactly as on the CLI. A root `README.md` is still recognized
+automatically without naming it.
 
 `query_graph`'s JSON schema marks only `bundle` and `op` as `required`; the
 per-`op` requirements marked **(req for …)** above are enforced at call time
@@ -2898,7 +2907,7 @@ community-core codec adapter. This guide grows a full section for each as it lan
   [Status vocabulary and `--canonicalize-status`](#status-vocabulary-and---canonicalize-status).
   [#23](https://github.com/ghchinoy/binder/issues/23)
 - **Entrypoints vs orphans** — ✅ shipped: `review` and `lint` now separate true
-  orphans from entrypoints (outbound-only nodes, a root `README.md`/`index.md`,
+  orphans from entrypoints (outbound-only nodes, a root `README.md`,
   or anything named via `--entrypoint`), so an outbound-only node no longer gates
   under `--strict`. See [`review`](#review) and [`lint`](#lint).
   [#24](https://github.com/ghchinoy/binder/issues/24)
