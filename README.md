@@ -59,8 +59,8 @@ via `binder config`, and supports `--strict` CI gating.
   mapping string (e.g. `docs=Guide,subsystems=Subsystem`) using deterministic
   heuristics (folders, patterns, frontmatter) and optional Gemini semantic inference
   (`--gemini`). It is proposal-only and never writes to disk.
-- **`config`** shows the resolved effective configuration (viper-backed) and
-  where each value came from (flag/env/file/default).
+- **`config`** manages persistent configuration (`get`, `set`, `unset`, `list`)
+  and displays the resolved effective configuration with source attribution.
 - **`mcp`** runs binder as a stdio MCP server, exposing the additive verbs
   (`convert`/`validate`/`review`/`lint`/`graph`) plus the read-only `list_graphs`
   graph-introspection tool as MCP tools that return the same `binder.report/v1`
@@ -449,25 +449,29 @@ stored. The actor must follow the actor convention — valid forms are
 
 ### `binder config`
 
-`binder config` shows the resolved effective configuration and, where cheap, the
-source of each value. Configuration is resolved with the precedence **flag > env
-> config file > built-in default**:
+`binder config` manages persistent configuration settings (`get`, `set`, `unset`, `list`)
+and displays the resolved configuration with the precedence **flag > env > config file > built-in default**:
 
-- **Config file** (first found wins): `./.binder.yaml`, then
-  `$XDG_CONFIG_HOME/binder/config.yaml` (fallback
-  `$HOME/.config/binder/config.yaml`). A missing config file is normal — defaults
-  apply and it is never an error.
-- **Environment:** prefix `BINDER_`, e.g. `BINDER_VERIFIED_BY`, `BINDER_DEFAULT_TYPE`.
-- **Keys:** `verified_by` (default actor for `--verified-by`) and `default_type`
-  (default for `--default-type`). The structure is namespaced and extensible.
-
-A config `verified_by` must itself be a valid actor; a malformed value fails fast
-at config-load with a **usage error (exit 2)**. `binder config` ships `--json`
-(enveloped, schema `binder.config/v1`):
+- **Config files:** `./.binder.yaml` (local repository), `$XDG_CONFIG_HOME/binder/config.yaml` (global user).
+- **Environment:** prefix `BINDER_`, e.g. `BINDER_VERIFIED_BY`, `BINDER_GEMINI_PROJECT`.
+- **Keys:** `default_type`, `verified_by`, `gemini_model`, `gemini_location`, `gemini_project`, `gemini_backend` (supports both snake_case and dotted keys like `gemini.project`).
 
 ```bash
+# Set repository-local setting in ./.binder.yaml:
+binder config set gemini.project my-gcp-project
+
+# Set global user setting in ~/.config/binder/config.yaml:
+binder config set --global gemini.model gemini-3.5-flash-lite
+
+# Get resolved value:
+binder config get gemini.project
+
+# List all resolved values with source attribution:
 binder config
-binder config --json | jq '.result.values.verified_by'
+binder config --json | jq '.result.values.gemini_project'
+
+# Revert setting to default:
+binder config unset gemini.project
 ```
 
 ```yaml
