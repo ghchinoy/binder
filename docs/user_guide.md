@@ -1851,7 +1851,14 @@ transport over the existing internal functions:
 Every binder command that touches relationships works from the same derived
 structure: a **graph** binder projects from the bundle's resolved links. binder does
 not store a graph — it rebuilds one from the concepts and their links on every call,
-hands you a view, and forgets it. Three surfaces read that projection:
+hands you a view, and forgets it.
+
+That projection is a labeled property graph. For the model itself — what nodes,
+edges, labels and property maps are, how an adjacency index makes neighbor lookups
+cheap, and when an in-process graph stops being the right answer — see the
+[in-memory labeled property graph primer](lpg-inmemory-primer.md).
+
+Three surfaces read that projection:
 
 - **`binder graph`** — a CLI command that exports the *whole* graph in one of four
   formats (see the [`graph`](#graph) flag table).
