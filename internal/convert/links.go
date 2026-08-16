@@ -62,24 +62,26 @@ func rewriteLinks(body, srcRel string, srcToOut map[string]string) (string, []ok
 // /<outRel>. file:// targets with a remote host, or that escape the workspace
 // root (including via .. or symlinks), stay external and emit an advisory.
 //
-// Matches that fall inside code (fenced/indented blocks or inline code spans)
-// are ignored: link-like text there is not an edge. Code regions come from
-// goldmark via okf.CodeRegions, the same markdown-aware code path the codec's
-// LinkGraph uses, so the source and output sides agree on what a link is.
+// Matches are found over okf.MaskCode(body), which blanks the CONTENT of every
+// code region (fenced/indented blocks and inline spans) to spaces while keeping
+// delimiters, newlines, and every byte offset intact. Scanning the masked copy
+// means link-like text inside code is not seen as an edge, and — the issue #99
+// fix — a stray unmatched "[" inside a code region can no longer open a
+// bracket-naive runaway match that swallows the next real link. Because MaskCode
+// is offset-preserving, every slice (bang/text/target) and every output write is
+// taken from the ORIGINAL body, so a code span sitting inside a link's TEXT
+// survives verbatim into the rewritten link.
 //
 // srcRel is the current file's SOURCE-relative path.
 func (r *linkResolver) rewrite(body, srcRel string) (string, []okf.Link) {
 	var links []okf.Link
 	fromDir := path.Dir(srcRel)
-	code := okf.CodeRegions(body)
+	scan := okf.MaskCode(body) // offset-preserving; scan prose, slice from body
 
 	var out strings.Builder
 	last := 0
-	for _, idx := range mdLinkRE.FindAllStringSubmatchIndex(body, -1) {
+	for _, idx := range mdLinkRE.FindAllStringSubmatchIndex(scan, -1) {
 		matchStart, matchEnd := idx[0], idx[1]
-		if okf.InCodeRegion(matchStart, code) {
-			continue // link-like text inside code: leave untouched
-		}
 		bang := body[idx[2]:idx[3]]
 		text := body[idx[4]:idx[5]]
 		target := strings.TrimSpace(body[idx[6]:idx[7]])
