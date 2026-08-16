@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -32,6 +33,7 @@ func newConvertCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 		jsonOut       bool
 		strict        bool
 		workspaceRoot string
+		externalRoots []string
 
 		groupByType      bool
 		includeBacklinks bool
@@ -66,6 +68,17 @@ func newConvertCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 			if err != nil {
 				return clijson.Usage(err)
 			}
+			// --external-root declares KNOWN sibling workspace roots so their
+			// file:// links stay external without advising (issue #25). An empty
+			// value is a usage error (exit 2); a well-formed path that does not
+			// exist is accepted on purpose — a declared sibling may be absent from
+			// this checkout (e.g. in CI), and requiring existence would defeat the
+			// flag. No stat is performed.
+			for _, er := range externalRoots {
+				if strings.TrimSpace(er) == "" {
+					return clijson.Usage(fmt.Errorf("--external-root value must not be empty"))
+				}
+			}
 
 			// Resolve default_type through config precedence (flag > env > file >
 			// default). Binding the flag lets an explicit --default-type win over a
@@ -99,6 +112,7 @@ func newConvertCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 				SourceKeys:    convert.ParseFMRefKeys(sourceKeys),
 				MapDraft:      mapDraft,
 				WorkspaceRoot: workspaceRoot,
+				ExternalRoots: externalRoots,
 
 				GroupByType:      groupByType,
 				IncludeBacklinks: includeBacklinks,
@@ -152,6 +166,7 @@ func newConvertCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "emit the run report as deterministic JSON (schema "+clijson.SchemaVersion+") instead of prose")
 	cmd.Flags().BoolVar(&strict, "strict", false, "gate (exit 1) on unresolved links or recovery warnings; without it these never gate (never-reject)")
 	cmd.Flags().StringVar(&workspaceRoot, "workspace-root", "", "boundary within which file:// links resolve to internal edges (default: the <src> root)")
+	cmd.Flags().StringArrayVar(&externalRoots, "external-root", nil, "declare a KNOWN sibling-workspace root (repeatable); file:// links under it stay external but suppress the outside-root advisory")
 	cmd.Flags().BoolVar(&groupByType, "group-by-type", false, "append an additive \"# Catalog\" of all concepts grouped by type to the root index.md")
 	cmd.Flags().BoolVar(&includeBacklinks, "include-backlinks", false, "annotate catalog entries with inbound resolved edges (requires --group-by-type)")
 	cmd.Flags().BoolVar(&includeGraph, "include-graph", false, "annotate catalog entries with outbound resolved edges (requires --group-by-type)")

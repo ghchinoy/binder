@@ -25,12 +25,18 @@ var mdLinkRE = regexp.MustCompile(`(!?)\[([^\]]*)\]\(([^)]+)\)`)
 //     lookup. When empty, file:// resolution is disabled (targets stay external).
 //   - wsRoot is the ABSOLUTE, cleaned workspace boundary within which a file://
 //     absolute path is considered an internal candidate; it defaults to srcRoot.
+//   - externalRoots are ABSOLUTE, cleaned sibling-workspace roots the author has
+//     declared as known (issue #25). A file:// target that resolves outside
+//     wsRoot but under one of these stays EXTERNAL exactly as before — it is
+//     never internalized — but its "resolves outside the workspace root"
+//     advisory is suppressed. Empty by default (every external link advises).
 //   - warn receives non-fatal advisories (never-reject); it must never be nil.
 type linkResolver struct {
-	srcToOut map[string]string
-	srcRoot  string
-	wsRoot   string
-	warn     func(format string, args ...any)
+	srcToOut      map[string]string
+	srcRoot       string
+	wsRoot        string
+	externalRoots []string
+	warn          func(format string, args ...any)
 }
 
 // rewriteLinks rewrites standard markdown links against a zero-value resolver
@@ -180,7 +186,13 @@ func (r *linkResolver) resolveFileURL(target string) (srcTarget, frag string, ok
 	// .Clean resolves any ".." lexically; filepath.Rel then reveals an escape.
 	absPath := filepath.Clean(filepath.FromSlash(decoded))
 	if escapesRoot(r.wsRoot, absPath) {
-		r.warn("file:// link %q resolves outside the workspace root; left external", target)
+		// Outside the workspace: the link genuinely is external and is left
+		// untouched. The advisory is suppressed only when the author has declared
+		// this sibling root via --external-root (issue #25); the link still stays
+		// external either way.
+		if !r.underDeclaredRoot(absPath) {
+			r.warn("file:// link %q resolves outside the workspace root; left external", target)
+		}
 		return "", "", false
 	}
 	// Symlink safety: if the target exists, its real path must also stay in-root.
@@ -190,7 +202,12 @@ func (r *linkResolver) resolveFileURL(target string) (srcTarget, frag string, ok
 			root = rr
 		}
 		if escapesRoot(root, real) {
-			r.warn("file:// link %q resolves through a symlink outside the workspace root; left external", target)
+			// Coherent with the lexical case above: a declared external root that
+			// contains the symlink's real target suppresses this advisory too. The
+			// link stays external; nothing is internalized.
+			if !r.underDeclaredRoot(real) {
+				r.warn("file:// link %q resolves through a symlink outside the workspace root; left external", target)
+			}
 			return "", "", false
 		}
 	}
@@ -203,6 +220,25 @@ func (r *linkResolver) resolveFileURL(target string) (srcTarget, frag string, ok
 		return "", "", false
 	}
 	return path.Clean(filepath.ToSlash(rel)), u.Fragment, true
+}
+
+// underDeclaredRoot reports whether absPath lies within any author-declared
+// external root (issue #25). Matching reuses escapesRoot, so it is segment-safe:
+// "/projects/jib" does not contain "/projects/jibo/x.md" (their filepath.Rel is
+// "../jibo/x.md"), and a root equal to absPath's parent chain matches only at a
+// path-segment boundary. Ordering of the declared roots does not affect the
+// result — it is a pure any-match — preserving deterministic output. It only
+// gates whether an advisory is emitted; it never changes the link bytes.
+func (r *linkResolver) underDeclaredRoot(absPath string) bool {
+	for _, root := range r.externalRoots {
+		if root == "" {
+			continue
+		}
+		if !escapesRoot(root, absPath) {
+			return true
+		}
+	}
+	return false
 }
 
 // escapesRoot reports whether absPath falls outside root (both absolute, cleaned
