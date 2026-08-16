@@ -5,7 +5,7 @@ A Go command-line tool that converts a plain-markdown corpus into a conformant
 bundle and validates OKF bundles against the spec's conformance rules.
 
 ![license](https://img.shields.io/badge/license-Apache--2.0-blue)
-![go](https://img.shields.io/badge/go-1.26-00ADD8)
+![go](https://img.shields.io/badge/go-1.26.1+-00ADD8)
 
 **Status: Phase 2 complete** — a Go CLI that converts a non-OKF markdown corpus
 into a conformant [OKF v0.2](https://github.com/GoogleCloudPlatform/knowledge-catalog)
@@ -69,7 +69,7 @@ via `binder config`, and supports `--strict` CI gating.
 
 `convert` can also declaratively stamp trust and lifecycle metadata across
 directory sections — `--status-map`, `--stale-after-map`, and `--verified-by`
-(#7) — and every command supports `--strict` to gate advisories in CI (see
+(#7) — and six commands support `--strict` to gate advisories in CI (see
 [Declarative trust & lifecycle flags](#declarative-trust--lifecycle-flags-convert)
 and [Strict mode](#strict-mode)).
 
@@ -248,8 +248,8 @@ binder validate path/to/bundle --json
   "schema": "binder.report/v1",
   "result": {
     "root": "path/to/bundle",
-    "num_concepts": 5,
-    "num_reserved": 3,
+    "num_concepts": 2,
+    "num_reserved": 1,
     "findings": []
   }
 }
@@ -468,8 +468,8 @@ across the v0.3.0 additions.
 ### Linting a source corpus (`binder lint`)
 
 `binder lint <corpus>` is a **read-only** pass over a **source markdown corpus**
-(it writes nothing) that reports five health checks. It completes the command
-triad — each surface is single-purpose:
+(it writes nothing) that reports five health checks, plus entrypoints for
+context. It completes the command triad — each surface is single-purpose:
 
 | Command | Input | Purpose |
 |---|---|---|
@@ -531,7 +531,7 @@ binder lint path/to/corpus --json     # deterministic envelope, command:"lint"
 
 | Flag | Default | Purpose |
 |---|---|---|
-| `--entrypoint` | — | Concept id or path to treat as an entrypoint rather than an orphan (repeatable). A trailing `.md` is stripped, case-insensitively. Root `README.md`/`index.md` are recognized without it. |
+| `--entrypoint` | — | Concept id or path to treat as an entrypoint rather than an orphan (repeatable). A trailing `.md` is tolerated, in any case (`x`, `x.md`, `x.MD` all match concept `x`) — but the id itself is matched **case-sensitively**, so `X` and `X.md` do not. Root `README.md`/`index.md` are recognized without it. |
 | `--strict` | `false` | Gate (exit 1) when any finding is present; otherwise lint never gates. Entrypoints are never findings. |
 | `--today` | now (or `SOURCE_DATE_EPOCH`) | Date (`YYYY-MM-DD`) used for staleness. |
 | `--json` | `false` | Emit the report as deterministic JSON (schema `binder.report/v1`, `command:"lint"`). Adds `result.entrypoints` (array of string, always present, `[]` when empty). |
@@ -739,9 +739,29 @@ binder config get gemini.project
 binder config
 binder config --json | jq '.result.values.gemini_project'
 
+# …or just the resolved value, unquoted (each key is an object, not a scalar):
+binder config --json | jq -r '.result.values.gemini_project.value'
+
 # Revert setting to default:
 binder config unset gemini.project
 ```
+
+Each entry under `result.values` is a `{value, source}` object, not a bare
+string, so a scalar needs the trailing `.value`. Run against the `.binder.yaml`
+written by the `set` above, the two `jq` forms give:
+
+```json
+{
+  "value": "my-gcp-project",
+  "source": "file"
+}
+```
+
+```text
+my-gcp-project
+```
+
+A config file looks like:
 
 ```yaml
 # .binder.yaml
@@ -886,8 +906,8 @@ claude mcp add binder -- binder mcp
 |---|---|---|
 | `convert` | `src` (req), `out` (req unless `dry_run`), `dry_run`, `default_type`, `type_map`, `fm_ref_keys`, `source_keys`, `map_citations`, `map_draft`, `status_map`, `canonicalize_status`, `stale_after_map`, `verified_by`, `workspace_root`, `group_by_type`, `include_backlinks`, `include_graph`, `strict` | `convert` report envelope (`dry_run:true` → the ingestion-analysis preview, writes nothing) |
 | `validate` | `bundle` (req), `strict` | `validate` report envelope |
-| `review` | `bundle` (req), `today`, `strict` | `review` report envelope |
-| `lint` | `src` (req), `today`, `strict` | `lint` report envelope |
+| `review` | `bundle` (req), `entrypoints` (array of concept id or path), `today`, `strict` | `review` report envelope |
+| `lint` | `src` (req), `entrypoints` (array of concept id or path), `today`, `strict` | `lint` report envelope |
 | `graph` | `bundle` (req), `format` (`dot`\|`json`\|`graphml`\|`html`, default `json`), `today` | raw export bytes — `format:json` is the raw `{nodes,edges}`, **not** the report envelope |
 | `list_graphs` | `bundle` (req), `today`, `id_key` | `list_graphs` report envelope — the LPG **schema descriptor** (graph name, node labels = concept types, the single `LINKS` edge label, each with counts + property declarations). Read-only introspection derived from the same projection as `graph` |
 | `query_graph` | `bundle` (req), `op` (req: `lookup`\|`neighbors`\|`neighborhood`\|`pattern`\|`path`), `today`, `id_key`, `id`, `label`, `direction` (`out`\|`in`\|`both`, default `out`), `rel`, `depth` (`1..5`, required for `neighborhood`), `to_label`, `where` (`{prop, eq}`; `prop` ∈ `type`\|`tier`\|`stale`), `from`/`to`/`max_depth` (`1..5`, all required for `path`) | `query_graph` report envelope — bounded read-only traversal of the same projection. `additionalProperties: false` |
