@@ -288,9 +288,15 @@ func (idx *Index) Lookup(idKey, id, label string) *LookupResult {
 		return r
 	}
 	r.Query = LookupQuery{Label: label}
-	for _, nid := range idx.byLabel[label] { // already sorted by ID
+	for _, nid := range idx.byLabel[label] {
 		r.Nodes = append(r.Nodes, *idx.byID[nid])
 	}
+	// Sort explicitly rather than assuming byLabel's insertion order, so this path
+	// matches the other four verbs and determinism does not rest on an upstream
+	// ordering guarantee from Build. It matters here because sort-then-truncate
+	// means insertion order would otherwise decide WHICH MaxResults nodes survive
+	// (a correctness bug, not a cosmetic one) if Build ever fed nodes unsorted.
+	sortNodes(r.Nodes)
 	nodes, truncated := truncateNodes(r.Nodes)
 	r.Nodes = nodes
 	r.Truncated = &truncated

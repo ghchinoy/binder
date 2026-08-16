@@ -362,6 +362,27 @@ func TestNeighborsTruncation(t *testing.T) {
 	}
 }
 
+// TestLookupByLabelSortsUnsortedInput proves the by-label lookup path sorts
+// explicitly rather than trusting an upstream ordering guarantee. NewIndex builds
+// byLabel in Model.Nodes order, so a Model whose same-typed nodes are inserted out
+// of ID order produces an out-of-order byLabel bucket. The result must still come
+// back sorted by ID. This test goes RED if the explicit sortNodes call is removed
+// from Index.Lookup's by-label branch (verified by deleting it: nodes returned as
+// [n/c, n/a, n/b], failing this assertion), and green with it restored.
+func TestLookupByLabelSortsUnsortedInput(t *testing.T) {
+	m := &Model{Nodes: []Node{
+		{ID: "n/c", Title: "c", Type: "T"},
+		{ID: "n/a", Title: "a", Type: "T"},
+		{ID: "n/b", Title: "b", Type: "T"},
+	}}
+	idx := NewIndex(m) // deliberately NOT sorted; byLabel["T"] = [n/c, n/a, n/b]
+	got := idx.Lookup("", "", "T")
+	want := []string{"n/a", "n/b", "n/c"}
+	if ids := nodeIDs(got.Nodes); !reflect.DeepEqual(ids, want) {
+		t.Fatalf("by-label lookup on unsorted input = %v, want %v (must sort by ID)", ids, want)
+	}
+}
+
 // idFor produces a zero-padded id so lexical order matches numeric order.
 func idFor(i int) string {
 	const width = 5
