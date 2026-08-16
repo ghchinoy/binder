@@ -180,13 +180,19 @@ func Analyze(src string, opts Options) (concepts []*okf.Concept, facts []SourceF
 
 	// Initialize the report slices so an empty run serializes to [] rather than
 	// null in --json mode (#13 empty-slice policy). Prose output is unaffected.
+	// StatusNotes is always emitted (issue #23); a nil opts value becomes [] so
+	// the envelope shape is stable and never marshals to null.
+	statusNotes := opts.StatusNotes
+	if statusNotes == nil {
+		statusNotes = []string{}
+	}
 	report := &Report{
 		Src:         src,
 		DryRun:      opts.DryRun,
 		Concepts:    []ConceptReport{},
 		Warnings:    []string{},
 		Unresolved:  []UnresolvedLink{},
-		StatusNotes: opts.StatusNotes,
+		StatusNotes: statusNotes,
 	}
 
 	// Phase 1: resolve output paths, renaming reserved-name source files so they

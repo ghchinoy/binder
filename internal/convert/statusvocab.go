@@ -39,18 +39,27 @@ type StatusVocabResult struct {
 	// so output stays byte-identical.
 	Notes []string
 	// Warnings are the non-conformance messages only, sorted. Their presence is
-	// what --strict escalates to a pre-write gate.
+	// what --strict escalates to a pre-write gate. Each asserts "wrote it
+	// unchanged" because on the default (exit 0) path the value IS written
+	// through; that phrasing is correct for the report but false under --strict.
 	Warnings []string
+	// gateReasons mirrors Warnings for the --strict path, minus the "wrote it
+	// unchanged" clause: under --strict nothing is written, so the gate error
+	// must not assert that it was. Kept unexported; GateMessage composes from it.
+	gateReasons []string
 }
 
 // NonConformant reports whether any --status-map value remains outside the §5.4
 // vocabulary after (optional) canonicalization. It is the --strict gate signal.
 func (r StatusVocabResult) NonConformant() bool { return len(r.Warnings) > 0 }
 
-// GateMessage renders the --strict gate error naming every offending value.
+// GateMessage renders the --strict gate error naming every offending value. It
+// composes from gateReasons (not Warnings) so it never claims a file "wrote it
+// unchanged" on the --strict path, where nothing is written; the
+// --canonicalize-status hint is preserved.
 func (r StatusVocabResult) GateMessage() string {
 	return fmt.Sprintf("--status-map has non-conformant status value(s) and --strict is set: %s",
-		strings.Join(r.Warnings, "; "))
+		strings.Join(r.gateReasons, "; "))
 }
 
 // isConformantStatus reports whether v is one of the §5.4 vocabulary values.
@@ -105,15 +114,21 @@ func ResolveStatusVocabulary(prefixes map[string]string, def string, canonicaliz
 		}
 		// Still non-conformant: warn, do NOT rewrite. Point known aliases at the
 		// opt-in flag so the user can see the fix without binder guessing intent.
-		msg := fmt.Sprintf(
-			"status value %q (from --status-map key %q) is not one of %s (OKF §5.4); wrote it unchanged",
+		// base is the shared non-conformance description; hint is the optional
+		// alias pointer. The report warning appends "; wrote it unchanged" (true
+		// on the exit-0 default path); the gate reason omits it (nothing is
+		// written under --strict). Both carry the hint.
+		base := fmt.Sprintf(
+			"status value %q (from --status-map key %q) is not one of %s (OKF §5.4)",
 			value, key, statusVocabList)
+		hint := ""
 		if !canonicalize {
 			if canon, ok := statusAliases[value]; ok {
-				msg += fmt.Sprintf(" — pass --canonicalize-status to map it to %q", canon)
+				hint = fmt.Sprintf(" — pass --canonicalize-status to map it to %q", canon)
 			}
 		}
-		res.Warnings = append(res.Warnings, msg)
+		res.Warnings = append(res.Warnings, base+"; wrote it unchanged"+hint)
+		res.gateReasons = append(res.gateReasons, base+hint)
 		return value
 	}
 
@@ -137,6 +152,7 @@ func ResolveStatusVocabulary(prefixes map[string]string, def string, canonicaliz
 	res.Notes = append(res.Notes, res.Warnings...)
 	sort.Strings(res.Notes)
 	sort.Strings(res.Warnings)
+	sort.Strings(res.gateReasons)
 
 	return outPrefixes, def, res
 }

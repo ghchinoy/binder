@@ -238,8 +238,10 @@ func TestStatusMapMalformedExit2(t *testing.T) {
 }
 
 // Criterion 8: two --json runs on the SAME inputs are byte-identical
-// (determinism), status_notes is present when non-conformant, and omitted when
-// conformant (purely additive to binder.report/v1).
+// (determinism), status_notes carries the messages when non-conformant, and is
+// always present as [] when conformant (purely additive to binder.report/v1;
+// the field ships with a stable shape and never marshals to null, matching PR
+// #56's empty-array contract).
 func TestStatusMapJSONDeterministicAndAdditive(t *testing.T) {
 	// argsFor builds an identical invocation (same src + same out) so a second run
 	// must be byte-for-byte identical if the command is deterministic.
@@ -271,10 +273,14 @@ func TestStatusMapJSONDeterministicAndAdditive(t *testing.T) {
 				t.Errorf("status_notes absent from non-conformant --json:\n%s", a)
 			}
 
-			// Conformant: status_notes omitted (omitempty) → additive, no new field.
+			// Conformant: status_notes is always emitted as [] (never omitted,
+			// never null) so the binder.report/v1 envelope keeps a stable shape.
 			c, _ := runCLI(t, argsFor(src, out, "stable")...)
-			if strings.Contains(c, "status_notes") {
-				t.Errorf("status_notes should be omitted on a conformant run:\n%s", c)
+			if !strings.Contains(c, `"status_notes": []`) {
+				t.Errorf("status_notes should be emitted as [] on a conformant run:\n%s", c)
+			}
+			if strings.Contains(c, `"status_notes": null`) {
+				t.Errorf("status_notes must never marshal to null:\n%s", c)
 			}
 		})
 	}

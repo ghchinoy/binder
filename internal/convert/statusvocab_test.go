@@ -109,6 +109,31 @@ func TestResolveStatusVocabularyDefaultKeyAttribution(t *testing.T) {
 	}
 }
 
+// TestGateMessageOmitsWroteItUnchanged: under --strict nothing is written, so
+// the gate error must NOT claim "wrote it unchanged" (which the report warning
+// correctly says on the exit-0 default path); the --canonicalize-status hint is
+// still carried so the fix stays visible.
+func TestGateMessageOmitsWroteItUnchanged(t *testing.T) {
+	_, _, res := ResolveStatusVocabulary(map[string]string{"archive": "active"}, "", false)
+	if !res.NonConformant() {
+		t.Fatalf("want non-conformant result to drive a gate")
+	}
+	// The report warning still asserts the value was written through.
+	if !strings.Contains(res.Warnings[0], "wrote it unchanged") {
+		t.Errorf("report warning should keep 'wrote it unchanged': %q", res.Warnings[0])
+	}
+	// The gate message must not — nothing is written under --strict.
+	msg := res.GateMessage()
+	if strings.Contains(msg, "wrote it unchanged") {
+		t.Errorf("gate message must not claim 'wrote it unchanged': %q", msg)
+	}
+	for _, want := range []string{`"active"`, `"archive"`, "§5.4", "--canonicalize-status"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("gate message %q missing %q", msg, want)
+		}
+	}
+}
+
 // TestResolveStatusVocabularyDeterministicOrder: notes are sorted, so the same
 // input yields byte-identical report output regardless of map iteration order.
 func TestResolveStatusVocabularyDeterministicOrder(t *testing.T) {
