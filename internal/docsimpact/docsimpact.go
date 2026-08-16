@@ -39,11 +39,24 @@ var nextHeadingRE = regexp.MustCompile(`(?m)^#{1,2}[ \t]+\S`)
 // lines, capturing the checkbox contents so the gate can tell whether each
 // specific option is checked. Keying on the two named options — rather than "any
 // checked box in the region" — is what makes the gate reject a contradictory
-// both-checked answer and ignore unrelated checklist boxes that leak into the
-// bound when a following heading is deleted.
+// both-checked answer and ignore unrelated checklist boxes that fall inside the
+// bound.
+//
+// The match keys on the REAL option text — the "— " that opens each option's
+// description ("No — none of the above changed.", "Yes — and the docs task is
+// named below.") — not on a bare leading "No"/"Yes" fragment. A bare fragment also
+// matches unrelated checklist lines such as "- [ ] No `Release-As:` footer.". A
+// matcher keyed on it stayed correct for every reachable template layout, but only
+// through two incidental invariants: the section bound kept the checklist line out
+// of the scanned region, and — because optionChecked reads only the first matching
+// line — the real (unchecked) option always sat ahead of any checklist line a
+// reorder could sweep in. That was a latent fragility, not an open hole. Keying on
+// the option's own text removes reliance on both invariants: an unrelated checklist
+// "No"/"Yes" line is never read as an option, wherever it sits and wherever the
+// section bound falls.
 var (
-	noOptionRE  = regexp.MustCompile(`(?m)^[ \t]*[-*][ \t]+\[([^\]]*)\][ \t]+No\b`)
-	yesOptionRE = regexp.MustCompile(`(?m)^[ \t]*[-*][ \t]+\[([^\]]*)\][ \t]+Yes\b`)
+	noOptionRE  = regexp.MustCompile(`(?m)^[ \t]*[-*][ \t]+\[([^\]]*)\][ \t]+No[ \t]+—`)
+	yesOptionRE = regexp.MustCompile(`(?m)^[ \t]*[-*][ \t]+\[([^\]]*)\][ \t]+Yes[ \t]+—`)
 )
 
 // docsTaskRE captures the value written on the "Docs task (required when Yes)"
@@ -83,6 +96,36 @@ var ErrDocsTaskMissing = errors.New(
 	"the \"" + Heading + "\" section has the \"Yes\" box checked but the " +
 		"\"Docs task (required when \\\"Yes\\\")\" line is blank: name the docs " +
 		"task on that line in the PR description")
+
+// sectionBound isolates the docs-impact section — the region the option matchers
+// scan — and reports whether the section is present at all. The bound is a
+// DECLARED property of the gate, deliberately stated here rather than left to
+// emerge from wherever headings happen to fall:
+//
+//	the section runs from just after the "## Docs impact" heading to the start of
+//	the next level-2-or-shallower heading, or to the end of the body when Docs
+//	impact is the last section.
+//
+// The end-of-body case is the one worth naming. When Docs impact is the last
+// section the bound widens to end-of-body and pulls the "## Checklist" boxes into
+// the scanned region. Declaring and testing the bound (see TestSectionBound) makes
+// that widening a visible, tested behaviour rather than a silent consequence of a
+// template reorder. The bound does not, on its own, decide the answer: correctness
+// under the widened bound rests on the option matchers keying on the real option
+// text, so a checklist "No"/"Yes" line swept into the region is not read as an
+// option. The bound is declared here for clarity and drift-detection, not because
+// the gate's correctness hangs on where it falls.
+func sectionBound(body string) (string, bool) {
+	loc := headingRE.FindStringIndex(body)
+	if loc == nil {
+		return "", false
+	}
+	rest := body[loc[1]:]
+	if next := nextHeadingRE.FindStringIndex(rest); next != nil {
+		return rest[:next[0]], true
+	}
+	return rest, true
+}
 
 // optionChecked reports whether the option line matched by re is present and has
 // its checkbox checked ("[x]" / "[X]").
@@ -125,16 +168,9 @@ func taskNamed(section string) bool {
 func Check(body string) error {
 	body = okf.MaskCode(body)
 
-	loc := headingRE.FindStringIndex(body)
-	if loc == nil {
+	section, ok := sectionBound(body)
+	if !ok {
 		return ErrSectionMissing
-	}
-
-	// Bound the section: from just after the heading line to the next heading.
-	rest := body[loc[1]:]
-	section := rest
-	if next := nextHeadingRE.FindStringIndex(rest); next != nil {
-		section = rest[:next[0]]
 	}
 
 	no := optionChecked(noOptionRE, section)
