@@ -745,13 +745,49 @@ binder lint path/to/corpus --strict   # exit 1 if any finding (CI)
 binder lint path/to/corpus --json     # deterministic envelope, command:"lint"
 ```
 
-**Anchor slug convention (GitHub-style, pinned).** An `#anchor` matches a heading
-whose slug is produced by: lowercase; strip HTML tags; drop every character except
-`[a-z0-9]`, space, and hyphen; convert spaces to hyphens; collapse repeated
-hyphens; and disambiguate duplicate headings with the suffixes `-1`, `-2`, … in
-document order (a second `## Notes` becomes `#notes-1`). Slugging is
-code-region-aware: a `# heading` inside a fenced code block is not a heading. This
-convention lives in `okf.HeadingSlugs` and is a stable, load-bearing commitment.
+**Anchor slug convention (GitHub-style, single-sourced).** This is the
+**heading-anchor** slug (`okf.HeadingSlugs`), which is a deliberately separate
+function — with deliberately different rules — from the **title-resolution**
+slug that `convert` uses to resolve wikilinks by title (see [Wikilink and ref
+resolution](#wikilink-and-ref-resolution)); that one *does* collapse runs, this
+one does not. An `#anchor` matches a heading whose slug is produced by applying
+this pipeline to the heading's text:
+
+1. **Lowercase, then strip HTML tags** — `## <code>API</code>` slugs to `#api`,
+   not `#codeapicode`.
+2. **Keep `[a-z0-9_-]` verbatim, drop everything else.** Underscores are word
+   characters and round-trip (`## snake_case` → `#snake_case`); hyphens already
+   in the heading are left exactly as authored (`## a--b` → `#a--b`). Any other
+   character is dropped outright, leaving nothing in its place — `## v0.3.0
+   Release` → `#v030-release`.
+3. **Turn each space into one hyphen, without collapsing runs.** Two adjacent
+   spaces produce `--`, which is how a dropped character between two spaces
+   shows up: `## Agent Skill / Plugin` → `#agent-skill--plugin`, *not*
+   `#agent-skill-plugin`.
+4. **Disambiguate duplicates** with the suffixes `-1`, `-2`, … in document
+   order, counted per document: three `## Notes` headings yield `#notes`,
+   `#notes-1`, and `#notes-2`.
+
+Slugging is code-region-aware: a `# heading` inside a fenced code block is not a
+heading and contributes no anchor.
+
+Letters and digits are **ASCII-only** — `[a-z0-9]` rather than the full Unicode
+word class github-slugger uses — so a non-ASCII heading slugs differently than it
+would on GitHub, and the anchor GitHub would accept is reported as a broken link.
+`## Café` slugs to `#caf`, so `#café` is a false positive; `## 配置` contributes no
+slug characters at all (`## 配置 A` slugs to `#-a`). The divergence is deliberate
+and is disclosed in `okf.HeadingSlugs` itself; it is tracked as
+[#85](https://github.com/ghchinoy/binder/issues/85). Read "GitHub-style" as
+holding for ASCII headings.
+
+**What is load-bearing here is the single source, not the character set.** The
+convention has exactly one unit-tested implementation, `okf.HeadingSlugs` (a
+design commitment from [#8](https://github.com/ghchinoy/binder/issues/8)), and
+every part of binder that has to decide what `#bar` matches resolves through it —
+today that is `lint`'s anchor check — so binder cannot hold two answers at once.
+The character rules above describe what that one implementation does in v0.3.0;
+they are a fact about this release rather than a frozen promise, and v0.3.0 itself
+changed two of them.
 
 ### `graph`
 
@@ -2347,7 +2383,11 @@ nothing and are reported):
    concept's directory, then as a bare bundle path).
 2. **Filename stem** (case-insensitive; the last path segment).
 3. **Title slug** (the target lowercased with non-alphanumeric runs collapsed to
-   single hyphens, matched against concept titles).
+   single hyphens, matched against concept titles). This **title-resolution**
+   slug is a separate function from the **heading-anchor** slug that [`lint`](#lint)
+   matches `#anchor`s against, which does *not* collapse runs; the two rules
+   diverge deliberately, and the divergence is tracked as
+   [#86](https://github.com/ghchinoy/binder/issues/86).
 
 A frontmatter ref may be a single value, a YAML list, or a `[[Target]]`-style
 scalar. Titles for the whole corpus are resolved before any body is rewritten, so
