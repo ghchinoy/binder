@@ -55,6 +55,10 @@ via `binder config`, and supports `--strict` CI gating.
   schema violations. `--strict` gives a non-zero CI gate.
 - **`graph`** exports the concept graph (edges = resolved links) as
   dot/json/graphml/html.
+- **`infer`** inspects a source markdown corpus and proposes a directory-to-type
+  mapping string (e.g. `docs=Guide,subsystems=Subsystem`) using deterministic
+  heuristics (folders, patterns, frontmatter) and optional Gemini semantic inference
+  (`--gemini`). It is proposal-only and never writes to disk.
 - **`config`** shows the resolved effective configuration (viper-backed) and
   where each value came from (flag/env/file/default).
 - **`mcp`** runs binder as a stdio MCP server, exposing the additive verbs

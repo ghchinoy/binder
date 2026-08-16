@@ -31,8 +31,19 @@ const SchemaVersion = "binder.config/v1"
 // Config keys (namespaced, extensible). New defaults are added here without
 // breaking the envelope shape.
 const (
-	KeyVerifiedBy  = "verified_by"
-	KeyDefaultType = "default_type"
+	KeyVerifiedBy     = "verified_by"
+	KeyDefaultType    = "default_type"
+	KeyGeminiModel    = "gemini_model"
+	KeyGeminiLocation = "gemini_location"
+	KeyGeminiProject  = "gemini_project"
+	KeyGeminiBackend  = "gemini_backend"
+)
+
+// Default values for Gemini configuration.
+const (
+	DefaultGeminiModel    = "gemini-3.5-flash-lite"
+	DefaultGeminiLocation = "global"
+	DefaultGeminiBackend  = "auto"
 )
 
 // EnvPrefix is prepended (with an underscore) to an upper-cased key to form the
@@ -72,6 +83,10 @@ func (c *Config) Load() error {
 	v := viper.New()
 	v.SetDefault(KeyVerifiedBy, "")
 	v.SetDefault(KeyDefaultType, defaultType)
+	v.SetDefault(KeyGeminiModel, DefaultGeminiModel)
+	v.SetDefault(KeyGeminiLocation, DefaultGeminiLocation)
+	v.SetDefault(KeyGeminiProject, "")
+	v.SetDefault(KeyGeminiBackend, DefaultGeminiBackend)
 
 	v.SetEnvPrefix(EnvPrefix)
 	v.AutomaticEnv()
@@ -177,7 +192,16 @@ type Resolved struct {
 }
 
 // Keys is the stable, ordered list of configuration keys `binder config` prints.
-func Keys() []string { return []string{KeyDefaultType, KeyVerifiedBy} }
+func Keys() []string {
+	return []string{
+		KeyDefaultType,
+		KeyVerifiedBy,
+		KeyGeminiModel,
+		KeyGeminiLocation,
+		KeyGeminiProject,
+		KeyGeminiBackend,
+	}
+}
 
 // Resolve builds the Resolved view for `binder config`.
 func (c *Config) Resolve() Resolved {
