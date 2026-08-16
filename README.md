@@ -106,14 +106,7 @@ binder_0.2.1_darwin_arm64.tar.gz  binder_0.2.1_linux_arm64.tar.gz   binder_0.2.1
 checksums.txt
 ```
 
-> **The `v` is in the tag but not in the filename — this is the one thing to get
-> right.** A download URL looks like
-> `…/releases/download/`**`v0.3.0`**`/binder_`**`0.3.0`**`_darwin_arm64.tar.gz`:
-> the tag path segment keeps its leading `v`, the archive filename drops it.
-> Substituting a version into only one of the two is a 404. The same no-`v`
-> convention governs the version *stamp* the binary prints
-> ([#52](https://github.com/ghchinoy/binder/pull/52) canonicalized it), so the
-> git tag is the sole place a `v` survives.
+Note: The `v` is in the tag but not in the filename.
 
 Set `VERSION` to the tag on the releases page **without its leading `v`** — the
 snippet puts the `v` back for the tag path and leaves it off the filename — pick
@@ -226,7 +219,7 @@ structural validation of `index.md`/`log.md` is not implemented in this release.
 A `conformant` verdict covers the concept files only — it is not a claim about a
 surface the validator never examined.
 
-### Machine-readable output (`--json`) and exit codes
+### Agent-ready machine-readable output (`--json`) and exit codes
 
 `convert`, `enrich`, `validate`, `review`, `lint`, `infer`, and `graph` accept
 `--json` for scripting and CI; `binder config` (and `config list`/`get`/`set`/`unset`)
