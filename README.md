@@ -61,10 +61,11 @@ via `binder config`, and supports `--strict` CI gating.
   (`--gemini`). It is proposal-only and never writes to disk.
 - **`config`** manages persistent configuration (`get`, `set`, `unset`, `list`)
   and displays the resolved effective configuration with source attribution.
-- **`mcp`** runs binder as a stdio MCP server, exposing the additive verbs
-  (`convert`/`validate`/`review`/`lint`/`graph`) plus the read-only `list_graphs`
-  graph-introspection tool as MCP tools that return the same `binder.report/v1`
-  payloads as `--json` (see [MCP server](#mcp-server-binder-mcp)).
+- **`mcp`** runs binder as a stdio MCP server, exposing **seven** tools: the
+  additive verbs (`convert`/`validate`/`review`/`lint`/`graph`) plus the two
+  read-only graph tools `list_graphs` (schema introspection) and `query_graph`
+  (bounded traversal). They return the same `binder.report/v1` payloads as
+  `--json` (see [MCP server](#mcp-server-binder-mcp)).
 
 `convert` can also declaratively stamp trust and lifecycle metadata across
 directory sections — `--status-map`, `--stale-after-map`, and `--verified-by`
@@ -110,12 +111,22 @@ binder_0.2.1_darwin_arm64.tar.gz  binder_0.2.1_linux_arm64.tar.gz   binder_0.2.1
 checksums.txt
 ```
 
-Set `VERSION` to the tag on the releases page **without its leading `v`**, pick
+> **The `v` is in the tag but not in the filename — this is the one thing to get
+> right.** A download URL looks like
+> `…/releases/download/`**`v0.3.0`**`/binder_`**`0.3.0`**`_darwin_arm64.tar.gz`:
+> the tag path segment keeps its leading `v`, the archive filename drops it.
+> Substituting a version into only one of the two is a 404. The same no-`v`
+> convention governs the version *stamp* the binary prints
+> ([#52](https://github.com/ghchinoy/binder/pull/52) canonicalized it), so the
+> git tag is the sole place a `v` survives.
+
+Set `VERSION` to the tag on the releases page **without its leading `v`** — the
+snippet puts the `v` back for the tag path and leaves it off the filename — pick
 your platform, and the rest is mechanical:
 
 ```bash
 export VERSION=...  OS=darwin  ARCH=arm64   # OS: linux|darwin|windows · ARCH: amd64|arm64
-BASE="https://github.com/ghchinoy/binder/releases/download/v${VERSION}"
+BASE="https://github.com/ghchinoy/binder/releases/download/v${VERSION}"   # tag keeps its "v"
 curl -fsSL -O "${BASE}/binder_${VERSION}_${OS}_${ARCH}.tar.gz"
 curl -fsSL -O "${BASE}/checksums.txt"
 shasum -a 256 --ignore-missing -c checksums.txt   # or: sha256sum --ignore-missing -c checksums.txt
@@ -261,9 +272,9 @@ prose and `--json` mode):
 
 | Code | Meaning |
 |---|---|
-| `0` | Success. Advisories (broken links, orphans, staleness, recovered frontmatter, missing trust) may be present — they are reported but never gate unless `--strict` is set. |
+| `0` | Success. Advisories (broken links, true orphans, staleness, recovered frontmatter, missing trust, non-conformant `status` values) may be present — they are reported but never gate unless `--strict` is set. Entrypoints are reported and **never** gate. |
 | `1` | Gating findings: `validate` spec §11 non-conformance (always), or, under `--strict`, the per-command advisory/finding set (see [Strict mode](#strict-mode)). |
-| `2` | Usage error — anything wrong with the command line itself. Unknown subcommand (`binder bogus`); unknown flag; wrong number of positional arguments; `convert` with neither `-o` nor `--dry-run`; `--json` conflicting with `--format`; an unknown `graph --format`; a malformed `--today`, `--verified-by`, `--type-map`, `--status-map`, or `--stale-after-map` value; an unknown `config` key; and an unreadable `<corpus>`/`<src>` for `lint`, `enrich`, and `infer`. |
+| `2` | Usage error — anything wrong with the command line **or with the config file that feeds it**. Unknown subcommand (`binder bogus`); unknown flag; wrong number of positional arguments; `convert` with neither `-o` nor `--dry-run`; `--json` conflicting with `--format`; an unknown `graph --format`; a malformed `--today`, `--verified-by`, `--type-map`, `--status-map`, `--stale-after-map`, or empty `--external-root` value; `enrich --overwrite-keys` naming a protected trust-provenance key (the whole run is refused and nothing is written); an unknown `config` key; and an unreadable `<corpus>`/`<src>` for `lint`, `enrich`, and `infer`. A bad value in `.binder.yaml` fails the same way, before the command runs — e.g. `verified_by: "agent:bot"` makes *every* subcommand exit 2. |
 | `3` | I/O or internal error — an unreadable bundle or source for `convert`, `validate`, `index`, `review`, and `graph`, or a write failure. |
 
 **Never-reject governs corpus content, not the command line.** binder never
@@ -281,11 +292,13 @@ lists, the discovery surface (`--version`/`--help`), and a CI example.
 | `--dry-run` | `false` | Report what would be written without writing anything. |
 | `--default-type` | `Note` (or config `default_type`) | Concept type applied when none is present or mapped. |
 | `--type-map` | — | Per-directory type overrides, e.g. `"docs=Guide,adr=Decision"`. |
-| `--status-map` | — | Per-directory `status`, e.g. `"archive=deprecated,drafts=draft,default=active"`; a `default=` key applies when no prefix matches. Set only when `status` is absent. |
+| `--status-map` | — | Per-directory `status`, e.g. `"archive=deprecated,drafts=draft,default=stable"`; a `default=` key applies when no prefix matches. Set only when `status` is absent. Values are checked against the OKF §5.4 vocabulary (see [Status vocabulary](#status-vocabulary-and---canonicalize-status)). Malformed entry → exit 2. |
+| `--canonicalize-status` | `false` | Rewrite known `--status-map` aliases to the §5.4 vocabulary (`active`→`stable`, `wip`/`in-progress`→`draft`, `archived`/`legacy`→`deprecated`). Off by default; each rewrite is reported. |
 | `--stale-after-map` | — | Per-directory `stale_after` relative to the run clock, e.g. `"07-benchmarks=+6m,legacy=+0d"` (grammar `+Nd`/`+Nm`/`+Ny`). Set only when absent. Malformed → exit 2. |
 | `--verified-by` | config `verified_by` | Actor to append as a `verified` stamp, e.g. `"human:ghchinoy"` or `"binder/0.3.0"`. Invalid actor → exit 2. |
-| `--strict` | `false` | Gate (exit 1) on unresolved links or recovery warnings (see [Strict mode](#strict-mode)). |
+| `--strict` | `false` | Gate (exit 1) on unresolved links, recovery warnings, or non-conformant `--status-map` values (see [Strict mode](#strict-mode)). |
 | `--workspace-root` | `<src>` root | Boundary within which `file://` links resolve to internal edges (see below). |
+| `--external-root` | — | Declare a **known** sibling-workspace root (repeatable). `file://` links under it stay external but no longer raise the outside-root advisory (see below). Empty value → exit 2. |
 | `--report` | — | Also write the run report to this file. |
 | `--json` | `false` | Emit the run report as deterministic JSON (schema `binder.report/v1`) instead of prose. Composes with `--report`. |
 | `--group-by-type` | `false` | Append an additive `# Catalog` of all concepts, grouped by type, to the **root** `index.md` (see [Catalog](#catalog-in-the-root-indexmd)). |
@@ -319,7 +332,7 @@ sorted sub-list of inbound / outbound edges. The list is capped at **20 edges
 per entry**; when an entry has more, exactly 20 are rendered followed by a single
 `… and N more` line (the full edge set is always available via `binder graph`).
 These annotations derive from the **same resolved-edge set** `binder graph` uses
-(resolved links only), so the catalog and the graph can never disagree:
+(resolved links only), so the catalog and the graph can never disagree.
 
 Each sub-list entry is suffixed with the **link text in parentheses** — the
 relationship label that produced the edge:
@@ -361,8 +374,11 @@ use `enrich` to bring a source tree's frontmatter up to spec.
 
 The safety model is load-bearing, because enrich mutates the source:
 
-- **Additive / never-clobber.** Only keys that are **absent** are added; an
-  authored `type`/`title`/`generated` (or any other key) is never overwritten.
+- **Additive / never-clobber by default.** Only keys that are **absent** are
+  added; an authored `type`/`title`/`generated` (or any other key) is not
+  overwritten. The single opt-out is `--overwrite-keys`, which refreshes the
+  named keys in place — see [`--overwrite-keys`](#refreshing-keys-in-place---overwrite-keys).
+  Trust-provenance keys can never be overwritten even with it.
 - **Idempotent.** A second run finds every key present → `unchanged` → **no
   write**. `generated.at` is stable across runs (set-when-absent).
 - **Body + pre-existing keys byte-faithful.** enrich reuses the codec's
@@ -402,15 +418,52 @@ enrich exits `0`; `--strict` gates (exit 1) when any are present. A bad/unreadab
 | `--dry-run` | `false` | Report what would be enriched without writing anything. |
 | `--default-type` | `Note` (or config `default_type`) | Concept type applied when none is present or mapped. |
 | `--type-map` | — | Per-directory type overrides, e.g. `"docs=Guide,adr=Decision"`. |
-| `--status-map` | — | Per-directory `status` (set only when `status` is absent), e.g. `"archive=deprecated,default=active"`. |
+| `--status-map` | — | Per-directory `status` (set only when `status` is absent), e.g. `"archive=deprecated,default=stable"`. Values are checked against the OKF §5.4 vocabulary (see [Status vocabulary](#status-vocabulary-and---canonicalize-status)). Malformed entry → exit 2. |
+| `--canonicalize-status` | `false` | Rewrite known `--status-map` aliases to the §5.4 vocabulary (`active`→`stable`, `wip`/`in-progress`→`draft`, `archived`/`legacy`→`deprecated`). Off by default; each rewrite is reported. |
 | `--stale-after-map` | — | Per-directory `stale_after` relative to the run clock (grammar `+Nd`/`+Nm`/`+Ny`), set only when absent. Malformed → exit 2. |
 | `--verified-by` | config `verified_by` | Actor to append as a `verified` stamp, e.g. `"human:ghchinoy"`. Invalid actor → exit 2. |
-| `--strict` | `false` | Gate (exit 1) when any file is skipped or a preserve-or-advise finding is present. |
+| `--overwrite-keys` | — | Comma-separated keys to **refresh in place** even when already present, e.g. `"status,stale_after"`. Opts out of never-clobber for exactly those keys. Naming a trust-provenance key → exit 2 (see below). |
+| `--strict` | `false` | Gate (exit 1) when any file is skipped, a preserve-or-advise finding is present, or a `--status-map` value is non-conformant. |
 | `--json` | `false` | Emit the run report as deterministic JSON (schema `binder.report/v1`) instead of prose. |
 
 The `--status-map`/`--stale-after-map`/`--verified-by` injectors are the same
 declarative `#7` stamps `convert` offers, all set-when-absent; core enrichment is
 `type`/`title`/`generated`.
+
+#### Refreshing keys in place (`--overwrite-keys`)
+
+Additive/never-clobber is the default. `--overwrite-keys` is the narrow, explicit
+opt-out: the keys you name are recomputed and written even when the file already
+has them — the intended use is re-running a changed `--status-map` or
+`--stale-after-map` over a tree that was enriched under the old one. It is
+`enrich`-only; `convert` has no equivalent.
+
+The effective set is bounded by what enrich computes at all — **`type`, `title`,
+`status`, and `stale_after`.** Naming anything else is accepted and silently does
+nothing (`--overwrite-keys foo` exits `0` and changes no file), because there is
+no value for enrich to write.
+
+Naming a **trust-provenance key** refuses the entire run — exit `2`, nothing
+written, not even for the files that would have been fine:
+
+```bash
+binder enrich path/to/corpus --overwrite-keys verified_by
+```
+
+```text
+binder: --overwrite-keys: refusing to overwrite trust-provenance key "verified_by" (protected: attester, computation, executor, generated, parameters, runtime, sources, usage_window, verified, verified_by); these can carry human attestations and overwriting them would violate the never-fabricate-trust invariant
+```
+
+Everything else about enrich is unchanged: unnamed keys stay additive, unrelated
+frontmatter and the body stay byte-faithful, and the run is idempotent. `--dry-run`
+previews the refresh (`would enrich alpha.md (overwrite: status)`) without writing;
+a real run reports it as `enriched alpha.md (overwritten: status)`.
+
+In `--json`, each refreshed file gains `result.files[].overwritten` (array of
+string). **This field is `omitempty` — it is absent when nothing was overwritten**,
+which is the opposite convention from `result.status_notes` and `result.entrypoints`,
+both of which are always present and `[]` when empty. Do not assume a uniform rule
+across the v0.3.0 additions.
 
 ### Linting a source corpus (`binder lint`)
 
@@ -430,7 +483,8 @@ a missing `type:` is invisible in a bundle because `convert` *defaults* them.
 resolved-edge definition, so its "broken link" is by construction the converter's
 "unresolved link" — no second resolver.
 
-The five checks:
+The six reported checks — five of them findings, plus entrypoints, which are
+reported for context and never counted:
 
 1. **Broken links** — an unresolved internal `.md` reference, a resolved link
    whose target concept is absent, a residual `[[wikilink]]`, and a broken
@@ -438,13 +492,24 @@ The five checks:
    same-doc `#bar`). `Detail` is the raw target.
 2. **Missing titles** — no authored `title:` and no first-level (`# `) heading.
 3. **Orphans** — a concept with **0 inbound AND 0 outbound** resolved edges: a
-   truly disconnected node. A concept with outbound edges but no inbound ones is
-   an **entrypoint**, reported separately and *not* counted as a finding
-   (`review` classifies both the same way, so `lint` and `review` agree).
-4. **Stale** — `stale_after` reached as of `--today` (or `SOURCE_DATE_EPOCH`).
-5. **Schema violations** — a missing `type:` (`Detail: "missing type"`), or
+   truly disconnected node.
+4. **Entrypoints** — reported separately, *never* counted as a finding, and
+   never a reason to gate. A concept with no inbound edge is an entrypoint
+   rather than an orphan when **any** of three things is true: it has at least
+   one outbound edge; it is a root `README.md` or `index.md` (matched
+   case-insensitively, and only at the corpus root — a nested `docs/README.md`
+   is **not** recognized and stays a true orphan); or it was named with
+   `--entrypoint`. `review` applies the identical rule, so `lint` and `review`
+   never disagree.
+5. **Stale** — `stale_after` reached as of `--today` (or `SOURCE_DATE_EPOCH`).
+6. **Schema violations** — a missing `type:` (`Detail: "missing type"`), or
    invalid frontmatter recovered under never-reject (`Detail: "invalid
    frontmatter: <err>"`).
+
+> The prose report labels the section `entrypoints (outbound, no inbound):`.
+> That label under-describes the set: a root `README.md` with no links at all,
+> and anything passed to `--entrypoint`, are listed there too. The rule above is
+> the accurate one.
 
 **Anchor slug convention (GitHub-style, pinned):** an `#anchor` matches a heading
 slugged by: lowercase; strip HTML tags; drop every character except `[a-z0-9]`,
@@ -466,11 +531,26 @@ binder lint path/to/corpus --json     # deterministic envelope, command:"lint"
 
 | Flag | Default | Purpose |
 |---|---|---|
-| `--strict` | `false` | Gate (exit 1) when any finding is present; otherwise lint never gates. |
+| `--entrypoint` | — | Concept id or path to treat as an entrypoint rather than an orphan (repeatable). A trailing `.md` is stripped, case-insensitively. Root `README.md`/`index.md` are recognized without it. |
+| `--strict` | `false` | Gate (exit 1) when any finding is present; otherwise lint never gates. Entrypoints are never findings. |
 | `--today` | now (or `SOURCE_DATE_EPOCH`) | Date (`YYYY-MM-DD`) used for staleness. |
-| `--json` | `false` | Emit the report as deterministic JSON (schema `binder.report/v1`, `command:"lint"`). |
+| `--json` | `false` | Emit the report as deterministic JSON (schema `binder.report/v1`, `command:"lint"`). Adds `result.entrypoints` (array of string, always present, `[]` when empty). |
 
 A bad or non-directory `<corpus>` path is a usage error (exit 2).
+
+#### review flags
+
+`binder review <bundle>` takes the same entrypoint/orphan classification and the
+same four flags:
+
+| Flag | Default | Purpose |
+|---|---|---|
+| `--entrypoint` | — | Concept id or path to treat as an entrypoint rather than an orphan (repeatable), exactly as for `lint`. |
+| `--strict` | `false` | Gate (exit 1) when any review finding is present — orphans, stale, unresolved/broken edges, unparsed-frontmatter recoveries. |
+| `--today` | now (or `SOURCE_DATE_EPOCH`) | Date (`YYYY-MM-DD`) used for staleness. |
+| `--json` | `false` | Emit the report as deterministic JSON (schema `binder.report/v1`, `command:"review"`). Adds `result.entrypoints` and a per-concept `result.concepts[].entrypoint` boolean, both always present. |
+
+See the [user guide](docs/user_guide.md) for the full `review` field list.
 
 ### Inferring a type map (`binder infer`)
 
@@ -559,7 +639,7 @@ trimmed of `/`).
 
 | Flag | Effect |
 |---|---|
-| `--status-map "archive=deprecated,drafts=draft,default=active"` | set `status` per directory prefix; the special `default=` key applies when no prefix matches. Set only when `status` is absent. Unknown status values are not rejected (they surface as a `validate` advisory). |
+| `--status-map "archive=deprecated,drafts=draft,default=stable"` | set `status` per directory prefix; the special `default=` key applies when no prefix matches. Set only when `status` is absent. Values are checked against the OKF §5.4 vocabulary — see below. |
 | `--stale-after-map "07-benchmarks=+6m,03-transcription=+1y,legacy=+0d"` | set `stale_after` per directory prefix, computed relative to the run clock. Set only when absent. |
 | `--verified-by "human:ghchinoy"` | append a `verified` actorstamp `{by, at}` to every concept. |
 
@@ -578,6 +658,63 @@ derived (`human:` → human-reviewed, else machine-confirmed) — no tier or sco
 stored. The actor must follow the actor convention — valid forms are
 `human:<id>`, `process:<id>`, `team:<id>`, or `<producer>/<version>` (e.g.
 `binder/0.3.0`); an invalid value is a **usage error (exit 2)**.
+
+### Status vocabulary and `--canonicalize-status`
+
+OKF §5.4 defines exactly three `status` values: `draft`, `stable`, `deprecated`.
+Real corpora rarely use those words, so `convert` and `enrich` **always check**
+every value supplied via `--status-map` against the vocabulary and report what
+they find. The check is not optional; only the *rewriting* is.
+
+By default a non-conformant value is written **unchanged** and reported as an
+advisory — exit stays `0`, and the frontmatter really does say `status: wip`:
+
+```bash
+binder convert path/to/corpus -o path/to/bundle --status-map "drafts=wip,default=stable"
+```
+
+```text
+Status vocabulary (OKF §5.4):
+  - status value "wip" (from --status-map key "drafts") is not one of draft|stable|deprecated (OKF §5.4); wrote it unchanged — pass --canonicalize-status to map it to "draft"
+```
+
+`enrich` reports the identical messages, but folded into its per-file list as
+`  status: <message>` rather than under a heading. In `--json` both commands use
+the same field, so scripts see one shape.
+
+`--canonicalize-status` opts into the rewrite. The alias table is fixed and
+closed — there is no way to extend it:
+
+| Alias | Canonical |
+|---|---|
+| `active` | `stable` |
+| `wip`, `in-progress` | `draft` |
+| `archived`, `legacy` | `deprecated` |
+
+```text
+  - status value "wip" (from --status-map key "drafts") canonicalized to "draft" (OKF §5.4)
+```
+
+A value that is neither conformant nor a known alias is **never** rewritten, flag
+or no flag; it is written unchanged and reported (`status value "frobnicate" …
+wrote it unchanged`). Because the aliases are the only rewrites, the flag is safe
+to leave on: on a corpus whose `--status-map` is already conformant it changes
+nothing.
+
+Under `--strict` a non-conformant value **gates at exit 1**, and the gate fires
+**before anything is written** — the output directory is never created:
+
+```text
+binder: --status-map has non-conformant status value(s) and --strict is set: status value "wip" (from --status-map key "drafts") is not one of draft|stable|deprecated (OKF §5.4) — pass --canonicalize-status to map it to "draft"
+```
+
+`--strict --canonicalize-status` together exit `0` on a resolvable alias, since
+nothing non-conformant survives to gate on. A **malformed** `--status-map` (an
+entry with no `=`) is a usage error at exit `2`, as it always was.
+
+In `--json`, both `convert` and `enrich` carry these messages in
+`result.status_notes` (array of string). It has **no `omitempty`**: it is always
+present, and `[]` on a run with nothing to say.
 
 ### `binder config`
 
@@ -622,10 +759,10 @@ non-conformance always gates regardless of `--strict`.
 | Command | What `--strict` gates |
 |---|---|
 | `validate --strict` | trust well-formedness advisories (in addition to hard non-conformance, which always gates) |
-| `review --strict` | any review finding — orphans, stale, unresolved/broken edges, unparsed-frontmatter recoveries |
-| `convert --strict` | unresolved links + recovery warnings |
-| `enrich --strict` | skipped (unparseable-frontmatter) files + preserve-or-advise findings |
-| `lint --strict` | any lint finding — broken links, missing titles, orphans, stale, schema violations |
+| `review --strict` | any review finding — **true** orphans, stale, unresolved/broken edges, unparsed-frontmatter recoveries. Entrypoints are advisory and never gate |
+| `convert --strict` | unresolved links + recovery warnings + non-conformant `--status-map` values (the status gate fires **pre-write**) |
+| `enrich --strict` | skipped (unparseable-frontmatter) files + preserve-or-advise findings + non-conformant `--status-map` values |
+| `lint --strict` | any lint finding — broken links, missing titles, **true** orphans, stale, schema violations. Entrypoints are advisory and never gate |
 | `infer --strict` | any inference warning or failure (e.g. a degraded Gemini tier) |
 
 **`file://` links.** IDE- and assistant-generated `file:///abs/path/doc.md` links
@@ -636,6 +773,19 @@ byte-identical. The root defaults to the corpus `<src>` and can be widened with
 `file://localhost/…` are local while any other host stays external; `..`/symlink
 escapes and out-of-root targets stay external. Unresolved `file://` links are
 tolerated (recorded as advisories, exit code stays `0`), never fatal.
+
+**Known sibling roots (`--external-root`).** When a `file://` link legitimately
+points into a *different* checkout you are not converting, the outside-root
+advisory is noise. `--external-root <path>` (repeatable, `convert` only) declares
+such a root as known: links under it **stay external** — they are not rewritten
+and no absolute path enters the bundle — but they stop raising the advisory. The
+emitted bundle is byte-identical with and without the flag; the only difference is
+a shorter `result.warnings`. Matching is segment-safe, so declaring
+`/src/projects/jib` does not silence `/src/projects/jibo`. Relative roots are
+accepted; an empty value is a usage error (exit `2`). Since outside-root
+advisories never gated, `--strict` behaves the same either way. See the
+[user guide](docs/user_guide.md#declaring-known-sibling-roots---external-root)
+for the resolution rules in full.
 
 `convert` never rejects: a source file whose frontmatter will not parse (invalid
 YAML or an unterminated fence) is preserved losslessly as a plain-markdown concept
@@ -698,23 +848,33 @@ job), independent of the Go gate.
 ## MCP server (`binder mcp`)
 
 `binder mcp` runs binder as a stdio [Model Context Protocol](https://modelcontextprotocol.io)
-server, exposing binder's **additive** verbs as MCP **tools** to an MCP-capable
-agent harness (Claude Code, Cursor, Zed). Each tool returns the **same**
-deterministic `binder.report/v1` payload as the corresponding `binder <cmd>
---json` — the handlers reuse the same internal functions and the same JSON
-encoder, so there is no second serialization path and no drift from the CLI.
+server, exposing **seven** MCP **tools** to an MCP-capable agent harness (Claude
+Code, Cursor, Zed): binder's **additive** verbs `convert`, `validate`, `review`,
+`lint` and `graph`, plus the **read-only** graph tools `list_graphs` and
+`query_graph`. Each report-producing tool returns the **same** deterministic
+`binder.report/v1` payload as the corresponding `binder <cmd> --json` — the
+handlers reuse the same internal functions and the same JSON encoder, so there is
+no second serialization path and no drift from the CLI.
 
 It is a transport, not a report-producing command: it has no `--json` flag (its
 *outputs* are the structured tool payloads). It serves over stdio until the
 client disconnects.
 
-> **Output-routing flags are the deliberate 1:1 exception.** Every tool
-> parameter mirrors its CLI flag one-to-one *except* the output-routing flags
-> `--report` / `--output` / `--json`, which the tools do not expose: over MCP the
-> transport **is** the JSON channel, so there is nothing to route and no `--json`
-> flag to toggle. The tool payloads are byte-identical to the corresponding
-> `binder <cmd> --json`. (`convert`'s `out`/`dry_run` and `graph`'s `format`
-> select *what* is produced, not how the report is routed, so they remain.)
+> **Parameters mirror the CLI flags, with two exceptions.** Every tool parameter
+> mirrors its CLI flag one-to-one *except*:
+>
+> 1. **Output-routing flags — deliberate.** `--report` / `--output` / `--json`
+>    are not exposed: over MCP the transport **is** the JSON channel, so there is
+>    nothing to route and no `--json` flag to toggle. The tool payloads are
+>    byte-identical to the corresponding `binder <cmd> --json`. (`convert`'s
+>    `out`/`dry_run` and `graph`'s `format` select *what* is produced, not how the
+>    report is routed, so they remain.)
+> 2. **`convert`'s `--external-root` has no MCP equivalent — a known gap.** The
+>    `convert` tool's input schema has no `external_root` parameter, so the
+>    sibling-root escape hatch described under
+>    [Strict mode](#strict-mode) is reachable only from the CLI. Over MCP, a
+>    `file://` link into a declared sibling root still raises the outside-root
+>    advisory. This is tracked as a parity gap, not a design choice.
 
 **Wire it into a harness** (Claude Code):
 
@@ -728,21 +888,35 @@ claude mcp add binder -- binder mcp
 { "mcpServers": { "binder": { "command": "binder", "args": ["mcp"] } } }
 ```
 
-**Tools** (each parameter mirrors the corresponding CLI flag 1:1):
+**Tools** (each parameter mirrors the corresponding CLI flag, subject to the two
+exceptions above):
 
 | Tool | Key params | Returns |
 |---|---|---|
-| `convert` | `src` (req), `out` (req unless `dry_run`), `dry_run`, `default_type`, `type_map`, `fm_ref_keys`, `source_keys`, `map_citations`, `map_draft`, `status_map`, `stale_after_map`, `verified_by`, `workspace_root`, `group_by_type`, `include_backlinks`, `include_graph`, `strict` | `convert` report envelope (`dry_run:true` → the ingestion-analysis preview, writes nothing) |
+| `convert` | `src` (req), `out` (req unless `dry_run`), `dry_run`, `default_type`, `type_map`, `fm_ref_keys`, `source_keys`, `map_citations`, `map_draft`, `status_map`, `canonicalize_status`, `stale_after_map`, `verified_by`, `workspace_root`, `group_by_type`, `include_backlinks`, `include_graph`, `strict` (**no** `external_root` — see above) | `convert` report envelope (`dry_run:true` → the ingestion-analysis preview, writes nothing) |
 | `validate` | `bundle` (req), `strict` | `validate` report envelope |
 | `review` | `bundle` (req), `today`, `strict` | `review` report envelope |
 | `lint` | `src` (req), `today`, `strict` | `lint` report envelope |
 | `graph` | `bundle` (req), `format` (`dot`\|`json`\|`graphml`\|`html`, default `json`), `today` | raw export bytes — `format:json` is the raw `{nodes,edges}`, **not** the report envelope |
 | `list_graphs` | `bundle` (req), `today`, `id_key` | `list_graphs` report envelope — the LPG **schema descriptor** (graph name, node labels = concept types, the single `LINKS` edge label, each with counts + property declarations). Read-only introspection derived from the same projection as `graph` |
+| `query_graph` | `bundle` (req), `op` (req: `lookup`\|`neighbors`\|`neighborhood`\|`pattern`\|`path`), `today`, `id_key`, `id`, `label`, `direction` (`out`\|`in`\|`both`, default `out`), `rel`, `depth` (`1..5`, required for `neighborhood`), `to_label`, `where` (`{prop, eq}`; `prop` ∈ `type`\|`tier`\|`stale`), `from`/`to`/`max_depth` (`1..5`, all required for `path`) | `query_graph` report envelope — bounded read-only traversal of the same projection. `additionalProperties: false` |
 
-The surface is deliberately additive (produce/validate). Source-mutating verbs
-(`enrich`, `emit_concept`) and read/search tools are **not** exposed — the read
-surface belongs to the knowledge store, and authoring over MCP is a later
-concern. Invariants are preserved end to end: findings are returned **in** the
+**`query_graph` details worth knowing before you call it.** Every response echoes
+a `node_key` object; `id_key` is accepted **for parity with `list_graphs` only
+and is never honored** in this version, so the echo is always
+`{"strategy":"path","key":"…","honored":false}` and traversal identity is always
+the path-derived concept id. A query that matches nothing is a **result**, not an
+error (`isError:false`, `not_found:true`); an unknown `op` or an out-of-range
+`depth`/`max_depth` is a **tool error** (`isError:true`, plain text rather than
+the envelope). Every traversal is depth-bounded by construction.
+
+The surface is deliberately additive (produce/validate) plus **read-only** graph
+introspection and traversal. Source-mutating verbs (`enrich`, `emit_concept`) are
+**not** exposed — authoring over MCP is a later concern — and neither is `infer`,
+which is proposal-only and can call out to a model. General read/search over a
+knowledge store remains out of scope; `list_graphs` and `query_graph` read the
+bundle binder itself produced.
+Invariants are preserved end to end: findings are returned **in** the
 payload (a tool with findings is not an MCP error), `verified_by` is applied
 **only** when explicitly passed (never auto-stamped; an invalid actor is a
 usage error), and payloads honor `SOURCE_DATE_EPOCH`/`today` for determinism.
@@ -815,12 +989,17 @@ The following is **planned, not yet shipped**:
 **Shipped, layered over the settled CLI contract:** the
 [Agent Skill and Agent-Plugin bundle](#agent-skill--plugin) (`okf-convert`, #14),
 then the [MCP server mode](#mcp-server-binder-mcp) (`binder mcp`, #15) — the
-additive convert/validate/review/lint/graph tools over the same OKF core. (These
-were sequenced Skill/Plugin **before** MCP, so MCP builds on already-settled
-`--json` payloads.) Declarative trust/lifecycle flags (`--status-map`,
-`--stale-after-map`, `--verified-by`; #7), `binder config` (#10), the standalone
-`binder lint` (#8), in-place `binder enrich` (#5), the type-map proposer
-`binder infer` (#38), and `--strict` mode have also shipped (see above). The
+additive convert/validate/review/lint/graph tools over the same OKF core, since
+joined by the read-only `list_graphs` and `query_graph` graph tools
+([#33](https://github.com/ghchinoy/binder/pull/33)). (These were sequenced
+Skill/Plugin **before** MCP, so MCP builds on already-settled `--json` payloads.)
+Declarative trust/lifecycle flags (`--status-map`, `--stale-after-map`,
+`--verified-by`; #7), `binder config` (#10), the standalone `binder lint` (#8),
+in-place `binder enrich` (#5), the type-map proposer `binder infer` (#38), and
+`--strict` mode have also shipped (see above). The v0.3.0 cycle added the
+opt-in `--canonicalize-status` (#23), `convert --external-root` (#25), the
+entrypoint-versus-orphan reclassification with `--entrypoint` on `review` and
+`lint` (#24), and `enrich --overwrite-keys` (#22). The
 [user guide](docs/user_guide.md#roadmap--planned-features) maps each to its issue.
 
 Today's shipped surface is the `convert`, `validate`, `index`, `review`, `lint`,

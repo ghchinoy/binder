@@ -117,10 +117,13 @@ a value that is already there.
 `binder/v0.3.0`. That is what `binder --version` prints, what the `--json`
 envelope's `binder` field contains, and what lands in `generated.by` — identical
 across the goreleaser, `go install`, and `go build` paths. What normalization
-does *not* do is invent a version: a plain `go build` in an untagged clone still
-reports the Go module pseudo-version it was built from (e.g.
-`binder/0.2.2-0.20260816073646-33fbd445d1c2`), which is why the release path must
-inject the tag with `-ldflags`.
+does *not* do is invent a version. A plain `go build` — and `make build`, which
+is `go build -o bin/binder .` — passes **no `-ldflags`**, so nothing sets
+`cmd.Version` and the `init()` fallback reports the Go module pseudo-version
+instead (e.g. `binder/0.2.2-0.20260816074947-7f4ca6b4c816`). This has nothing to
+do with whether the clone is tagged: a clone sitting on `v0.2.1-12-gdd8c35e`
+still reports the pseudo-version, because the tag only reaches the binary
+through `-ldflags`. That is why the release path must inject it.
 
 To rehearse the stamp locally, build the way the release builds:
 

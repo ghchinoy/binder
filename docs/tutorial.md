@@ -34,16 +34,23 @@ binder --version
 ```
 
 ```text
-binder/0.3.0
+binder/<version>
 ```
 
-The banner is `binder/<version>` and **never** carries a leading `v`. This is not
-cosmetic: it is the exact string binder stamps into every concept's
+A Homebrew or direct-download install of v0.3.0 prints exactly `binder/0.3.0`.
+The banner is always `binder/<version>` and **never** carries a leading `v`. This
+is not cosmetic: it is the exact string binder stamps into every concept's
 `generated.by`, so the value you see here is the value that will show up in your
-bundles. A binary built from an *untagged* clone reports the Go module
-pseudo-version it was built from instead of a release tag — e.g.
-`binder/0.2.2-0.20260816073646-33fbd445d1c2` — which is honest but noisy; install
-a release if you want a clean stamp.
+bundles.
+
+A source build prints something longer, like
+`binder/0.2.2-0.20260816074947-7f4ca6b4c816`. That is the Go module
+pseudo-version, and the reason is the build command, not the clone: `make build`
+runs a plain `go build` with **no `-ldflags`**, so nothing injects the release
+version and binder falls back to what the module graph knows. A fully tagged
+clone behaves identically. Install a release if you want a clean stamp, or pass
+the ldflag yourself — see
+[docs/RELEASING.md](RELEASING.md#how-the-version-reaches-the-binary-single-source-the-tag).
 
 Two habits make every run in this tutorial reproducible:
 
@@ -60,13 +67,23 @@ never invents a source or auto-stamps `verified`.
 
 Brownfield means the knowledge already exists (a docs site, an Obsidian vault, a
 folder of runbooks) and the job is to get it into OKF with its relationships
-intact. binder ships a small sample corpus with three deliberate triage cases (an
-unresolved link, a file with no title, and files with no frontmatter). Use it as
-the corpus for this part:
+intact. The binder **repository** carries a small sample corpus with three
+deliberate triage cases (an unresolved link, a file with no title, and files with
+no frontmatter). Use it as the corpus for this part.
+
+The corpus lives in the git repository, **not** in the release archive — a
+Homebrew or direct-download install gives you the `binder` binary plus `LICENSE`
+and `README.md`, and nothing else. So grab the repo, whichever way you installed:
 
 ```bash
-CORPUS=plugins/okf-convert/skills/okf-convert/assets/sample-corpus
+git clone --depth 1 https://github.com/ghchinoy/binder.git /tmp/binder-src
+CORPUS=/tmp/binder-src/plugins/okf-convert/skills/okf-convert/assets/sample-corpus
 ```
+
+If you built from source above you already have the clone; point `CORPUS` at your
+own checkout instead — every command below uses `"$CORPUS"`, so nothing else
+changes. The pasted output shows the path from the shallow clone; yours will
+differ in that one line.
 
 ### Step 1: triage with a dry run
 
@@ -80,7 +97,7 @@ SOURCE_DATE_EPOCH=1700000000 binder convert "$CORPUS" --dry-run
 
 ```text
 binder convert --dry-run (no files written)
-  source: plugins/okf-convert/skills/okf-convert/assets/sample-corpus
+  source: /tmp/binder-src/plugins/okf-convert/skills/okf-convert/assets/sample-corpus
   output: 
   concepts: 5
   links: 3 (resolved 2, unresolved 1)
@@ -113,7 +130,7 @@ binder lint "$CORPUS"
 
 ```text
 binder lint
-  corpus: plugins/okf-convert/skills/okf-convert/assets/sample-corpus
+  corpus: /tmp/binder-src/plugins/okf-convert/skills/okf-convert/assets/sample-corpus
   concepts: 5
   broken links: 1
     topics/onboarding -> /topics/deploy.md
@@ -134,10 +151,21 @@ An orphan here is a concept with **no inbound and no outbound** resolved edge: a
 document no reader will reach by following links, and one that leads nowhere.
 Treat the orphan list as a to-do list for the corpus.
 
-A concept that has outbound links but nothing pointing *at* it is an
-**entrypoint**, not an orphan — `README` is the obvious case. binder reports
-entrypoints separately and does **not** count them as findings, so a corpus with
-a legitimate front door is not penalised for having one.
+A concept with nothing pointing *at* it is an **entrypoint** rather than an
+orphan when any of three things holds: it links out to something, it is a root
+`README.md`/`index.md`, or you named it with `--entrypoint` (repeatable, and it
+tolerates a trailing `.md`). `README` here qualifies on the first count. binder
+reports entrypoints separately and does **not** count them as findings, so a
+corpus with a legitimate front door is not penalised for having one, and
+`--strict` never gates on them.
+
+Two edges of that rule are worth knowing. The section label reads
+`entrypoints (outbound, no inbound):`, but a root `README.md` with no links at
+all is listed there too — the label is narrower than the rule. And "root" means
+*root*: a nested `docs/README.md` is **not** recognized automatically and stays a
+true orphan until you pass `--entrypoint docs/README.md`. `binder review` applies
+exactly the same classification to a bundle, so `lint` and `review` never
+disagree about what is an orphan.
 
 ### Step 2.5: let binder propose a type map
 
@@ -280,12 +308,15 @@ prose and `--json` mode:
 |---|---|
 | `0` | Success. Advisories may be present but never gate unless `--strict` is set. |
 | `1` | Gating findings: `validate` §11 non-conformance (always), or any advisory under `--strict`. |
-| `2` | Usage error — anything wrong with the command line: an unknown subcommand or flag, the wrong number of arguments, an invalid actor, a malformed `--today`/`--type-map`/`--status-map`/`--stale-after-map` value, an unknown `graph --format`, and an unreadable corpus for `lint`/`enrich`/`infer`. |
+| `2` | Usage error — anything wrong with the command line, **or with the `.binder.yaml` that feeds it**: an unknown subcommand or flag, the wrong number of arguments, an invalid actor, a malformed `--today`/`--type-map`/`--status-map`/`--stale-after-map` value, an unknown `graph --format`, and an unreadable corpus for `lint`/`enrich`/`infer`. |
 | `3` | I/O or internal error — an unreadable bundle or source for `convert`/`validate`/`index`/`review`/`graph`, or a write failure. |
 
-Never-reject governs the *corpus*, not the command line: binder will not refuse
-your documents for being imperfect, but it will refuse a flag value it cannot
-parse rather than quietly computing against something you did not mean.
+Never-reject governs the *corpus*, not the inputs that configure the run: binder
+will not refuse your documents for being imperfect, but it will refuse a value it
+cannot parse rather than quietly computing against something you did not mean.
+That applies to the config file too — a bad `verified_by:` in `.binder.yaml` is
+resolved before the subcommand runs, so *every* command exits `2` until you fix
+it, even one that never uses the value.
 
 `--json` wraps the report in a deterministic envelope (schema
 `binder.report/v1`) with a stable field order and a trailing newline, so two runs
@@ -577,8 +608,25 @@ are accepted and written back as snake_case. An unknown key is a usage error
 Two conventions keep a greenfield bundle honest.
 
 Keep `status` in the OKF §5.4 vocabulary: `draft`, `stable`, or `deprecated`.
-binder does not reject an unfamiliar value, but it surfaces one as a `validate`
-advisory, and `validate --strict` turns that advisory into a CI gate.
+The `--status-map` you passed above is already conformant, so it ran silently.
+Had you written `--status-map "drafts=wip,default=stable"`, `enrich` would have
+checked the value at **input** time — the check is always on — written it
+unchanged, and told you so:
+
+```text
+  status: status value "wip" (from --status-map key "drafts") is not one of draft|stable|deprecated (OKF §5.4); wrote it unchanged — pass --canonicalize-status to map it to "draft"
+```
+
+(`convert` reports the same messages under a `Status vocabulary (OKF §5.4):`
+heading; `enrich` folds them into its per-file list.)
+
+binder still does not reject the value: bare `enrich` exits `0`. But
+`--strict` turns it into a gate (exit `1`) that fires **before** anything is
+written, and `--canonicalize-status` opts into rewriting the handful of known
+aliases (`active`→`stable`, `wip`/`in-progress`→`draft`,
+`archived`/`legacy`→`deprecated`) so the gate has nothing left to catch. Both
+flags exist on `convert` as well. See
+[Status vocabulary](../README.md#status-vocabulary-and---canonicalize-status).
 
 Attest with a real actor. `--verified-by` requires the actor convention:
 `human:<id>`, `process:<id>`, `team:<id>`, or `<producer>/<version>` such as
