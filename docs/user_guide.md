@@ -240,7 +240,7 @@ In an established multi-repo tree, an author often links across sibling
 workspaces on purpose — `speech/` referencing
 `file:///Users/me/projects/jibo/docs/...`. Those links are **genuinely
 external** and `convert` leaves them exactly as written, but it also emits an
-advisory for each one:
+advisory for each one — *stand-in paths; the message shape is verbatim:*
 
 ```text
 Warnings:
@@ -271,18 +271,17 @@ Under `--strict`, declared sibling roots do **not** gate (external links never
 counted as unresolved edges, so the exit code is unaffected); unknown external
 links continue to behave exactly as they do today.
 
-This flag applies to `convert` only. `binder lint` reports its own health
-findings and does not surface `convert`'s `file://` advisories (external
-`file://` targets are not recorded as edges), so there is nothing there for
-`--external-root` to suppress.
-
-Declaring the parent of those sibling workspaces silences their advisories and
-nothing else — `file://` links elsewhere still warn, and the bundle bytes are
-unchanged:
+For the `speech/` tree above, that means declaring the parent of the sibling
+workspaces:
 
 ```bash
 binder convert ./speech -o ./bundle --external-root /Users/me/projects
 ```
+
+This flag applies to `convert` only. `binder lint` reports its own health
+findings and does not surface `convert`'s `file://` advisories (external
+`file://` targets are not recorded as edges), so there is nothing there for
+`--external-root` to suppress.
 
 ### `enrich`
 
@@ -824,6 +823,18 @@ whole of stdout is a valid `--type-map` argument. Diagnostics go to **stderr**,
 so they never contaminate the substitution. Use `--json` when you want the
 per-directory rationale, the `warnings` array, and the tier attribution.
 
+That holds on a corpus with no directory signal too, which is the case worth
+checking before you script the idiom. There stdout carries **nothing at all**,
+the note `No directory type mappings inferred (use --default-type: Note)` goes to
+stderr, and the exit code is still `0`, so the substitution expands to an empty
+`--type-map`. Both `convert` and `enrich` accept that as a map that matches
+nothing and go on to do the rest of their work exactly as if the flag had been
+omitted — on `testdata/corpus-basic`, the bundle `convert --type-map ""` emits is
+byte-identical to the one it emits with no `--type-map` at all (`concepts: 4`,
+`links: 5 (resolved 4, unresolved 1)`). The idiom is therefore safe to write once
+and run against **every** corpus, not only the ones with a directory signal to
+find.
+
 **For scripting, read `result.type_map` out of `--json`.** It is the same string
 the prose form prints, on a stable, parseable path, and it is `""` when no
 directory mapping is inferred:
@@ -873,10 +884,10 @@ the failure loud with `--gemini-required` / `--strict`.
 attempted, so there is nothing to require, and the run is an ordinary
 deterministic exit `0`.
 
-Unlike every other binder output, a **Gemini-tier proposal is not
-deterministic** — the same corpus can yield different `suggested_type` values on
-successive runs. The deterministic tiers (1–3) are reproducible; tier 4 is a
-model call. Do not pin CI on `--gemini` output.
+Unlike every other binder output, a **Gemini-tier proposal is not deterministic
+even with `SOURCE_DATE_EPOCH` pinned** — the same corpus can yield different
+`suggested_type` values on successive runs. The deterministic tiers (1–3) are
+reproducible; tier 4 is a model call. Do not pin CI on `--gemini` output.
 
 ### `config`
 
@@ -885,7 +896,8 @@ binder config [subcommand] [flags]
 ```
 
 Manages persistent configuration and prints the **resolved effective configuration** —
-the value binder uses for each key and where that value came from.
+the value binder uses for each key and which precedence layer supplied it
+(`flag`, `env`, `file`, or `default`).
 
 Configuration is resolved once, at startup, with a strict precedence:
 
@@ -1208,8 +1220,10 @@ commands), so two runs on the same input are byte-identical:
 ```bash
 SOURCE_DATE_EPOCH=1700000000 binder review bundle --json > a.json
 SOURCE_DATE_EPOCH=1700000000 binder review bundle --json > b.json
-diff a.json b.json   # no output — identical
+diff a.json b.json
 ```
+
+The two files are byte-identical, so that `diff` prints nothing and exits `0`.
 
 Empty lists always serialize as `[]` (never `null`) and counts/booleans are
 always present, so a parser sees a stable shape regardless of the bundle.
@@ -1393,10 +1407,15 @@ backend that was resolved for the call.
 
 *A single `mappings[]` entry captured from a live tier-4 run of `binder infer
 testdata/corpus-rich --gemini --json` against a Vertex-enabled Google Cloud
-project. Unlike every other transcript in this guide it needs working Gemini
-credentials (ADC or an API key) to reproduce at all — without them the tier
-degrades and no `"source": "gemini"` entry is emitted. The `suggested_type` is
-model output, so a repeat run need not return `Reference`:*
+project. **Unlike every other transcript in this guide, you cannot reproduce this
+block at all without working Google Cloud ADC (or a Gemini API key)** — without
+them the tier degrades, `result.warnings[0]` carries `gemini tier disabled: …`,
+no `"source": "gemini"` entry is emitted, and the run still exits `0`. **Exactly
+one field varies: `suggested_type`.** It is model output, so it is not
+deterministic — successive runs against this same `attested/` directory returned
+both `Reference` (shown here) and `Specification`. Every other field repeats:
+`dir` and `sample_files` are corpus facts, and `rationale`, `model`, and
+`backend` are fixed by the code and the `--gemini-model` default:*
 
 ```json
 {
@@ -1455,37 +1474,58 @@ single code for "path not found":
 
 ```console
 $ binder lint     /no/such/path; echo $?
+binder: corpus "/no/such/path" is not a readable directory
 2
 $ binder enrich   /no/such/path; echo $?
+binder: source "/no/such/path" is not a readable directory
 2
 $ binder infer    /no/such/path; echo $?
+binder: corpus "/no/such/path" is not a readable directory
 2
 $ binder convert  /no/such/path -o /tmp/x; echo $?
+binder: convert: source "/no/such/path": stat /no/such/path: no such file or directory
 3
 $ binder validate /no/such/path; echo $?
+binder: stat /no/such/path: no such file or directory
 3
 $ binder review   /no/such/path; echo $?
+binder: stat /no/such/path: no such file or directory
 3
 $ binder index    /no/such/path; echo $?
+binder: stat /no/such/path: no such file or directory
 3
 $ binder graph    /no/such/path; echo $?
+binder: stat /no/such/path: no such file or directory
 3
 ```
+
+Every `binder: …` line above is on **stderr** — none of these commands writes
+anything to stdout, so the bare number is the `echo $?`. The wording tracks the
+classification: the exit-`2` commands report a failed check against the
+argument, the exit-`3` ones surface the underlying `stat` error.
 
 #### Other observed exit-`2` cases
 
 ```console
 $ binder bogus; echo $?                                        # unknown subcommand
+binder: unknown command "bogus" for "binder"
 2
 $ binder graph build/bundle --format bogus; echo $?            # unknown --format
+binder: unknown graph format "bogus" (want dot|json|graphml|html)
 2
 $ binder graph build/bundle --today notadate; echo $?          # unparseable --today
+binder: --today "notadate" is not a valid date (expected YYYY-MM-DD)
 2
 $ binder graph build/bundle --json --format dot; echo $?       # conflicting output flags
+binder: --json conflicts with --format dot; --json selects --format json
 2
 $ binder enrich docs/ --overwrite-keys sources; echo $?        # refused trust key
+binder: --overwrite-keys: refusing to overwrite trust-provenance key "sources" (protected: attester, computation, executor, generated, parameters, runtime, sources, usage_window, verified, verified_by); these can carry human attestations and overwriting them would violate the never-fabricate-trust invariant
 2
 ```
+
+The three `graph` cases fail on flag validation before the bundle path is
+touched, which is why they exit `2` even though `build/bundle` does not exist.
 
 The refused-trust-key case is **fail-fast and total**: naming any of the
 protected trust-provenance keys (`attester`, `computation`, `executor`,
@@ -1628,8 +1668,8 @@ flags. Required params are marked **(req)**.
 |---|---|---|
 | `convert` | `src` **(req)**, `out` (req unless `dry_run`), `dry_run`, `default_type`, `type_map`, `fm_ref_keys`, `source_keys`, `map_citations`, `map_draft`, `status_map`, `canonicalize_status`, `stale_after_map`, `verified_by`, `workspace_root`, `external_root`, `group_by_type`, `include_backlinks`, `include_graph`, `strict` | `convert` report envelope. `dry_run:true` → `convert.Analyze`, the ingestion-analysis preview (writes nothing); `dry_run:false` → writes the bundle to `out`. |
 | `validate` | `bundle` **(req)**, `strict` | `validate` report envelope. |
-| `review` | `bundle` **(req)**, `today`, `strict` | `review` report envelope. |
-| `lint` | `src` **(req)**, `today`, `strict` | `lint` report envelope (read-only source-corpus health). |
+| `review` | `bundle` **(req)**, `today`, `strict`, `entrypoints` | `review` report envelope. |
+| `lint` | `src` **(req)**, `today`, `strict`, `entrypoints` | `lint` report envelope (read-only source-corpus health). |
 | `graph` | `bundle` **(req)**, `format` (`dot`\|`json`\|`graphml`\|`html`, default `json`), `today` | The **raw** export bytes. `format:json` is the raw `{nodes,edges}` object — **not** the report envelope (see [graph JSON](#graph-json--a-raw-export-not-the-envelope)). |
 | `list_graphs` | `bundle` **(req)**, `today`, `id_key` | `list_graphs` report envelope: the LPG **schema descriptor** for the graph binder projects from the bundle — graph name, `node_key` strategy, counts, node labels (the concept `type`s present) and the single `LINKS` edge label, each with property declarations. Read-only introspection derived from the same `graph.Build` projection; `id_key` prefers an authored stable-id frontmatter key as the node key when present, else path identity (never minted). |
 | `query_graph` | `bundle` **(req)**, `op` **(req)** (`lookup`\|`neighbors`\|`neighborhood`\|`pattern`\|`path`), `today`, `id_key`, `id`, `label` (**req for `pattern`**), `direction` (`out`\|`in`\|`both`, default `out`), `rel`, `depth` (**req for `neighborhood`**, `1..5`), `to_label`, `where` (`{prop, eq}`, both required; `prop` ∈ `type`\|`tier`\|`stale`), `from` and `to` (**both req for `path`**), `max_depth` (**req for `path`**, `1..5`) | `query_graph` report envelope, one result shape per `op`. Which params apply depends on `op`; `id_key` is accepted for parity with `list_graphs` but is **never honored** here (the response echoes `node_key.honored: false`). The five operations, their per-`op` result shapes and the bounds are documented in full under [`query_graph`: asking questions of the graph](#query_graph-asking-questions-of-the-graph). |
@@ -1639,6 +1679,10 @@ flags. Required params are marked **(req)**.
 `status_notes` in the payload (see
 [Status vocabulary and `--canonicalize-status`](#status-vocabulary-and---canonicalize-status)).
 `external_root` is the parity param for the repeatable `--external-root` flag.
+`review`'s and `lint`'s `entrypoints` is the parity param for the repeatable
+`--entrypoint` flag: named concepts move out of `orphans` and into
+`entrypoints`, exactly as on the CLI. A root `README.md`/`index.md` is still
+recognized automatically without naming it.
 
 `query_graph`'s JSON schema marks only `bundle` and `op` as `required`; the
 per-`op` requirements marked **(req for …)** above are enforced at call time
@@ -1683,9 +1727,12 @@ transport over the existing internal functions:
   excluded for the mutation reason `enrich` is; two consequences follow for a
   harness. First, there is no MCP route to a proposed `--type-map`: derive one
   yourself (the harness already has a model) and pass it to the `convert` tool's
-  `type_map` param. Second, every payload on the MCP surface stays reproducible,
-  because `infer`'s Gemini tier — the one binder output that is not
-  byte-identical run to run — is not reachable over it.
+  `type_map` param. Second, a pinned clock is all a harness needs to make every
+  payload on the MCP surface reproducible, because `infer`'s Gemini tier — the
+  one binder output that is not reproducible **even with the clock pinned** — is
+  not reachable over it. Pin it in the **server's environment**: the `convert`
+  tool has no clock param of its own, so `SOURCE_DATE_EPOCH` set for the
+  `binder mcp` process is what reaches it.
 
 ## The graph surface
 
