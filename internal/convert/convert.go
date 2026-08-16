@@ -37,6 +37,17 @@ type Options struct {
 	// root. Relative values are resolved against the process working directory.
 	WorkspaceRoot string
 
+	// ExternalRoots declares known sibling-workspace roots (issue #25). A file://
+	// target that resolves OUTSIDE WorkspaceRoot but under one of these roots
+	// stays external exactly as it does today — it is never internalized or
+	// rewritten — but its "resolves outside the workspace root" advisory is
+	// suppressed. This gives established multi-repo trees a clean --strict CI
+	// story without changing any emitted bundle bytes. Values are made absolute
+	// and cleaned; they are NOT required to exist on the converting machine (the
+	// whole point is declaring siblings that live outside this checkout).
+	// Empty (the default) preserves today's behavior: every external link advises.
+	ExternalRoots []string
+
 	// Trust-mapping options (design-v2 §3.2 / Phase-2 point 7). All are OFF by
 	// default and deterministic; binder never fabricates provenance.
 	MapCitations bool     // map a body "# Citations" list to sources entries
@@ -141,6 +152,24 @@ func Analyze(src string, opts Options) (concepts []*okf.Concept, facts []SourceF
 		absWorkspace = filepath.Clean(absWorkspace)
 	}
 
+	// Declared sibling-workspace roots (issue #25): resolve each to an absolute,
+	// cleaned path so the segment-safe prefix match in linkResolver is
+	// unambiguous. Existence is NOT checked — a declared sibling may live outside
+	// this checkout (e.g. absent in CI); requiring it to exist would defeat the
+	// flag's purpose. Empty values are dropped defensively (the CLI already
+	// rejects them as usage errors); ordering is irrelevant to the any-match.
+	var externalRoots []string
+	for _, er := range opts.ExternalRoots {
+		if strings.TrimSpace(er) == "" {
+			continue
+		}
+		absER, aerr := filepath.Abs(er)
+		if aerr != nil {
+			return nil, nil, nil, fmt.Errorf("convert: resolving external root %q: %w", er, aerr)
+		}
+		externalRoots = append(externalRoots, filepath.Clean(absER))
+	}
+
 	// Initialize the report slices so an empty run serializes to [] rather than
 	// null in --json mode (#13 empty-slice policy). Prose output is unaffected.
 	report := &Report{
@@ -222,10 +251,11 @@ func Analyze(src string, opts Options) (concepts []*okf.Concept, facts []SourceF
 	// Pass 2: extract every relationship signal, merge tags, map trust where
 	// configured, stamp provenance, and project the typed trust view.
 	resolver := &linkResolver{
-		srcToOut: srcToOut,
-		srcRoot:  absSrc,
-		wsRoot:   absWorkspace,
-		warn:     report.addWarning,
+		srcToOut:      srcToOut,
+		srcRoot:       absSrc,
+		wsRoot:        absWorkspace,
+		externalRoots: externalRoots,
+		warn:          report.addWarning,
 	}
 	for _, it := range items {
 		c := it.c

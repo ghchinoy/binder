@@ -148,6 +148,7 @@ Output is required unless you pass `--dry-run`.
 | `--verified-by` | config `verified_by` | Actor appended as a `verified` stamp, e.g. `"human:ghchinoy"` or `"binder/0.1.0"`. Validated with the actor grammar; an invalid value is a usage error (exit 2). Appends only — never rewrites the derived tier. See [Declarative trust & lifecycle](#declarative-trust--lifecycle-flags). |
 | `--fm-ref-keys` | — | Frontmatter keys treated as relationship edges, e.g. `"related,parent"`. |
 | `--workspace-root` | `<src>` root | Boundary within which `file://` links resolve to internal edges. See [`file://` link resolution](#file-link-resolution). |
+| `--external-root` | — | Declare a **known** sibling-workspace root (repeatable). A `file://` link that resolves under it stays external (never internalized) but its outside-root advisory is suppressed. An empty value is a usage error (exit 2). See [`file://` link resolution](#file-link-resolution). |
 | `--map-citations` | `false` | Map a body `# Citations` list into `sources` entries. |
 | `--source-keys` | — | Frontmatter keys to map into `sources` entries, e.g. `"source,author"`. |
 | `--map-draft` | `false` | Map a `draft: true` marker to `status: draft` (only when `status` is absent). |
@@ -213,6 +214,54 @@ Resolution rules:
 # corpus at /home/me/notes, intro.md links to file:///home/me/notes/docs/doc.md
 binder convert /home/me/notes -o /tmp/bundle
 # → intro.md body now contains [doc](/docs/doc.md); links: 1 (resolved 1)
+```
+
+##### Declaring known sibling roots (`--external-root`)
+
+In an established multi-repo tree, an author often links across sibling
+workspaces on purpose — `speech/` referencing
+`file:///Users/me/projects/jibo/docs/...`. Those links are **genuinely
+external** and `convert` leaves them exactly as written, but it also emits an
+advisory for each one:
+
+```text
+Warnings:
+  - file:// link "file:///Users/me/projects/jibo/docs/a.md" resolves outside the workspace root; left external
+```
+
+`--external-root <path>` lets you acknowledge a known sibling root so its
+advisory is suppressed. It is **repeatable** (`--external-root A --external-root B`),
+consistent with the `file://`-boundary flag family. The behavior is deliberately
+narrow:
+
+- **Matched links stay external.** The flag *only* suppresses the advisory — it
+  never internalizes, rewrites, inlines, or resolves the link. The emitted
+  bundle bytes are **identical** with and without the flag for the same corpus.
+- **Non-matching external links still advise.** A `file://` link that resolves
+  outside every declared root warns exactly as before.
+- **Matching is segment-safe.** Roots are compared at path-segment boundaries, so
+  `--external-root /projects/jib` does **not** suppress `/projects/jibo/...`.
+- **Symlinks stay coherent.** A link whose real target (through a symlink)
+  resolves under a declared root is suppressed the same way as a lexical match.
+- **Declared roots need not exist here.** A well-formed path is accepted even if
+  it is absent on the converting machine (e.g. in CI) — that is the point, since
+  the sibling lives outside this checkout. Only an *empty* value is a usage error
+  (exit 2). No filesystem `stat` is performed, so runs stay deterministic and the
+  ordering of declared roots never affects output.
+
+Under `--strict`, declared sibling roots do **not** gate (external links never
+counted as unresolved edges, so the exit code is unaffected); unknown external
+links continue to behave exactly as they do today.
+
+This flag applies to `convert` only. `binder lint` reports its own health
+findings and does not surface `convert`'s `file://` advisories (external
+`file://` targets are not recorded as edges), so there is nothing there for
+`--external-root` to suppress.
+
+```text
+binder convert ./speech -o ./bundle --external-root /Users/me/projects
+# → links under /Users/me/projects stay external but no longer advise;
+#   any file:// link elsewhere still warns. Bundle bytes are unchanged.
 ```
 
 ### `enrich`
