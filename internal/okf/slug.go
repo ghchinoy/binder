@@ -10,10 +10,6 @@ import (
 // like "# <code>API</code>" slugs to "api", not "codeapicode").
 var htmlTagRE = regexp.MustCompile(`<[^>]*>`)
 
-// multiHyphenRE collapses runs of hyphens produced by adjacent
-// spaces/punctuation into a single hyphen.
-var multiHyphenRE = regexp.MustCompile(`-+`)
-
 // HeadingSlugs returns the GitHub-style anchor slug for every ATX heading
 // (levels 1–6) in body, in document order, skipping headings that fall inside a
 // code region (fenced/indented blocks, code spans) via CodeRegions — so a "# foo"
@@ -21,10 +17,17 @@ var multiHyphenRE = regexp.MustCompile(`-+`)
 // home of binder's heading-slug convention (a design commitment, issue #8), so
 // any anchor consumer agrees on what "#bar" resolves to.
 //
-// Slug algorithm (pinned, GitHub-style): lowercase; strip HTML tags; drop every
-// character except [a-z0-9], space, and hyphen; convert spaces to hyphens;
-// collapse repeated hyphens; and give duplicate slugs the suffixes -1, -2, … in
-// document order.
+// Slug algorithm (pinned, GitHub-style, matching github-slugger): lowercase;
+// strip HTML tags; drop every character that is not a word character
+// ([a-z0-9_] — underscore is kept), a space, or a hyphen; convert spaces to
+// hyphens WITHOUT collapsing consecutive hyphens; and give duplicate slugs the
+// suffixes -1, -2, … in document order.
+//
+// Deliberate divergence from github-slugger: the kept letter/digit set is ASCII
+// [a-z0-9] rather than the full Unicode word-character class (\p{L}\p{N}\p{M}),
+// so non-ASCII heading text slugs differently than on GitHub. This preserves
+// binder's long-standing ASCII behaviour; #76 was scoped to the two polarity
+// bugs (hyphen collapsing and dropped underscores), not to Unicode support.
 func HeadingSlugs(body string) []string {
 	code := CodeRegions(body)
 	var slugs []string
@@ -68,13 +71,17 @@ func slugify(s string) string {
 	var b strings.Builder
 	for _, r := range s {
 		switch {
-		case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '-':
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '_', r == '-':
+			// Word characters ([a-z0-9_]) and hyphens are kept verbatim;
+			// underscore is a word character on GitHub and must round-trip.
 			b.WriteRune(r)
 		case r == ' ':
+			// Spaces become hyphens. Runs are NOT collapsed: two adjacent
+			// spaces (e.g. from a dropped "/") yield "--", matching GitHub.
 			b.WriteByte('-')
 		default:
 			// dropped
 		}
 	}
-	return multiHyphenRE.ReplaceAllString(b.String(), "-")
+	return b.String()
 }
