@@ -156,6 +156,26 @@ func deleteChecklistHeading(tmpl string) string {
 	return checklistHeadingRE.ReplaceAllString(tmpl, "")
 }
 
+// releaseAsBoxRE locates the checklist "No `Release-As:` footer." task-list line
+// — the line whose leading "No" fragment a matcher keyed on a bare "No" latches
+// onto. Independent structural literal (same family as checklistHeadingRE); it
+// keys on the line's own text, never on a docsimpact function, so the
+// positional-defect control below stays non-circular.
+var releaseAsBoxRE = regexp.MustCompile(`(?m)^([ \t]*[-*][ \t]+)\[[ \t]*\]([ \t]+No\b[^\n]*Release-As[^\n]*)$`)
+
+// checkedChecklistNoLine derives the checklist "No `Release-As:`" line from the
+// template and returns it with its box checked. Derived from the template, never
+// transcribed; if the line's shape drifts the caller's mustChange fires.
+func checkedChecklistNoLine(t *testing.T, tmpl string) string {
+	t.Helper()
+	line := releaseAsBoxRE.FindString(tmpl)
+	if line == "" {
+		t.Fatalf("mutation drift: the checklist \"No `Release-As:`\" line was not " +
+			"found in the template; update releaseAsBoxRE in docsimpact_test.go.")
+	}
+	return releaseAsBoxRE.ReplaceAllString(line, "${1}[x]${2}")
+}
+
 // fillDocsTask writes a task name over the underscore placeholder on the
 // "Docs task" line.
 func fillDocsTask(tmpl string) string {
@@ -322,6 +342,45 @@ func TestSectionBoundingLeak(t *testing.T) {
 	if err := docsimpact.Check(body); err == nil {
 		t.Fatalf("section-bounding-leak control PASSED but must fail: a checked "+
 			"checklist box leaked into the docs-impact bound and was accepted.\n--- body ---\n%s", body)
+	}
+}
+
+// TestChecklistNoLineDoesNotAnswerGate pins the property that a checklist
+// "No"/"Yes" line is never read as a docs-impact option — regardless of where it
+// sits relative to the real options and regardless of where the section bound
+// falls.
+//
+// The checklist "No `Release-As:` footer." line matches any option matcher keyed
+// on a leading "No" fragment. Under the old matcher that was harmless for every
+// reachable template layout, protected by two incidental invariants: the section
+// bound kept the checklist line out of the scanned region, and — because
+// optionChecked reads only the first matching line — the real (unchecked) option
+// always sat ahead of any checklist line a reorder could sweep in. No normal
+// reorder places the checklist line AHEAD of the real options, so this was a latent
+// fragility, not a reachable false-pass; the point of keying on the real option
+// text is to stop depending on either invariant.
+//
+// This control constructs the worst case that isolates the matcher from both
+// crutches: a checklist "No" line, checked and derived from the template, placed
+// inside the section AHEAD of both real option boxes (which stay unchecked) so it
+// is the FIRST match candidate. The docs-impact question is unanswered, so the gate
+// MUST reject it (exit 1). Against a matcher keyed on the bare "No" fragment this
+// PASSES — the checklist line answers the "No" option; against one keyed on the
+// real option text ("No —") it exits 1, as it must. This is the red-before-green
+// evidence that correctness now rests on the option text, not on first-match
+// ordering or the bound; it must never pass vacuously, so the mutation is guarded
+// by mustChange.
+func TestChecklistNoLineDoesNotAnswerGate(t *testing.T) {
+	tmpl := readTemplate(t)
+
+	checklistNo := checkedChecklistNoLine(t, tmpl)
+	body := insertInSection(tmpl, checklistNo)
+	mustChange(t, "positional-defect/insert-checklist-no", tmpl, body)
+
+	if err := docsimpact.Check(body); err == nil {
+		t.Fatalf("positional-defect control PASSED but must fail: a checklist "+
+			"\"No\" line inside the scanned region answered the docs-impact \"No\" "+
+			"option through a leading-fragment match.\n--- body ---\n%s", body)
 	}
 }
 

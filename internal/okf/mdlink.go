@@ -98,10 +98,15 @@ func InCodeRegion(offset int, spans []Span) bool {
 //
 // This is the markdown-aware alternative to a line scanner that enumerates which
 // constructs count as code (and inevitably misses one). It is shared so any
-// caller that must ignore code regions — the docs-impact gate today, and the
-// heading-slug (issue #96) and inline-span (issue #99) paths that have the
-// identical indented-/inline-code blind spot — can reuse one CommonMark parse
-// instead of re-deriving the rule.
+// caller that must ignore code regions can reuse one CommonMark parse instead of
+// re-deriving the rule. Today the docs-impact gate is its only adopter.
+//
+// It is AVAILABLE FOR ADOPTION by the heading-slug (issue #96) and inline-span
+// (issue #99) paths, which have the identical indented-/inline-code blind spot.
+// Neither has adopted it yet: naming them here marks where the helper could go,
+// not a record that either bug is fixed. As of this writing #99's linkcheck path
+// still consumes CodeRegions directly rather than MaskCode. An intention in a
+// comment is not a call site.
 func MaskCode(body string) string {
 	spans := CodeRegions(body)
 	if len(spans) == 0 {
