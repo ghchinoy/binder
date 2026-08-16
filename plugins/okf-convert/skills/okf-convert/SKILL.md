@@ -222,7 +222,7 @@ optional fields are **legal** — fix only what is genuinely wrong. Decision tab
 ### 4. Remediate at the source — never fabricate
 
 - Missing required frontmatter (`type`/`title`/`generated`): prefer `binder
-  enrich` — additive, frontmatter-only, byte-faithful, and atomic. It rewrites
+  enrich` — additive, frontmatter-only, and atomic. It rewrites
   your **source tree in place**, so commit or stash first. Preview, then apply:
 
   ```bash

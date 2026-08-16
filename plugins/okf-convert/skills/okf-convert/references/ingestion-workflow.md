@@ -92,7 +92,7 @@ optional fields are legal in OKF; only fix what is genuinely wrong.
 
 - **Missing required frontmatter** (`type`/`title`/`generated`): prefer
   `binder enrich`. It is frontmatter-only, additive (adds only *absent* keys),
-  byte-faithful, and atomic. It rewrites the **source tree in place**, so commit
+  and atomic. It rewrites the **source tree in place**, so commit
   or stash before running it on a git-tracked corpus. Preview first:
 
   ```bash

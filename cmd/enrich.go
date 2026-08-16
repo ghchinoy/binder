@@ -41,16 +41,15 @@ func newEnrichCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 			"replacing a prior attestation), idempotent unless a `verified` stamp advances\n" +
 			"(a rerun writes nothing when no verifier is set or the clock is pinned via\n" +
 			"SOURCE_DATE_EPOCH; with a live verifier under a moving clock a rerun appends a\n" +
-			"fresh stamp, since stamps dedup on (by, at)), byte-faithful (body and\n" +
-			"unchanged pre-existing keys are preserved exactly), and atomic (temp file + rename, so\n" +
+			"fresh stamp, since stamps dedup on (by, at)), and atomic (temp file + rename, so\n" +
 			"an interrupt never corrupts a source file). Files needing no key are not\n" +
 			"written at all. Files whose frontmatter will not parse, and reserved files\n" +
 			"(index.md/log.md), are skipped and never mutated.\n\n" +
 			"Additive/never-clobber is the DEFAULT. --overwrite-keys <k1,k2,...> is an\n" +
 			"opt-in exception that REFRESHES only the named keys in place even when they\n" +
 			"already exist (e.g. --overwrite-keys status,stale_after after a new\n" +
-			"benchmark release). Every other pre-existing key, custom frontmatter, key\n" +
-			"order, and surrounding bytes stay byte-faithful; it respects --dry-run, the\n" +
+			"benchmark release). Every other pre-existing key, custom frontmatter, and\n" +
+			"key order are left in place; it respects --dry-run, the\n" +
 			"atomic write, and skip-unchanged. Trust/attestation keys (verified,\n" +
 			"verified_by, sources, generated, and the other provenance keys) are REFUSED\n" +
 			"(exit 2) — overwriting them could destroy a human attestation.\n\n" +
