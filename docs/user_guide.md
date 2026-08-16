@@ -1040,7 +1040,7 @@ flag  >  environment variable  >  config file  >  built-in default
 | Key (snake or dotted) | Env | Default | Purpose |
 |---|---|---|---|
 | `default_type` | `BINDER_DEFAULT_TYPE` | `Note` | Concept type applied when none is present or mapped. |
-| `verified_by` | `BINDER_VERIFIED_BY` | — | Default actor appended as a `verified` stamp by `convert` / `enrich`. Validated against actor grammar. **Authorizes a stamp only from the global user config or the environment variable** — set in the repo-local `./.binder.yaml` (which is where `config set` writes without `-g`) it is reported but not acted on. See [Writing a `verified` stamp](#writing-a-verified-stamp). |
+| `verified_by` | `BINDER_VERIFIED_BY` | — | Default actor appended as a `verified` stamp by `convert` / `enrich`. Validated against actor grammar. **A repo-local `./.binder.yaml` value does not authorize a stamp** — that is where `config set` writes without `-g`, and the value is reported but not acted on; a value in the global user config does authorize one. `BINDER_VERIFIED_BY` also permits a stamp, disclosed as `source: env`. See [Writing a `verified` stamp](#writing-a-verified-stamp). |
 | `gemini_model` (`gemini.model`) | `BINDER_GEMINI_MODEL` | `gemini-3.5-flash-lite` | Default Gemini model for `binder infer --gemini`. |
 | `gemini_location` (`gemini.location`) | `BINDER_GEMINI_LOCATION` | `global` | Default Google Cloud location for Vertex AI in `binder infer --gemini`. |
 | `gemini_project` (`gemini.project`) | `BINDER_GEMINI_PROJECT` | — | Default Google Cloud project for Vertex AI in `binder infer --gemini`. |
@@ -2701,9 +2701,16 @@ Two consequences worth knowing:
 
 #### `BINDER_VERIFIED_BY`
 
-The `BINDER_VERIFIED_BY` environment variable is a third origin, and on the
-shipped binary it **does** permit a stamp without the flag — the disclosure names
-its source as `env`:
+On the shipped binary, the `BINDER_VERIFIED_BY` environment variable permits a
+stamp without the flag, on both `convert` and `enrich`.
+
+A stamp written from the environment is **always disclosed, and identifies the
+environment as its origin**: the prose block reads `(source: env)` and
+`result.verified.source` under `--json` is `"env"`. binder also **will not
+co-sign from an environment value** — where a different identity has already
+attested a concept, the stamp is declined and that concept is
+[skipped](#binder-does-not-co-sign), with the reason disclosed. Only an explicit
+`--verified-by` co-signs.
 
 ```bash
 BINDER_VERIFIED_BY="process:nightly-ingest" SOURCE_DATE_EPOCH=1700000000 \
@@ -2719,11 +2726,17 @@ Trust (verified stamps):
     - metrics/revenue.md (already attested by human:alice)
 ```
 
-In every other respect it behaves like the global-config default: it stamps
-without the flag and it does not co-sign. Because an exported variable can also
-reach a shell from a checked-in `.envrc`, a devcontainer, or a CI workflow file,
-prefer `--verified-by` in automation you want to be self-evident from the
-command line.
+Where both are set, `BINDER_VERIFIED_BY` outranks a repo-local `./.binder.yaml`
+`verified_by` under the usual [precedence](#config): the
+environment value is the one that stamps, and the repo-local value is not used
+(the disclosure names the environment, and there is no ignored-repo-local note).
+
+It does not reach the [MCP server](#mcp-server-binder-mcp), which resolves a
+verifier from its tool input alone.
+
+An exported variable can reach a shell from a checked-in `.envrc`, a
+devcontainer, a CI workflow, or a `make` target, so prefer `--verified-by` in
+automation you want to be self-evident from the command line.
 
 #### binder does not co-sign
 
