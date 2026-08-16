@@ -321,24 +321,39 @@ A plain-markdown file (no frontmatter fence) gets a fresh, valid block prepended
    byte-faithful serializer: on a file it changes, every unchanged frontmatter
    key is re-emitted **from its original source bytes** — nested-map and list
    order, flow-vs-block style, interior spacing, scalar quoting/folding, YAML
-   tags (e.g. an `!!timestamp` never silently becomes an `!!str`), and top-level
-   comments are all preserved — and only the **added or changed** keys are
-   encoded fresh; the body is re-emitted as-is. This extends to **sibling
-   granularity** for a `verified` written as a **block sequence** (`verified:`
-   followed by `- { … }` entries): when that container legitimately changes
-   (e.g. a stamp appended to `verified`), the pre-existing sibling entries are
-   still emitted verbatim, so an existing human attestation is not reshaped
-   merely because a neighbour was added.
+   tags (e.g. an `!!timestamp` never silently becomes an `!!str`), and comments
+   are all preserved — and only the **added or changed** keys are encoded fresh;
+   the body is re-emitted as-is.
 
-   > **Known limitation (current, being closed).** The sibling-level guarantee
-   > is **not yet complete**. When `verified` is instead written as a
-   > single-line **flow sequence** (`verified: [{ … }]`) or as a **bare/nested
-   > mapping** (`verified: { … }`), appending a stamp currently re-encodes the
-   > *whole* value: the pre-existing entry's `by`/`at` keys are reordered and an
-   > `!!timestamp` becomes an `!!str`. This is a current shortfall against the
-   > byte-faithful goal, **not** intended behaviour — full preservation for
-   > these shapes is the goal. Until it lands, an attestation you need kept
-   > byte-for-byte is safest written as a **block sequence**.
+   This extends to **sibling granularity**: when a container legitimately changes
+   (e.g. a stamp appended to `verified`), the **pre-existing entries** are
+   re-emitted from their original bytes, so an existing human attestation is
+   **never reshaped or retyped merely because a neighbour was added**. The entry
+   keeps its bytes — flow style, interior spacing, `{by,at}` sub-key order, and
+   the `!!timestamp` tag all intact — for a `verified` authored as:
+
+   - a **block sequence** (`verified:` then `- { … }` entries),
+   - a **flow sequence**, single- **or multi-line** (`verified: [{ … }]`), or
+   - a bare inline **`{by,at}` mapping** (`verified: { … }`).
+
+   Appending to a flow sequence or bare mapping re-emits the container as a block
+   sequence (the natural shape once it has more than one entry), but each
+   pre-existing entry keeps its exact bytes. Because preservation is a source-byte
+   copy of the entry, it holds whatever the entry contains — nested mappings,
+   multi-line block scalars, anchors/aliases, quoted scalars. A `{by,at}` written
+   instead as an *indented block mapping* is re-indented into the first list item
+   — its leading whitespace necessarily changes when a lone mapping value becomes
+   a sequence item — but its tokens, sub-key order, and YAML tags are still
+   preserved, so an `!!timestamp` never becomes an `!!str`.
+
+   > **Known limitation.** Preservation inside a *changed* container is per
+   > **entry**, not per byte of the whole container. YAML **comments** (and blank
+   > separator lines) that sit *inside a container that changes* — before, between,
+   > or beside its entries — are **not carried onto the rebuilt value**. This is a
+   > limit of the underlying YAML node model (that trivia is not attached to the
+   > entry nodes the serializer copies), not a deliberate normalization; comments
+   > on **unchanged** keys are preserved as above. Relatedly, an empty flow mapping
+   > (`verified: {}`) is reshaped to a block item (`- {}`) when a stamp is appended.
 4. **Skip-unchanged (no git churn).** A file that needs no key is **not written
    at all** — no spurious diffs, no mtime bumps. Critical for git-tracked trees.
 5. **Skip-unparseable.** A file whose frontmatter will not parse (invalid YAML or

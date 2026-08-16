@@ -228,29 +228,23 @@ func TestByteFaithfulSiblingInChangedContainer(t *testing.T) {
 	}
 }
 
-// TestCharacterize_FlowSeqAndBareMapVerifiedReencodedOnAppend is a
-// CHARACTERIZATION test: it records CURRENT, KNOWN-INCOMPLETE behaviour, not an
-// intended contract. When a `verified` value is written as a single-line FLOW
-// SEQUENCE (`verified: [{ … }]`) or as a BARE/NESTED MAPPING (`verified: { … }`)
-// and a stamp is appended, spliceSequenceItems bails (flow style / non-sequence
-// value node) and the whole value is re-encoded through yaml.v3: the pre-existing
-// entry's {by,at} keys are reordered and its `at` is retyped !!timestamp -> !!str.
-//
-// Full byte-faithful preservation is the GOAL. The splice extension that closes
-// this residual is a separate, sequenced change; when it lands this test will be
-// updated to assert PRESERVATION (!!timestamp). That change is a DECISION, NOT A
-// REGRESSION — the name is deliberately non-invariant to say so.
-//
-// The BLOCK-sequence container is ALREADY preserved; that promise is a real,
-// permanent invariant pinned separately by TestByteFaithfulSiblingInChangedContainer,
-// which must never flip. The two are intentionally NOT merged: one pins a
-// promise, the other pins a symptom, and they have different lifetimes.
+// TestByteFaithfulFlowSeqAndBareMapSibling is a PERMANENT invariant — the
+// companion to TestByteFaithfulSiblingInChangedContainer (block sequence) for the
+// other two attestation container shapes. When a `verified` value is written as a
+// single-line FLOW SEQUENCE (`verified: [{ … }]`) or as a BARE/nested flow
+// MAPPING (`verified: { … }`) and a stamp is appended, the pre-existing entry
+// stays byte-identical: its flow style, interior spacing, {by,at} sub-key order,
+// and `!!timestamp` tag all survive. spliceFrontmatter re-emits it from its
+// source bytes (spliceFlowContainerToBlock) instead of re-encoding the whole
+// value through yaml.v3. This was previously the KNOWN residual pinned by a
+// characterization test; the splice extension closed it, so the test now pins the
+// promise, not the symptom, and must never flip back.
 //
 // Anti-vacuity: each case first asserts the pre-existing `at` really is a
-// !!timestamp today (so a later !!str reading is a genuine retype, not a value
-// that was already a string) and asserts the appended stamp landed (so the
-// container genuinely changed and the test is not trivially "preserving" a no-op).
-func TestCharacterize_FlowSeqAndBareMapVerifiedReencodedOnAppend(t *testing.T) {
+// !!timestamp today (so the preserved-!!timestamp assertion is not vacuously true
+// of a value that was already a string) and asserts the appended stamp landed (so
+// the container genuinely changed and the test is not "preserving" a no-op).
+func TestByteFaithfulFlowSeqAndBareMapSibling(t *testing.T) {
 	cases := []struct {
 		name, verified, beforePath string
 	}{
@@ -272,7 +266,7 @@ func TestCharacterize_FlowSeqAndBareMapVerifiedReencodedOnAppend(t *testing.T) {
 			before := scalarTags(t, frontmatterOf(t, raw))
 			// Anti-vacuity 1: the authored value really is a !!timestamp today.
 			if got := before[tc.beforePath]; !strings.HasPrefix(got, "!!timestamp") {
-				t.Fatalf("setup: pre-existing %s is not !!timestamp (got %q); the retype "+
+				t.Fatalf("setup: pre-existing %s is not !!timestamp (got %q); the preservation "+
 					"assertion below would be vacuous", tc.beforePath, got)
 			}
 
@@ -302,16 +296,121 @@ func TestCharacterize_FlowSeqAndBareMapVerifiedReencodedOnAppend(t *testing.T) {
 				t.Fatalf("appended stamp missing — container did not change:\n%s", out)
 			}
 
-			// CURRENT behaviour: the pre-existing entry is now [0] of a block
-			// sequence and its `at` has been retyped !!timestamp -> !!str.
+			// INVARIANT: the pre-existing entry is byte-identical — flow style,
+			// interior spacing, and {by,at} sub-key order all intact.
+			if !strings.Contains(out, "  - { by: human:ahormati, at: 2024-02-01T09:30:00Z }\n") {
+				t.Errorf("pre-existing %s entry was reshaped, not preserved verbatim:\n%s", tc.name, out)
+			}
+			// INVARIANT: assert on the YAML TAG, not only bytes — the exact defect
+			// was a !!timestamp -> !!str retype that identical-looking text can hide.
 			after := scalarTags(t, frontmatterOf(t, out))
-			if got := after[".verified[0].at"]; !strings.HasPrefix(got, "!!str") {
-				t.Errorf("CHARACTERIZATION drift: pre-existing verified.at is %q, expected "+
-					"!!str (current known-incomplete behaviour for %s). If a splice extension "+
-					"now PRESERVES it as !!timestamp, that is the intended fix — update this "+
-					"test; it is a DECISION, NOT A REGRESSION.\n%s", got, tc.name, out)
+			if got := after[".verified[0].at"]; !strings.HasPrefix(got, "!!timestamp") {
+				t.Errorf("pre-existing verified[0].at was retyped to %q, want !!timestamp:\n%s", got, out)
 			}
 		})
+	}
+}
+
+// TestByteFaithfulNonTrustSiblingOnAppend is the special-casing detector for the
+// append path (criterion 4): the same sibling preservation must hold for an
+// ORDINARY key of the flow-sequence and bare-mapping shapes, not just for
+// `verified`. The splice never inspects the key name; if this fails while the
+// `verified` cases pass, the fix special-cased the trust key.
+func TestByteFaithfulNonTrustSiblingOnAppend(t *testing.T) {
+	cases := []struct{ name, value string }{
+		{"flow_sequence", "history: [{ by: alice, at: 2024-02-01T09:30:00Z }]\n"},
+		{"bare_mapping", "history: { by: alice, at: 2024-02-01T09:30:00Z }\n"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			raw := "---\ntype: Note\n" + tc.value + "---\n\n# Body\n"
+			c := New()
+			con, err := c.ParseConcept("x.md", []byte(raw))
+			if err != nil {
+				t.Fatalf("ParseConcept: %v", err)
+			}
+			before := scalarTags(t, frontmatterOf(t, raw))
+			bp := ".history[0].at"
+			if _, ok := before[bp]; !ok {
+				bp = ".history.at"
+			}
+			if got := before[bp]; !strings.HasPrefix(got, "!!timestamp") {
+				t.Fatalf("setup: pre-existing %s is not !!timestamp (got %q)", bp, got)
+			}
+			v, _ := con.Frontmatter.Get("history")
+			var list []any
+			switch vv := v.(type) {
+			case []any:
+				list = vv
+			case map[string]any:
+				list = []any{vv}
+			default:
+				t.Fatalf("unexpected history shape %T", v)
+			}
+			con.Frontmatter.Set("history", append(list,
+				map[string]any{"by": "bob", "at": "2023-11-14T22:13:20Z"}))
+			outB, err := c.Serialize(con)
+			if err != nil {
+				t.Fatalf("Serialize: %v", err)
+			}
+			out := string(outB)
+			if !strings.Contains(out, "bob") {
+				t.Fatalf("appended entry missing — container did not change:\n%s", out)
+			}
+			if !strings.Contains(out, "  - { by: alice, at: 2024-02-01T09:30:00Z }\n") {
+				t.Errorf("ordinary-key pre-existing entry was reshaped, not preserved:\n%s", out)
+			}
+			after := scalarTags(t, frontmatterOf(t, out))
+			if got := after[".history[0].at"]; !strings.HasPrefix(got, "!!timestamp") {
+				t.Errorf("ordinary-key history[0].at was retyped to %q, want !!timestamp:\n%s", got, out)
+			}
+		})
+	}
+}
+
+// TestByteFaithfulBlockMapSiblingOnAppend covers the third attestation shape a
+// bare {by,at} can take: a BLOCK (dash-less) nested mapping. Appending here
+// cannot be byte-identical — a lone mapping value must acquire a `- ` marker and
+// one indent level to become a sequence item — but the pre-existing entry's
+// TOKENS, {by,at} sub-key order, and `!!timestamp` tag must be preserved: only
+// the block framing changes, never the attestation's data or type. (CJK content
+// is used to confirm the byte-based re-indent is multi-byte safe.)
+func TestByteFaithfulBlockMapSiblingOnAppend(t *testing.T) {
+	raw := "---\n" +
+		"type: Metric\n" +
+		"verified:\n" +
+		"  by: human:あほまてぃ\n" +
+		"  at: 2024-02-01T09:30:00Z\n" +
+		"---\n\n# Body\n"
+	c := New()
+	con, err := c.ParseConcept("x.md", []byte(raw))
+	if err != nil {
+		t.Fatalf("ParseConcept: %v", err)
+	}
+	before := scalarTags(t, frontmatterOf(t, raw))
+	if got := before[".verified.at"]; !strings.HasPrefix(got, "!!timestamp") {
+		t.Fatalf("setup: pre-existing .verified.at is not !!timestamp (got %q)", got)
+	}
+	v, _ := con.Frontmatter.Get("verified")
+	list := []any{v.(map[string]any)}
+	con.Frontmatter.Set("verified", append(list,
+		map[string]any{"by": "human:ghchinoy", "at": "2023-11-14T22:13:20Z"}))
+	outB, err := c.Serialize(con)
+	if err != nil {
+		t.Fatalf("Serialize: %v", err)
+	}
+	out := string(outB)
+	if !strings.Contains(out, "human:ghchinoy") {
+		t.Fatalf("appended stamp missing — container did not change:\n%s", out)
+	}
+	// Tokens and sub-key order preserved (re-indented into a sequence item).
+	if !strings.Contains(out, "  - by: human:あほまてぃ\n    at: 2024-02-01T09:30:00Z\n") {
+		t.Errorf("pre-existing block-mapping entry was reshaped or retyped:\n%s", out)
+	}
+	// Tag preserved: no !!timestamp -> !!str retype.
+	after := scalarTags(t, frontmatterOf(t, out))
+	if got := after[".verified[0].at"]; !strings.HasPrefix(got, "!!timestamp") {
+		t.Errorf("pre-existing verified[0].at was retyped to %q, want !!timestamp:\n%s", got, out)
 	}
 }
 
