@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.3.1](https://github.com/ghchinoy/binder/compare/v0.3.0...v0.3.1) (2026-08-16)
+
+
+### Bug Fixes
+
+* key docs-impact gate on option text and declare bound ([#116](https://github.com/ghchinoy/binder/issues/116)) ([2548cf7](https://github.com/ghchinoy/binder/commit/2548cf7c6b29d11704334cf86a0f5087d3c8802b))
+* preserve unchanged pre-existing keys byte-for-byte ([427503e](https://github.com/ghchinoy/binder/commit/427503e40b224d270a5d5a27eb2afb9cb99161c8))
+* quote SKILL.md description so frontmatter is valid YAML ([#90](https://github.com/ghchinoy/binder/issues/90)) ([568b3c6](https://github.com/ghchinoy/binder/commit/568b3c608b8a6247d85816daabec03fbdf7bd093)), closes [#88](https://github.com/ghchinoy/binder/issues/88)
+* stop code-region stray bracket from swallowing next link ([#117](https://github.com/ghchinoy/binder/issues/117)) ([8d47111](https://github.com/ghchinoy/binder/commit/8d4711168ecdecc88648c3f745c8292a996d2657))
+
+
+### Continuous Integration
+
+* enforce PR template docs-impact field ([#108](https://github.com/ghchinoy/binder/issues/108)) ([6bf1f0d](https://github.com/ghchinoy/binder/commit/6bf1f0db9178073b2724cf81f96e0e4d88e7f3b9))
+
+
+### Documentation
+
+* add in-memory labeled property graph primer ([#110](https://github.com/ghchinoy/binder/issues/110)) ([31769de](https://github.com/ghchinoy/binder/commit/31769deab3972ebc8f2cfc8e36a3bdc40784d99f))
+* add okf cross-check step to tutorial, de-jargon pass ([#105](https://github.com/ghchinoy/binder/issues/105)) ([57579cb](https://github.com/ghchinoy/binder/commit/57579cb991300258900fb7b355a693bf82c45117))
+* correct anchor slug rules and name which slug is which ([#91](https://github.com/ghchinoy/binder/issues/91)) ([62ea325](https://github.com/ghchinoy/binder/commit/62ea32537d9a554832fdb7e4f22c9f26d200d1da))
+* editorial pass on the LPG primer and link it from the guide ([#114](https://github.com/ghchinoy/binder/issues/114)) ([80a8eb6](https://github.com/ghchinoy/binder/commit/80a8eb6516d8cac8562c609ec29d7248c070d2f6))
+* fix false trust and contract claims in okf-convert skill ([#112](https://github.com/ghchinoy/binder/issues/112)) ([84116dc](https://github.com/ghchinoy/binder/commit/84116dcd18e9cc8736a6167d9cada555d57afc52))
+* focus the README on using binder, not building it ([#98](https://github.com/ghchinoy/binder/issues/98)) ([7e2eb3c](https://github.com/ghchinoy/binder/commit/7e2eb3cb704b10821caf9cc2715a85e8c9ac6bfa))
+* record validate's reserved-file scope in guide and tutorial ([#102](https://github.com/ghchinoy/binder/issues/102)) ([23a82a3](https://github.com/ghchinoy/binder/commit/23a82a300bc29226c773f6417ad14b231bebfd77)), closes [#97](https://github.com/ghchinoy/binder/issues/97)
+* tidy download v-note and mark JSON output agent-ready ([#107](https://github.com/ghchinoy/binder/issues/107)) ([8ddc8a0](https://github.com/ghchinoy/binder/commit/8ddc8a06a9970c1cb611caf6b2569431cf017609))
+* trim README to quickstart, rehome MCP parity to guide ([#111](https://github.com/ghchinoy/binder/issues/111)) ([b10b9ab](https://github.com/ghchinoy/binder/commit/b10b9ab2f2f3aa51808bae4daf0f312919a7ed4a))
+
 ## [0.3.0](https://github.com/ghchinoy/binder/compare/v0.2.1...v0.3.0) (2026-08-16)
 
 
