@@ -4,9 +4,10 @@
 # Invariants preserved vs. a stock config:
 #   - Reproducible: -trimpath, -s -w, mod_timestamp={{.CommitTimestamp}}, and the
 #     release workflow exports SOURCE_DATE_EPOCH = commit time.
-#   - Offline: -mod=vendor consumes the committed vendor/ (no proxy at release
-#     time), matching `make build`/`make check`. There is deliberately NO
-#     `go mod tidy`/`go mod download` before-hook (a2acli's needs the network).
+#   - Deps are fetched from the Go module proxy at build time, pinned via
+#     go.mod/go.sum and verified against the go.sum hashes (needs network at
+#     release time). There is deliberately NO `go mod tidy`/`go mod download`
+#     before-hook.
 #   - Truthful trust stamp: -X .../cmd.Version={{.Version}} injects the git tag
 #     so generated.by = "binder/<tag>" (see cmd/root.go).
 #
@@ -18,9 +19,9 @@ project_name: binder
 
 before:
   hooks:
-    # Offline-safe verification only. NOT `go mod tidy` (needs network and would
-    # break the offline/vendored invariant). Confirms the vendored tree builds.
-    - go build -mod=vendor -o /dev/null .
+    # Compile-sanity check only. NOT `go mod tidy`. Deps are fetched from the
+    # module proxy (pinned via go.mod/go.sum).
+    - go build -o /dev/null .
 
 builds:
   - id: binder
@@ -31,7 +32,6 @@ builds:
     mod_timestamp: "{{ .CommitTimestamp }}"   # reproducible file mtimes.
     flags:
       - -trimpath
-      - -mod=vendor               # honor committed vendor/; keeps the build offline.
     ldflags:
       - -s -w
       - -X github.com/ghchinoy/binder/cmd.Version={{ .Version }}
