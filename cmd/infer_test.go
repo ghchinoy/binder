@@ -45,6 +45,27 @@ func TestInferCmdProse(t *testing.T) {
 	}
 }
 
+// TestInferCmdZeroMappingDiagnosticToStderr pins the output-routing contract for
+// the zero-mapping case: stdout must be empty (so the documented
+// `--type-map "$(binder infer SRC)"` idiom substitutes "" rather than prose),
+// the human-readable diagnostic must land on stderr, and the exit code stays 0.
+// We assert stdout *emptiness* rather than the absence of the message text, so the
+// test survives any later rewording of the diagnostic.
+func TestInferCmdZeroMappingDiagnosticToStderr(t *testing.T) {
+	// An empty (but readable) corpus yields no mappings.
+	dir := t.TempDir()
+	stdout, stderr, code := runCLISplit(t, "infer", dir)
+	if code != clijson.ExitSuccess {
+		t.Fatalf("exit = %d, want 0; stderr:\n%s", code, stderr)
+	}
+	if strings.TrimSpace(stdout) != "" {
+		t.Errorf("stdout must be empty for the zero-mapping case, got:\n%q", stdout)
+	}
+	if strings.TrimSpace(stderr) == "" {
+		t.Errorf("diagnostic must be written to stderr, but stderr was empty")
+	}
+}
+
 func TestInferCmdJSONEnvelope(t *testing.T) {
 	dir := setupInferCorpus(t)
 	out, code := runCLI(t, "infer", dir, "--json")
