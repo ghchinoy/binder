@@ -77,7 +77,7 @@ edges.
 - **GQL — ISO/IEC 39075:2024** — the first standalone ISO graph query language
   ("first new ISO database language since SQL"), declarative, for property graphs.
 - **SQL/PGQ — ISO/IEC 9075-16:2023** — property-graph pattern matching *inside* a
-  SQL `SELECT` (the on-ramp BigQuery-style engines use).
+  SQL `SELECT`.
 - **openCypher / Cypher** — the de-facto LPG query language (Neo4j lineage), a key
   inspiration for GQL; what the examples below map to.
 
@@ -527,7 +527,7 @@ graduate when any of those breaks:
 - **Doesn't fit / needs persistence / concurrent writers / transactions** → an
   **embedded engine**: e.g. **DuckDB + the DuckPGQ extension**, which gives you
   **SQL/PGQ (ISO/IEC 9075-16:2023)** over local data — a real standard query
-  language in-process, and the *same family* as BigQuery's graph surface.
+  language in-process.
 - **Needs scale-out, an operational store, or a managed service** → a **server**:
   **Spanner Graph** (ISO-GQL) or **Neo4j** (Cypher/GQL), etc.
 
