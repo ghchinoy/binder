@@ -107,7 +107,7 @@ binder review     Summarize a bundle: concepts, links, orphans, trust tiers, sta
 binder lint       Report source-corpus health before conversion (writes nothing)
 binder graph      Export the bundle's concept graph (dot|json|graphml|html)
 binder infer      Inspect a source markdown corpus and propose a --type-map
-binder config     Manage configuration (show, get, set, unset)
+binder config     Show the resolved effective configuration and each value's source; get/set/unset to persist
 binder mcp        Run binder as a stdio MCP server (convert/validate/review/lint/graph/list_graphs/query_graph)
 ```
 
