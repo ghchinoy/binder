@@ -321,9 +321,16 @@ A plain-markdown file (no frontmatter fence) gets a fresh, valid block prepended
    frontmatter).** enrich reuses the codec's byte-faithful serializer: on a file
    it changes, every unchanged frontmatter key is re-emitted **from its original
    source bytes** — nested-map and list order, flow-vs-block style, interior
-   spacing, scalar quoting/folding, YAML tags (e.g. an `!!timestamp` never
-   silently becomes an `!!str`), and comments are all preserved — and only the
-   **added or changed** keys are encoded fresh. The **body** is re-emitted
+   spacing, scalar quoting/folding, and YAML tags (e.g. an `!!timestamp` never
+   silently becomes an `!!str`) are all preserved — and only the **added or
+   changed** keys are encoded fresh. **Comments** are preserved wherever the key
+   or container they belong to is **unchanged**; they are the one property a
+   *changed* container does not carry faithfully, and it fails differently by
+   container kind — a comment inside a changed multi-line flow **sequence** is
+   **dropped**, while one inside a changed flow **mapping** is copied verbatim but
+   **not re-indented** (see *Known limitation* below). Every other property above
+   — order, style, spacing, quoting/folding, tags — does survive a changed
+   container too, at the level of each preserved entry. The **body** is re-emitted
    exactly, *including the original frontmatter/body separator*: a body that
    abutted the closing fence stays abutting it, and existing blank lines are
    neither added nor removed. This guarantee is scoped to files that **already

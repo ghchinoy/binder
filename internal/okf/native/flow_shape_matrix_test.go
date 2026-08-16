@@ -210,6 +210,52 @@ func TestByteFaithfulShapeMatrix(t *testing.T) {
 	}
 }
 
+// TestByteFaithfulUnchangedKeysEnumeration is the permanent evidence for the
+// preservation enumeration in docs/user_guide.md section 3: when the codec changes
+// ONE key (here `verified`), every OTHER top-level key is re-emitted from its
+// source bytes verbatim. Each row exercises one property from the enumeration —
+// interior spacing, scalar quoting (incl. a '#' inside quotes), block-scalar
+// folding, nested-map key order, a YAML tag, a top-level head comment, and a
+// same-line comment on an unchanged key. The last two pin the TRUE half of the
+// comments claim (comments on UNCHANGED keys survive); the container-kind
+// asymmetry for CHANGED containers is pinned separately by the Characterize tests
+// and TestByteFaithfulMultiLineFlowSequenceWithCommentReparses. If a future change
+// re-encodes unchanged keys instead of byte-copying them, this goes red — which is
+// the signal the enumeration is no longer safe to assert.
+func TestByteFaithfulUnchangedKeysEnumeration(t *testing.T) {
+	fm := "# top head comment\n" +
+		"type: Metric\n" +
+		"flowmap: { a: 1,  b: 2 }\n" + // interior spacing (double space)
+		"quoted: \"a: b # not-a-comment\"\n" + // quoting + a '#' inside quotes
+		"folded: |\n  line one\n  line two\n" + // block-scalar folding
+		"nested:\n  z: 1\n  a: 2\n" + // nested-map key order (non-alpha)
+		"tagged: 2024-02-01T09:30:00Z\n" + // YAML tag (!!timestamp)
+		"withcomment: 42 # keep me\n" + // same-line comment on an unchanged key
+		"verified: [\n  { by: human:x, at: 2024-02-01T09:30:00Z },\n]\n"
+
+	out, reparseErr := appendStamp(t, fm)
+	if reparseErr != nil {
+		t.Fatalf("output does not re-parse (%v):\n%s", reparseErr, out)
+	}
+	// Anti-vacuity: the change actually landed on `verified`.
+	if !strings.Contains(out, "human:ghchinoy") {
+		t.Fatalf("appended stamp missing — nothing changed, so unchanged-key preservation is vacuous:\n%s", out)
+	}
+	for _, tc := range []struct{ prop, want string }{
+		{"head comment", "# top head comment\n"},
+		{"interior spacing", "flowmap: { a: 1,  b: 2 }\n"},
+		{"quoting + hash-in-quotes", "quoted: \"a: b # not-a-comment\"\n"},
+		{"block-scalar folding", "folded: |\n  line one\n  line two\n"},
+		{"nested-map key order", "nested:\n  z: 1\n  a: 2\n"},
+		{"YAML tag", "tagged: 2024-02-01T09:30:00Z\n"},
+		{"same-line comment on unchanged key", "withcomment: 42 # keep me\n"},
+	} {
+		if !strings.Contains(out, tc.want) {
+			t.Errorf("unchanged key not byte-faithful (%s); want to contain:\n%q\ngot:\n%s", tc.prop, tc.want, out)
+		}
+	}
+}
+
 // TestByteFaithfulMultiLineFlowSequenceReparses is the dedicated regression for
 // the corruption defect (case S). A multi-line flow sequence (its "[" on the key
 // line, items on their own lines, "]" on a trailing line) used to fall through to
