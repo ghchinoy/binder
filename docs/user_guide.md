@@ -659,6 +659,9 @@ is classified by whether it links outward:
   removed.
 
 `README.md` is the only name recognized this way, and only at the corpus root.
+The name is matched **case-insensitively** — `README.md`, `readme.md`, and
+`ReadMe.md` all qualify — but a nested `docs/README.md` is **not** recognized and
+stays a true orphan.
 An **authored** root `index.md` is a reserved name: it is renamed to
 `index-note.md` on conversion so binder can generate its own index (spec §3.1;
 see [OKF v0.2 output structure](#okf-v02-output-structure)), so it never matches
@@ -742,7 +745,7 @@ It reports these checks:
 | `--today` | now | Date (`YYYY-MM-DD`) used for the staleness check; honours `SOURCE_DATE_EPOCH`. |
 | `--json` | `false` | Emit the report as deterministic JSON (schema `binder.report/v1`, `command:"lint"`). See [JSON output](#json-output---json-and-the-exit-code-contract). |
 | `--strict` | `false` | Gate (exit 1) when any finding is present. Entrypoints are advisory and never gate. Without it `lint` never gates (exit 0). See [Strict mode](#strict-mode). |
-| `--entrypoint` | — | Concept id or path (repeatable) to treat as an **entrypoint**, not an orphan, in addition to the general rule and the recognized root. |
+| `--entrypoint` | — | Concept id or path (repeatable) to treat as an **entrypoint**, not an orphan, in addition to the general rule and the recognized root. A trailing `.md` is tolerated **in any case** (`x`, `x.md`, and `x.MD` all name concept `x`), but the concept id itself is matched **case-sensitively** — `X` and `X.md` do **not** match concept `x`. |
 
 All findings are **spec-tolerated advisories**: bare `binder lint` always exits
 `0` even with findings (§11 hard conformance stays `validate`'s job over a
@@ -2492,7 +2495,9 @@ the same discipline as the trust-mapping flags: deterministic, additive, and
 
 - **`--status-map "archive=deprecated,drafts=draft,default=active"`** — assigns
   `status` by the concept's source directory. Keys are directory prefixes matched
-  **longest-first** (the most specific directory wins); the reserved `default=`
+  **longest-first** (the most specific directory wins; ties are broken
+  **lexicographically**, and each key is trimmed of surrounding `/`) — the same
+  matcher `--type-map` and `--stale-after-map` use; the reserved `default=`
   key is the fallback for anything unmatched. `status` is set **only when the
   concept has none** — an authored `status` is always preserved. Values are the
   spec `status` enum (`draft`, `stable`, `deprecated`) — a value outside it is
