@@ -58,8 +58,9 @@ via `binder config`, and supports `--strict` CI gating.
 - **`config`** shows the resolved effective configuration (viper-backed) and
   where each value came from (flag/env/file/default).
 - **`mcp`** runs binder as a stdio MCP server, exposing the additive verbs
-  (`convert`/`validate`/`review`/`lint`/`graph`) as MCP tools that return the same
-  `binder.report/v1` payloads as `--json` (see [MCP server](#mcp-server-binder-mcp)).
+  (`convert`/`validate`/`review`/`lint`/`graph`) plus the read-only `list_graphs`
+  graph-introspection tool as MCP tools that return the same `binder.report/v1`
+  payloads as `--json` (see [MCP server](#mcp-server-binder-mcp)).
 
 `convert` can also declaratively stamp trust and lifecycle metadata across
 directory sections — `--status-map`, `--stale-after-map`, and `--verified-by`
@@ -595,6 +596,7 @@ claude mcp add binder -- binder mcp
 | `review` | `bundle` (req), `today`, `strict` | `review` report envelope |
 | `lint` | `src` (req), `today`, `strict` | `lint` report envelope |
 | `graph` | `bundle` (req), `format` (`dot`\|`json`\|`graphml`\|`html`, default `json`), `today` | raw export bytes — `format:json` is the raw `{nodes,edges}`, **not** the report envelope |
+| `list_graphs` | `bundle` (req), `today`, `id_key` | `list_graphs` report envelope — the LPG **schema descriptor** (graph name, node labels = concept types, the single `LINKS` edge label, each with counts + property declarations). Read-only introspection derived from the same projection as `graph` |
 
 The surface is deliberately additive (produce/validate). Source-mutating verbs
 (`enrich`, `emit_concept`) and read/search tools are **not** exposed — the read

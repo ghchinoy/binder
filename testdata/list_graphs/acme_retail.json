@@ -1,0 +1,92 @@
+{
+  "binder": "binder/0.1.0",
+  "command": "list_graphs",
+  "schema": "binder.report/v1",
+  "result": {
+    "graphs": [
+      {
+        "name": "acme_retail",
+        "source": {
+          "kind": "okf-bundle",
+          "root": "{{BUNDLE_ROOT}}"
+        },
+        "node_key": {
+          "strategy": "path",
+          "key": ""
+        },
+        "counts": {
+          "nodes": 9,
+          "edges": 15
+        },
+        "node_labels": [
+          {
+            "label": "Attested Computation",
+            "count": 2,
+            "properties": [
+              "id",
+              "title",
+              "type",
+              "tier",
+              "stale"
+            ]
+          },
+          {
+            "label": "BigQuery Table",
+            "count": 1,
+            "properties": [
+              "id",
+              "title",
+              "type",
+              "tier",
+              "stale"
+            ]
+          },
+          {
+            "label": "Metric",
+            "count": 3,
+            "properties": [
+              "id",
+              "title",
+              "type",
+              "tier",
+              "stale"
+            ]
+          },
+          {
+            "label": "Policy",
+            "count": 2,
+            "properties": [
+              "id",
+              "title",
+              "type",
+              "tier",
+              "stale"
+            ]
+          },
+          {
+            "label": "Skill",
+            "count": 1,
+            "properties": [
+              "id",
+              "title",
+              "type",
+              "tier",
+              "stale"
+            ]
+          }
+        ],
+        "edge_labels": [
+          {
+            "label": "LINKS",
+            "count": 15,
+            "properties": [
+              "from",
+              "to",
+              "text"
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

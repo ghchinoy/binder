@@ -98,7 +98,7 @@ binder review     Summarize a bundle: concepts, links, orphans, trust tiers, sta
 binder lint       Report source-corpus health before conversion (writes nothing)
 binder graph      Export the bundle's concept graph (dot|json|graphml|html)
 binder config     Show the resolved effective configuration and each value's source
-binder mcp        Run binder as a stdio MCP server (convert/validate/review/lint/graph)
+binder mcp        Run binder as a stdio MCP server (convert/validate/review/lint/graph/list_graphs)
 ```
 
 Every command supports `-h`/`--help`. The root binary supports `-v`/`--version`.
@@ -895,6 +895,7 @@ flags. Required params are marked **(req)**.
 | `review` | `bundle` **(req)**, `today`, `strict` | `review` report envelope. |
 | `lint` | `src` **(req)**, `today`, `strict` | `lint` report envelope (read-only source-corpus health). |
 | `graph` | `bundle` **(req)**, `format` (`dot`\|`json`\|`graphml`\|`html`, default `json`), `today` | The **raw** export bytes. `format:json` is the raw `{nodes,edges}` object — **not** the report envelope (see [graph JSON](#graph-json--a-raw-export-not-the-envelope)). |
+| `list_graphs` | `bundle` **(req)**, `today`, `id_key` | `list_graphs` report envelope: the LPG **schema descriptor** for the graph binder projects from the bundle — graph name, `node_key` strategy, counts, node labels (the concept `type`s present) and the single `LINKS` edge label, each with property declarations. Read-only introspection derived from the same `graph.Build` projection; `id_key` prefers an authored stable-id frontmatter key as the node key when present, else path identity (never minted). |
 
 `strict` is accepted for parity with the CLI flag, but since a tool call has no
 exit code it does **not** change the payload (the report is returned either way).
