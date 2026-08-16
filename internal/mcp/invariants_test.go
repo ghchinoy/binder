@@ -338,11 +338,14 @@ func TestActorDetectionIsSerializationIndependent(t *testing.T) {
 // resolves the actor from config and stamps every concept, while the MCP server
 // does not load config at all and stamps nothing.
 //
-// This behaviour is UNDER ACTIVE REVIEW BY THE OWNER and is not settled. A future
-// change to it — making MCP resolve config, or making the CLI stop — is a
-// DECISION, NOT A REGRESSION; whoever makes it should update this test to match
-// rather than read a red here as a bug they caused. The name is deliberately NOT
-// invariant-shaped so it cannot launder disputed behaviour into a guarantee.
+// The CLI side of this is now RULED, not under review: a GLOBAL home config
+// verified_by is the user's own default and stamping from it without a flag is
+// PERMITTED (config.PermitsStampWithoutFlag; a repo-local ./.binder.yaml would
+// NOT be — Option A). The MCP side is a DELIBERATELY PRESERVED constraint of that
+// fix: the server still resolves verified_by from tool input ONLY and never loads
+// config, so the two surfaces diverge on purpose. Whether MCP should ever resolve
+// config remains open (revisitable); a future change to that is a DECISION, NOT A
+// REGRESSION. The name is deliberately NOT invariant-shaped for that reason.
 //
 // It uses XDG_CONFIG_HOME to arm a GLOBAL config with no cwd manipulation, so it
 // is hermetic. It uses REAL converts, not --dry-run (the dry-run report carries

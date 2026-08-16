@@ -51,6 +51,95 @@ func find(t *testing.T, rep *enrich.Report, path string) enrich.FileResult {
 	return enrich.FileResult{}
 }
 
+// TestResidualASkipDoesNotWriteOrReshape proves the never-fabricate-trust ruling
+// at the enrich boundary: a NON-explicit (config/env) verifier must NOT co-sign a
+// document a DIFFERENT identity has already attested. The skip must (a) write
+// nothing — the file is byte-identical afterward, including a single-line FLOW
+// sequence that a whole-value re-encode would reshape (the PR #115 residual) — and
+// (b) be disclosed in the report (Residual B).
+func TestResidualASkipDoesNotWriteOrReshape(t *testing.T) {
+	src := t.TempDir()
+	// All required keys already present, so the ONLY candidate change is the verified
+	// stamp; the prior attestation is a compact FLOW sequence by a DIFFERENT identity.
+	doc := "---\n" +
+		"type: Note\n" +
+		"title: A\n" +
+		"generated:\n  by: human:me\n  at: '2020-01-01T00:00:00Z'\n" +
+		"verified: [{by: human:ahormati, at: '2020-01-01T00:00:00Z'}]\n" +
+		"---\n\n# A\n\nBody.\n"
+	p := writeFile(t, src, "a.md", doc)
+
+	o := opts(src)
+	o.VerifiedBy = "human:ghchinoy" // resolved from config-default (NOT explicit)
+	o.VerifiedByExplicit = false
+	o.VerifiedBySource = "config"
+
+	rep, err := enrich.Enrich(src, o)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// (a) No write, no reshape: bytes identical, flow sequence intact.
+	if got := read(t, p); got != doc {
+		t.Errorf("skip wrote/reshaped the file.\n--- want ---\n%s\n--- got ---\n%s", doc, got)
+	}
+	if st := find(t, rep, "a.md").Status; st != enrich.StatusUnchanged {
+		t.Errorf("status = %q, want unchanged (Residual A skip writes nothing)", st)
+	}
+
+	// (b) Disclosed: one skip naming the existing actor, nothing stamped.
+	if rep.Verified.NumStamped != 0 {
+		t.Errorf("NumStamped = %d, want 0 (must not co-sign)", rep.Verified.NumStamped)
+	}
+	if rep.Verified.NumSkipped != 1 {
+		t.Fatalf("NumSkipped = %d, want 1 (skip must be disclosed)", rep.Verified.NumSkipped)
+	}
+	if got := rep.Verified.Skipped[0].ExistingActor; got != "human:ahormati" {
+		t.Errorf("skipped existing_actor = %q, want human:ahormati", got)
+	}
+	// Prose disclosure carries the skip too (Residual B, prose AND JSON).
+	if prose := rep.String(); !bytes.Contains([]byte(prose), []byte("already attested by human:ahormati")) {
+		t.Errorf("prose did not disclose the skip:\n%s", prose)
+	}
+}
+
+// TestResidualAExplicitCoSignsAndDiscloses is the anti-vacuity control: the SAME
+// different-identity document, enriched with an EXPLICIT verifier, DOES co-sign and
+// the write is disclosed as a stamp — proving the skip above keys on explicitness.
+func TestResidualAExplicitCoSignsAndDiscloses(t *testing.T) {
+	src := t.TempDir()
+	doc := "---\n" +
+		"type: Note\n" +
+		"title: A\n" +
+		"generated:\n  by: human:me\n  at: '2020-01-01T00:00:00Z'\n" +
+		"verified: [{by: human:ahormati, at: '2020-01-01T00:00:00Z'}]\n" +
+		"---\n\n# A\n\nBody.\n"
+	p := writeFile(t, src, "a.md", doc)
+
+	o := opts(src)
+	o.VerifiedBy = "human:ghchinoy"
+	o.VerifiedByExplicit = true
+	o.VerifiedBySource = "flag"
+
+	rep, err := enrich.Enrich(src, o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.Verified.NumStamped != 1 {
+		t.Fatalf("NumStamped = %d, want 1 (explicit co-sign)", rep.Verified.NumStamped)
+	}
+	if rep.Verified.NumSkipped != 0 {
+		t.Errorf("NumSkipped = %d, want 0 (explicit path must not skip)", rep.Verified.NumSkipped)
+	}
+	got := read(t, p)
+	if !bytes.Contains([]byte(got), []byte("human:ahormati")) {
+		t.Error("prior attestation was dropped by the co-sign")
+	}
+	if !bytes.Contains([]byte(got), []byte("human:ghchinoy")) {
+		t.Error("explicit co-sign stamp was not written")
+	}
+}
+
 // TestInjectsGenerated: a file WITH frontmatter (type+title) but no generated
 // gets a generated stamp; the body and existing keys are byte-faithful.
 func TestInjectsGenerated(t *testing.T) {
@@ -471,6 +560,9 @@ func TestVerifiedByAppendsDetectedAndWritten(t *testing.T) {
 
 	o := opts(src)
 	o.VerifiedBy = "human:ghchinoy"
+	// Explicit --verified-by is the co-sign path (Residual A permits appending over a
+	// different prior identity); the mechanic under test is value-change detection.
+	o.VerifiedByExplicit = true
 	rep, err := enrich.Enrich(src, o)
 	if err != nil {
 		t.Fatal(err)

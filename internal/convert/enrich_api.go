@@ -75,10 +75,11 @@ func ApplyLifecycleMaps(c *okf.Concept, relPath string, opts Options) {
 }
 
 // ApplyVerifiedBy appends a verified actorstamp for opts.VerifiedBy (dedup by
-// by,at), set-when-absent/idempotent. It returns an advisory (else "") when the
-// existing verified value is a spec-invalid scalar, which it preserves unchanged
-// rather than drop — the shared preserve-or-advise carry-forward fix. Behavior is
-// identical to the helper convert uses.
-func ApplyVerifiedBy(c *okf.Concept, opts Options) string {
+// by,at), set-when-absent/idempotent, and returns a VerifiedResult so enrich can
+// disclose what it wrote or declined (Residual B). It honors Residual A (a
+// non-explicit config/env actor never co-signs a different identity) and the
+// preserve-or-advise carry-forward for a spec-invalid scalar verified value.
+// Behavior is identical to the helper convert uses.
+func ApplyVerifiedBy(c *okf.Concept, opts Options) VerifiedResult {
 	return applyVerifiedBy(c, opts)
 }

@@ -40,6 +40,9 @@ func (r *Report) String() string {
 	for _, n := range r.StatusNotes {
 		fmt.Fprintf(&b, "  status: %s\n", n)
 	}
+	// Trust disclosure (Residual B): renders an identical block to convert via the
+	// shared VerifiedStampReport.ProseSection, or nothing on the never-stamp default.
+	b.WriteString(r.Verified.ProseSection())
 	return b.String()
 }
 

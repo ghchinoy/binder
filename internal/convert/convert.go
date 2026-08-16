@@ -62,6 +62,19 @@ type Options struct {
 	StaleAfterMap map[string]string // directory-prefix → validated relative-date spec (+Nd/+Nm/+Ny)
 	VerifiedBy    string            // actor to append as a verified actorstamp (empty = no stamp)
 
+	// VerifiedByExplicit records that VerifiedBy came from an EXPLICIT
+	// per-invocation act (a --verified-by flag, or an MCP tool input), as opposed
+	// to the user-set config/env exception. It governs Residual A (never-co-sign):
+	// an explicit actor MAY co-sign a concept another identity already attested; a
+	// config/env actor MUST NOT — that concept is skipped instead. The CLI decides
+	// this via config.PermitsStampWithoutFlag; empty (the default) means "not
+	// explicit".
+	VerifiedByExplicit bool
+	// VerifiedBySource is the disclosure token for the resolved actor's origin
+	// ("flag" | "env" | "config" | "none"), surfaced in the report's trust
+	// disclosure (Residual B). Empty is treated as "none".
+	VerifiedBySource string
+
 	// StatusNotes are pre-computed, deterministically-ordered status-vocabulary
 	// messages (issue #23): non-conformant --status-map values and any opt-in
 	// canonicalization rewrites, resolved once at the CLI/MCP boundary by
@@ -193,6 +206,13 @@ func Analyze(src string, opts Options) (concepts []*okf.Concept, facts []SourceF
 		Warnings:    []string{},
 		Unresolved:  []UnresolvedLink{},
 		StatusNotes: statusNotes,
+		Verified:    NewVerifiedStampReport(),
+	}
+	// Trust disclosure metadata (Residual B): the actor and its origin are known
+	// before the walk; per-concept stamped/skipped tallies accrue during it.
+	report.Verified.Actor = opts.VerifiedBy
+	if opts.VerifiedBySource != "" {
+		report.Verified.Source = opts.VerifiedBySource
 	}
 
 	// Phase 1: resolve output paths, renaming reserved-name source files so they
@@ -306,8 +326,16 @@ func Analyze(src string, opts Options) (concepts []*okf.Concept, facts []SourceF
 		// when a --verified-by / config verified_by actor is configured. A
 		// spec-invalid scalar verified value is preserved unchanged and surfaced as
 		// a warning (never silently dropped) — the shared preserve-or-advise fix.
-		if adv := applyVerifiedBy(c, opts); adv != "" {
-			report.addWarning("%s: %s", it.out, adv)
+		vres := applyVerifiedBy(c, opts)
+		if vres.Advisory != "" {
+			report.addWarning("%s: %s", it.out, vres.Advisory)
+		}
+		if vres.Stamped {
+			report.Verified.Stamped = append(report.Verified.Stamped, it.out)
+		}
+		if vres.Skipped {
+			report.Verified.Skipped = append(report.Verified.Skipped,
+				VerifiedSkip{Path: it.out, ExistingActor: vres.ExistingActor})
 		}
 
 		stampGenerated(c.Frontmatter, opts.Version, opts.Now)
@@ -317,6 +345,11 @@ func Analyze(src string, opts Options) (concepts []*okf.Concept, facts []SourceF
 		report.Concepts = append(report.Concepts, conceptReport(c))
 		report.addUnresolved(c)
 	}
+
+	// Trust disclosure tallies (Residual B): concepts are visited in deterministic
+	// (sorted) walk order, so Stamped/Skipped are already ordered.
+	report.Verified.NumStamped = len(report.Verified.Stamped)
+	report.Verified.NumSkipped = len(report.Verified.Skipped)
 
 	// Tally.
 	report.NumConcepts = len(concepts)

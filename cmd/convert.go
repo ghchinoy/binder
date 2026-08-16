@@ -92,34 +92,39 @@ func newConvertCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 			cfg.BindFlag(config.KeyDefaultType, cmd.Flags().Lookup("default-type"))
 			defaultType = cfg.GetString(config.KeyDefaultType)
 
-			// Resolve verified_by (flag > config default). Validate the effective
-			// actor with okf.IsValidActor (option (a)): an invalid value is a usage
-			// error (exit 2) listing the valid forms. The config default was already
-			// validated fail-fast at config-load; this catches a bad flag value.
+			// Resolve verified_by under the never-fabricate-trust ruling: an explicit
+			// --verified-by always stamps; otherwise a stamp is written only when the
+			// resolved origin satisfies the user-set exception (config.PermitsStampWithoutFlag).
+			// The resolved actor is validated (invalid ⇒ usage error, exit 2) even when
+			// it will not be honored. The config default was already validated fail-fast
+			// at config-load.
 			cfg.BindFlag(config.KeyVerifiedBy, cmd.Flags().Lookup("verified-by"))
-			verifiedBy = cfg.GetString(config.KeyVerifiedBy)
-			if verifiedBy != "" && !okf.IsValidActor(verifiedBy) {
-				return config.InvalidActorError(verifiedBy)
+			vb, err := resolveVerifiedBy(cfg)
+			if err != nil {
+				return err
 			}
+			verifiedBy = vb.Actor
 
 			opts := convert.Options{
-				Codec:         codec,
-				DefaultType:   defaultType,
-				TypeMap:       typeMap,
-				StatusMap:     statusMap,
-				StatusDefault: statusDefault,
-				StatusNotes:   statusNotes,
-				StaleAfterMap: staleAfterMap,
-				VerifiedBy:    verifiedBy,
-				FMRefKeys:     convert.ParseFMRefKeys(fmRefKeysRaw),
-				Version:       Version,
-				Now:           resolveNow(),
-				DryRun:        dryRun,
-				MapCitations:  mapCitations,
-				SourceKeys:    convert.ParseFMRefKeys(sourceKeys),
-				MapDraft:      mapDraft,
-				WorkspaceRoot: workspaceRoot,
-				ExternalRoots: externalRoots,
+				Codec:              codec,
+				DefaultType:        defaultType,
+				TypeMap:            typeMap,
+				StatusMap:          statusMap,
+				StatusDefault:      statusDefault,
+				StatusNotes:        statusNotes,
+				StaleAfterMap:      staleAfterMap,
+				VerifiedBy:         verifiedBy,
+				VerifiedByExplicit: vb.Explicit,
+				VerifiedBySource:   vb.Source,
+				FMRefKeys:          convert.ParseFMRefKeys(fmRefKeysRaw),
+				Version:            Version,
+				Now:                resolveNow(),
+				DryRun:             dryRun,
+				MapCitations:       mapCitations,
+				SourceKeys:         convert.ParseFMRefKeys(sourceKeys),
+				MapDraft:           mapDraft,
+				WorkspaceRoot:      workspaceRoot,
+				ExternalRoots:      externalRoots,
 
 				GroupByType:      groupByType,
 				IncludeBacklinks: includeBacklinks,
@@ -129,6 +134,9 @@ func newConvertCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			// Disclose a resolved-but-unhonored verifier (e.g. a repo-local config
+			// under Option A) so the decision is observable (Residual B).
+			report.Verified.Note = vb.Note
 
 			// --json and prose share the same report; --report writes whichever
 			// format --json selects, so the file and stdout never disagree.
@@ -163,7 +171,7 @@ func newConvertCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 	cmd.Flags().StringVar(&typeMapRaw, "type-map", "", "per-directory type overrides, e.g. \"docs=Guide,adr=Decision\"")
 	cmd.Flags().StringVar(&statusMapRaw, "status-map", "", "per-directory status, e.g. \"archive=deprecated,drafts=draft,default=active\" (set only when status absent)")
 	cmd.Flags().StringVar(&staleAfterRaw, "stale-after-map", "", "per-directory stale_after relative to now, e.g. \"07-benchmarks=+6m,legacy=+0d\" (grammar +Nd/+Nm/+Ny; set only when absent)")
-	cmd.Flags().StringVar(&verifiedBy, "verified-by", "", "actor to append as a verified stamp, e.g. \"human:ghchinoy\" or \"binder/0.3.0\" (defaults to config verified_by; "+config.ActorFormsHint+")")
+	cmd.Flags().StringVar(&verifiedBy, "verified-by", "", "actor to append as a verified stamp, e.g. \"human:ghchinoy\" or \"binder/0.3.0\"; a stamp is written ONLY when passed here, or set as a GLOBAL config verified_by / BINDER_VERIFIED_BY default (a repo-local .binder.yaml does NOT authorize stamping; "+config.ActorFormsHint+")")
 	cmd.Flags().StringVar(&fmRefKeysRaw, "fm-ref-keys", "", "frontmatter keys treated as relationship edges, e.g. \"related,parent\"")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "report what would be written without writing anything")
 	cmd.Flags().StringVar(&reportPath, "report", "", "also write the run report to this file")

@@ -92,34 +92,40 @@ func newEnrichCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 			cfg.BindFlag(config.KeyDefaultType, cmd.Flags().Lookup("default-type"))
 			defaultType = cfg.GetString(config.KeyDefaultType)
 
-			// Resolve verified_by (flag > config default) and validate the effective
-			// actor with okf.IsValidActor (option (a)): an invalid value is a usage
-			// error (exit 2). Mirrors convert exactly.
+			// Resolve verified_by under the never-fabricate-trust ruling, mirroring
+			// convert exactly: explicit --verified-by always stamps; otherwise a stamp
+			// is written only when the resolved origin satisfies the user-set exception
+			// (config.PermitsStampWithoutFlag). An invalid actor is a usage error (exit 2).
 			cfg.BindFlag(config.KeyVerifiedBy, cmd.Flags().Lookup("verified-by"))
-			verifiedBy = cfg.GetString(config.KeyVerifiedBy)
-			if verifiedBy != "" && !okf.IsValidActor(verifiedBy) {
-				return config.InvalidActorError(verifiedBy)
+			vb, err := resolveVerifiedBy(cfg)
+			if err != nil {
+				return err
 			}
+			verifiedBy = vb.Actor
 
 			opts := enrich.Options{
-				Codec:         codec,
-				DefaultType:   defaultType,
-				TypeMap:       typeMap,
-				StatusMap:     statusMap,
-				StatusDefault: statusDefault,
-				StatusNotes:   statusNotes,
-				StaleAfterMap: staleAfterMap,
-				VerifiedBy:    verifiedBy,
-				OverwriteKeys: overwriteKeys,
-				Version:       Version,
-				Now:           resolveNow(),
-				DryRun:        dryRun,
+				Codec:              codec,
+				DefaultType:        defaultType,
+				TypeMap:            typeMap,
+				StatusMap:          statusMap,
+				StatusDefault:      statusDefault,
+				StatusNotes:        statusNotes,
+				StaleAfterMap:      staleAfterMap,
+				VerifiedBy:         verifiedBy,
+				VerifiedByExplicit: vb.Explicit,
+				VerifiedBySource:   vb.Source,
+				OverwriteKeys:      overwriteKeys,
+				Version:            Version,
+				Now:                resolveNow(),
+				DryRun:             dryRun,
 			}
 			rep, err := enrich.Enrich(src, opts)
 			if err != nil {
 				// Path already validated above; any failure here is IO/internal (exit 3).
 				return err
 			}
+			// Disclose a resolved-but-unhonored verifier (repo-local config, Option A).
+			rep.Verified.Note = vb.Note
 
 			// The report is ALWAYS emitted before the gate signals, so the gate
 			// never suppresses output.
@@ -142,7 +148,7 @@ func newEnrichCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 	cmd.Flags().StringVar(&typeMapRaw, "type-map", "", "per-directory type overrides, e.g. \"docs=Guide,adr=Decision\"")
 	cmd.Flags().StringVar(&statusMapRaw, "status-map", "", "per-directory status, e.g. \"archive=deprecated,drafts=draft,default=active\" (set only when status absent)")
 	cmd.Flags().StringVar(&staleAfterRaw, "stale-after-map", "", "per-directory stale_after relative to now, e.g. \"07-benchmarks=+6m,legacy=+0d\" (grammar +Nd/+Nm/+Ny; set only when absent)")
-	cmd.Flags().StringVar(&verifiedBy, "verified-by", "", "actor to append as a verified stamp, e.g. \"human:ghchinoy\" or \"binder/0.3.0\" (defaults to config verified_by; "+config.ActorFormsHint+")")
+	cmd.Flags().StringVar(&verifiedBy, "verified-by", "", "actor to append as a verified stamp, e.g. \"human:ghchinoy\" or \"binder/0.3.0\"; a stamp is written ONLY when passed here, or set as a GLOBAL config verified_by / BINDER_VERIFIED_BY default (a repo-local .binder.yaml does NOT authorize stamping; "+config.ActorFormsHint+")")
 	cmd.Flags().StringVar(&overwriteRaw, "overwrite-keys", "", "opt-in: comma-separated keys to REFRESH in place even when present, e.g. \"status,stale_after\" (default is additive/never-clobber; trust keys "+strings.Join(okf.ProtectedTrustKeys(), ", ")+" are refused)")
 	cmd.Flags().BoolVar(&canonicalizeStat, "canonicalize-status", false, "opt-in: rewrite known --status-map aliases to the OKF §5.4 vocabulary (active->stable, wip/in-progress->draft, archived/legacy->deprecated); off by default, each rewrite is reported")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "report what would be enriched without writing anything")

@@ -29,6 +29,81 @@ type Report struct {
 	// binder.report/v1 envelope keeps a stable shape (matching PR #56's
 	// empty-array fix for infer.warnings); a nil slice would marshal to null.
 	StatusNotes []string `json:"status_notes"`
+	// Verified discloses the never-fabricate-trust decision for this run: which
+	// actor (if any) was stamped, from where, every concept it stamped, and every
+	// concept where a stamp was DECLINED because a different identity had already
+	// attested (Residual A). It is additive to binder.report/v1 and always emitted
+	// so the decision is observable even when nothing was stamped — an opt-in the
+	// user cannot observe taking effect is indistinguishable from auto-stamping.
+	Verified VerifiedStampReport `json:"verified"`
+}
+
+// VerifiedStampReport is the run-level trust disclosure (Residual B). Slices are
+// always initialized so --json serializes to [] rather than null, keeping the
+// binder.report/v1 envelope shape stable.
+type VerifiedStampReport struct {
+	// Actor is the verifier that was stamped (or would be, under --dry-run), or ""
+	// when no verifier was determined.
+	Actor string `json:"actor"`
+	// Source is where Actor came from: "flag" | "env" | "config" | "none".
+	Source string `json:"source"`
+	// Stamped lists the out-relative concept paths that received the stamp, sorted.
+	Stamped    []string `json:"stamped"`
+	NumStamped int      `json:"num_stamped"`
+	// Skipped lists concepts where a config/env stamp was declined because a
+	// different identity had already attested them (Residual A), sorted by path.
+	Skipped    []VerifiedSkip `json:"skipped"`
+	NumSkipped int            `json:"num_skipped"`
+	// Note is a human-readable disclosure of a resolved-but-unhonored verifier —
+	// currently a repo-local .binder.yaml verified_by that Option A does not honor.
+	// Empty when there is nothing to report.
+	Note string `json:"note,omitempty"`
+}
+
+// VerifiedSkip is one concept where a config/env stamp was declined to avoid
+// co-signing another identity's attestation (Residual A).
+type VerifiedSkip struct {
+	Path          string `json:"path"`           // out-relative concept path
+	ExistingActor string `json:"existing_actor"` // the different identity already attesting
+}
+
+// NewVerifiedStampReport returns a disclosure with initialized (non-nil) slices,
+// so --json serializes an empty run to [] rather than null. It is exported so the
+// sibling enrich package builds an identically-shaped disclosure.
+func NewVerifiedStampReport() VerifiedStampReport {
+	return VerifiedStampReport{Source: "none", Stamped: []string{}, Skipped: []VerifiedSkip{}}
+}
+
+// ProseSection renders the human-readable trust-disclosure block (Residual B) for
+// a run, or "" when there is nothing to disclose (no verifier determined, nothing
+// skipped, no note — the never-stamp default). It is a method on the disclosure so
+// convert and enrich render an identical block. The block always names the actor
+// and its source when a stamp was written, lists every stamped and every skipped
+// path, and surfaces any resolved-but-unhonored verifier note, so an opt-in the
+// user cannot observe taking effect never looks like auto-stamping.
+func (v VerifiedStampReport) ProseSection() string {
+	if v.Actor == "" && v.NumSkipped == 0 && v.Note == "" {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("\nTrust (verified stamps):\n")
+	if v.Actor != "" {
+		fmt.Fprintf(&b, "  actor: %s (source: %s)\n", v.Actor, v.Source)
+		fmt.Fprintf(&b, "  stamped: %d file(s)\n", v.NumStamped)
+		for _, p := range v.Stamped {
+			fmt.Fprintf(&b, "    - %s\n", p)
+		}
+	}
+	if v.NumSkipped > 0 {
+		fmt.Fprintf(&b, "  skipped: %d file(s) (a different identity already attested; pass --verified-by to co-sign)\n", v.NumSkipped)
+		for _, s := range v.Skipped {
+			fmt.Fprintf(&b, "    - %s (already attested by %s)\n", s.Path, s.ExistingActor)
+		}
+	}
+	if v.Note != "" {
+		fmt.Fprintf(&b, "  note: %s\n", v.Note)
+	}
+	return b.String()
 }
 
 // UnresolvedLink is one link whose target is not a concept in the bundle. It is
@@ -116,5 +191,6 @@ func (r *Report) String() string {
 			fmt.Fprintf(&b, "  - %s\n", n)
 		}
 	}
+	b.WriteString(r.Verified.ProseSection())
 	return b.String()
 }

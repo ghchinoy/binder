@@ -59,6 +59,15 @@ type Options struct {
 	StaleAfterMap map[string]string
 	VerifiedBy    string
 
+	// VerifiedByExplicit records that VerifiedBy came from an explicit
+	// per-invocation --verified-by (co-sign permitted) rather than the user-set
+	// config/env exception (co-sign declined — Residual A). Set by the CLI via
+	// config.PermitsStampWithoutFlag. Empty (default) means "not explicit".
+	VerifiedByExplicit bool
+	// VerifiedBySource is the disclosure token for the resolved actor's origin
+	// ("flag" | "env" | "config" | "none"), surfaced in the report (Residual B).
+	VerifiedBySource string
+
 	// StatusNotes are pre-computed OKF §5.4 status-vocabulary messages (issue #23)
 	// — non-conformant --status-map values and any opt-in canonicalization
 	// rewrites — resolved once at the CLI boundary and surfaced additively in the
@@ -109,6 +118,12 @@ type Report struct {
 	// conformant run so the envelope shape is stable (matching PR #56's
 	// empty-array fix); a nil slice would marshal to null.
 	StatusNotes []string `json:"status_notes"`
+	// Verified discloses the never-fabricate-trust decision for this run (Residual
+	// B): which actor (if any) was stamped, from where, every source file it
+	// stamped, and every file where a config/env stamp was DECLINED because a
+	// different identity had already attested it (Residual A). Additive to
+	// binder.report/v1 and always emitted so the decision is observable.
+	Verified convert.VerifiedStampReport `json:"verified"`
 }
 
 // NumFindings returns the count of advisory findings enrich produces: skipped
@@ -191,6 +206,13 @@ func Enrich(src string, opts Options) (*Report, error) {
 		Files:       []FileResult{},
 		Warnings:    []string{},
 		StatusNotes: statusNotes,
+		Verified:    convert.NewVerifiedStampReport(),
+	}
+	// Trust disclosure metadata (Residual B): actor + origin are known up front;
+	// per-file stamped/skipped tallies accrue during the walk.
+	rep.Verified.Actor = opts.VerifiedBy
+	if opts.VerifiedBySource != "" {
+		rep.Verified.Source = opts.VerifiedBySource
 	}
 
 	codec := opts.Codec
@@ -206,13 +228,20 @@ func Enrich(src string, opts Options) (*Report, error) {
 			return nil, fmt.Errorf("enrich: reading %q: %w", f.Rel, rerr)
 		}
 
-		res, advisory, werr := enrichFile(codec, f, raw, opts)
+		res, vres, werr := enrichFile(codec, f, raw, opts)
 		if werr != nil {
 			return nil, werr
 		}
 		rep.Files = append(rep.Files, res)
-		if advisory != "" {
-			rep.Warnings = append(rep.Warnings, fmt.Sprintf("%s: %s", f.Rel, advisory))
+		if vres.Advisory != "" {
+			rep.Warnings = append(rep.Warnings, fmt.Sprintf("%s: %s", f.Rel, vres.Advisory))
+		}
+		if vres.Stamped {
+			rep.Verified.Stamped = append(rep.Verified.Stamped, f.Rel)
+		}
+		if vres.Skipped {
+			rep.Verified.Skipped = append(rep.Verified.Skipped,
+				convert.VerifiedSkip{Path: f.Rel, ExistingActor: vres.ExistingActor})
 		}
 		switch res.Status {
 		case StatusEnriched, StatusWouldEnrich:
@@ -224,6 +253,12 @@ func Enrich(src string, opts Options) (*Report, error) {
 		}
 	}
 	sort.Strings(rep.Warnings)
+	sort.Strings(rep.Verified.Stamped)
+	sort.Slice(rep.Verified.Skipped, func(i, j int) bool {
+		return rep.Verified.Skipped[i].Path < rep.Verified.Skipped[j].Path
+	})
+	rep.Verified.NumStamped = len(rep.Verified.Stamped)
+	rep.Verified.NumSkipped = len(rep.Verified.Skipped)
 
 	sort.Slice(rep.Files, func(i, j int) bool { return rep.Files[i].Path < rep.Files[j].Path })
 	return rep, nil
@@ -233,7 +268,7 @@ func Enrich(src string, opts Options) (*Report, error) {
 // atomically when the frontmatter changed. It returns the file's result, an
 // advisory message (else ""), and an error. A parse failure yields a skipped
 // result (never mutated); an IO write failure returns an error (exit 3).
-func enrichFile(codec okf.Codec, f convert.SourceFile, raw []byte, opts Options) (FileResult, string, error) {
+func enrichFile(codec okf.Codec, f convert.SourceFile, raw []byte, opts Options) (FileResult, convert.VerifiedResult, error) {
 	var c *okf.Concept
 	if convert.OpensFrontmatterFence(raw) {
 		parsed, perr := codec.ParseConcept(f.Rel, raw)
@@ -243,7 +278,7 @@ func enrichFile(codec okf.Codec, f convert.SourceFile, raw []byte, opts Options)
 				Path:   f.Rel,
 				Status: StatusSkipped,
 				Reason: fmt.Sprintf("unparseable frontmatter: %v", perr),
-			}, "", nil
+			}, convert.VerifiedResult{}, nil
 		}
 		c = parsed
 	} else {
@@ -263,14 +298,16 @@ func enrichFile(codec okf.Codec, f convert.SourceFile, raw []byte, opts Options)
 	// #7 declarative injectors (off unless the corresponding option is set), plus
 	// the preserve-or-advise verified handling.
 	cOpts := convert.Options{
-		StatusMap:     opts.StatusMap,
-		StatusDefault: opts.StatusDefault,
-		StaleAfterMap: opts.StaleAfterMap,
-		VerifiedBy:    opts.VerifiedBy,
-		Now:           opts.Now,
+		StatusMap:          opts.StatusMap,
+		StatusDefault:      opts.StatusDefault,
+		StaleAfterMap:      opts.StaleAfterMap,
+		VerifiedBy:         opts.VerifiedBy,
+		VerifiedByExplicit: opts.VerifiedByExplicit,
+		VerifiedBySource:   opts.VerifiedBySource,
+		Now:                opts.Now,
 	}
 	convert.ApplyLifecycleMaps(c, f.Rel, cOpts)
-	advisory := convert.ApplyVerifiedBy(c, cOpts)
+	vres := convert.ApplyVerifiedBy(c, cOpts)
 	convert.StampGenerated(c.Frontmatter, opts.Version, opts.Now)
 
 	// Opt-in overwrite pass (issue #22): refresh ONLY the named keys, in place.
@@ -282,25 +319,26 @@ func enrichFile(codec okf.Codec, f convert.SourceFile, raw []byte, opts Options)
 
 	changed := changedKeys(before, c.Frontmatter)
 	if len(changed) == 0 {
-		// Nothing changed → no write (no mtime/git churn). An advisory (a
-		// preserved spec-invalid verified value) is still surfaced by the caller.
-		return FileResult{Path: f.Rel, Status: StatusUnchanged}, advisory, nil
+		// Nothing changed → no write (no mtime/git churn). The verified outcome (a
+		// preserved-scalar advisory, or a Residual-A skip) is still surfaced by the
+		// caller — a skip is by construction a no-write, and must still be disclosed.
+		return FileResult{Path: f.Rel, Status: StatusUnchanged}, vres, nil
 	}
 
 	added, overwritten := splitChanged(before, changed, opts.OverwriteKeys)
 
 	if opts.DryRun {
-		return FileResult{Path: f.Rel, Status: StatusWouldEnrich, Added: added, Overwritten: overwritten}, advisory, nil
+		return FileResult{Path: f.Rel, Status: StatusWouldEnrich, Added: added, Overwritten: overwritten}, vres, nil
 	}
 
 	out, serr := codec.Serialize(c)
 	if serr != nil {
-		return FileResult{}, "", fmt.Errorf("enrich: serializing %q: %w", f.Rel, serr)
+		return FileResult{}, convert.VerifiedResult{}, fmt.Errorf("enrich: serializing %q: %w", f.Rel, serr)
 	}
 	if err := atomicWrite(f.Abs, out); err != nil {
-		return FileResult{}, "", fmt.Errorf("enrich: writing %q: %w", f.Rel, err)
+		return FileResult{}, convert.VerifiedResult{}, fmt.Errorf("enrich: writing %q: %w", f.Rel, err)
 	}
-	return FileResult{Path: f.Rel, Status: StatusEnriched, Added: added, Overwritten: overwritten}, advisory, nil
+	return FileResult{Path: f.Rel, Status: StatusEnriched, Added: added, Overwritten: overwritten}, vres, nil
 }
 
 // applyOverwrites refreshes the frontmatter keys named in opts.OverwriteKeys with

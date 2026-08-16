@@ -11,13 +11,27 @@ fabricate it; defer all stamping to the deterministic tool.**
 - binder **never invents** a `verified` actor or `sources`. Trust mapping is off
   by default and byte-faithful — it only maps signals you explicitly point it at
   (`--source-keys`, `--map-citations`), and only from real corpus content.
-- **But binder does stamp `verified` from a configured actor.** `--verified-by`
-  resolves through the precedence chain **flag > env > config file > default**, so
-  an inherited `BINDER_VERIFIED_BY` or a `verified_by:` key in `.binder.yaml`
-  makes `convert` *and* `enrich` write an attestation nobody typed. "I did not
-  pass the flag" is therefore **not** a guarantee that no claim was made. Run the
-  step 1 pre-flight (`binder config --json`) and pass `--verified-by ""` to
-  suppress an actor you cannot vouch for.
+- **binder is safe by default (`binder/0.3.1`+): no flag and no default *you*
+  set means no `verified` stamp.** A stamp is written only from an explicit
+  `--verified-by`, or from a default you set — `BINDER_VERIFIED_BY` in the
+  environment, or `verified_by:` in your **global** config
+  (`~/.config/binder/config.yaml`). Those two count as you having chosen a default
+  and make `convert` *and* `enrich` stamp without the flag, so an inherited env
+  export or a machine-wide default is still a claim nobody typed *for this corpus*.
+  A **repo-local `./.binder.yaml`** `verified_by` does **not** authorize a
+  stamp — binder ignores it for that purpose and says so in `.result.verified.note`.
+  Run the step 1 pre-flight (`binder config --json`) and pass `--verified-by ""`
+  to suppress an env/global actor you cannot vouch for.
+- **Every stamp — and every declined co-sign — is disclosed.** `--json` carries a
+  `.result.verified` object (`actor`, `source`, `stamped`, `skipped`, `note`) on
+  every stamp-writing verb, and the prose emits a `Trust (verified stamps):`
+  block. An opt-in you cannot observe taking effect would be indistinguishable
+  from auto-stamping; this is how you observe it.
+- **binder declines to co-sign another identity.** When a concept already carries
+  a `verified` attestation from a *different* identity, a non-explicit (env/global)
+  default does **not** add a second stamp — it **skips**, reports the skip under
+  `.result.verified.skipped` with the existing actor, and leaves the prior
+  attestation byte-for-byte. Only an explicit `--verified-by` co-signs.
 
 ## The three invariants (from OKF v0.2 — do not violate)
 
@@ -39,22 +53,27 @@ fabricate it; defer all stamping to the deterministic tool.**
   `<producer>/<version>`) has actually reviewed the content. Do not auto-pass it,
   do not default it to yourself, do not stamp the agent as a verifier of content
   it merely generated.
-- **Do NOT let a configured actor stamp on your behalf.** Check
+- **Do NOT let a default you set stamp on your behalf.** Check
   `binder config --json | jq -c '.result | {config_file, verified_by: .values.verified_by}'`
   first. A `source` of `env`, or of `file` where `config_file` is a machine-wide
-  path rather than the corpus's own `.binder.yaml`, is inherited state and not an
-  attestation — pass `--verified-by ""` to suppress it. Note `source` alone cannot
-  distinguish a repo-local config from a global one; `config_file` is what tells
-  you which file is actually in effect.
-- **Suppress on `convert` as well as `enrich`.** Both resolve `--verified-by`
-  through the same chain, so a configured actor stamps the whole bundle on
-  `convert` even if you never touched `enrich`. Check the result with the `tiers`
-  line from `binder review`: `{"unverified": N}` means nothing was claimed,
-  `{"human-reviewed": N}` means something was.
+  path (`~/.config/binder/config.yaml`), **will** stamp — inherited state, not an
+  attestation, so pass `--verified-by ""` to suppress it. A `source` of `file`
+  where `config_file` is the corpus's own `.binder.yaml` will **not** stamp under
+  Option A. `source` alone cannot distinguish the two — both report `file` — yet
+  they behave oppositely; `config_file` is what tells you which file is in effect
+  and whether it can stamp.
+- **Suppress on `convert` as well as `enrich` when an env/global default is live.**
+  Both resolve `--verified-by` through the same chain, so an env/global actor
+  stamps the whole bundle on `convert` even if you never touched `enrich`. Check
+  the result with the `tiers` line from `binder review`: `{"unverified": N}` means
+  nothing was claimed, `{"human-reviewed": N}` means something was. (With nothing
+  configured, the default is already `{"unverified": N}` — the flag is a defensive
+  suppressor, not mandatory boilerplate.)
 - **Run the pre-flight from the directory you will run everything else from.**
-  binder resolves `./.binder.yaml` against the *current* directory, so a check run
-  from a parent reports `default` while the real run, one directory down, stamps.
-  The detection and the risk must share a cwd or the check is theatre.
+  binder resolves `./.binder.yaml` against the *current* directory. A repo-local
+  file does not stamp, but running the check from the corpus directory still lets
+  you see the same `config_file` binder will — including a repo-local one shadowing
+  the global config that *would* have stamped from a parent directory.
 - **Stamps are not idempotent under a wall clock.** Dedup is on `(by, at)`, so
   re-running `enrich` seconds apart appends a fresh stamp for the same actor each
   time. Pin `SOURCE_DATE_EPOCH` when you need a repeatable run.
