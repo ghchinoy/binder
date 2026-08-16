@@ -56,9 +56,10 @@ type VerifiedStampReport struct {
 	// different identity had already attested them (Residual A), sorted by path.
 	Skipped    []VerifiedSkip `json:"skipped"`
 	NumSkipped int            `json:"num_skipped"`
-	// Note is a human-readable disclosure of a resolved-but-unhonored verifier —
-	// currently a repo-local .binder.yaml verified_by that Option A does not honor.
-	// Empty when there is nothing to report.
+	// Note is a human-readable disclosure of a resolved-but-unhonored verifier: a
+	// verified_by resolved from BINDER_VERIFIED_BY or a repo-local .binder.yaml,
+	// neither of which authorizes a stamp without an explicit --verified-by (the
+	// owner ruling). Empty when there is nothing to report.
 	Note string `json:"note,omitempty"`
 }
 

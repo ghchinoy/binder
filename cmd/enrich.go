@@ -128,7 +128,8 @@ func newEnrichCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 				// Path already validated above; any failure here is IO/internal (exit 3).
 				return err
 			}
-			// Disclose a resolved-but-unhonored verifier (repo-local config, Option A).
+			// Disclose a resolved-but-unhonored verifier (a BINDER_VERIFIED_BY env
+			// default or a repo-local config, neither of which authorizes stamping).
 			rep.Verified.Note = vb.Note
 
 			// The report is ALWAYS emitted before the gate signals, so the gate

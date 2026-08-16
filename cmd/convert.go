@@ -137,8 +137,9 @@ func newConvertCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			// Disclose a resolved-but-unhonored verifier (e.g. a repo-local config
-			// under Option A) so the decision is observable (Residual B).
+			// Disclose a resolved-but-unhonored verifier (a BINDER_VERIFIED_BY env
+			// default or a repo-local config, neither of which authorizes stamping)
+			// so the decision is observable (Residual B).
 			report.Verified.Note = vb.Note
 
 			// --json and prose share the same report; --report writes whichever
