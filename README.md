@@ -860,21 +860,13 @@ It is a transport, not a report-producing command: it has no `--json` flag (its
 *outputs* are the structured tool payloads). It serves over stdio until the
 client disconnects.
 
-> **Parameters mirror the CLI flags, with two exceptions.** Every tool parameter
-> mirrors its CLI flag one-to-one *except*:
->
-> 1. **Output-routing flags — deliberate.** `--report` / `--output` / `--json`
->    are not exposed: over MCP the transport **is** the JSON channel, so there is
->    nothing to route and no `--json` flag to toggle. The tool payloads are
->    byte-identical to the corresponding `binder <cmd> --json`. (`convert`'s
->    `out`/`dry_run` and `graph`'s `format` select *what* is produced, not how the
->    report is routed, so they remain.)
-> 2. **`convert`'s `--external-root` has no MCP equivalent — a known gap.** The
->    `convert` tool's input schema has no `external_root` parameter, so the
->    sibling-root escape hatch described under
->    [Strict mode](#strict-mode) is reachable only from the CLI. Over MCP, a
->    `file://` link into a declared sibling root still raises the outside-root
->    advisory. This is tracked as a parity gap, not a design choice.
+> **Output-routing flags are the deliberate 1:1 exception.** Every tool
+> parameter mirrors its CLI flag one-to-one *except* the output-routing flags
+> `--report` / `--output` / `--json`, which the tools do not expose: over MCP the
+> transport **is** the JSON channel, so there is nothing to route and no `--json`
+> flag to toggle. The tool payloads are byte-identical to the corresponding
+> `binder <cmd> --json`. (`convert`'s `out`/`dry_run` and `graph`'s `format`
+> select *what* is produced, not how the report is routed, so they remain.)
 
 **Wire it into a harness** (Claude Code):
 
@@ -888,12 +880,11 @@ claude mcp add binder -- binder mcp
 { "mcpServers": { "binder": { "command": "binder", "args": ["mcp"] } } }
 ```
 
-**Tools** (each parameter mirrors the corresponding CLI flag, subject to the two
-exceptions above):
+**Tools** (each parameter mirrors the corresponding CLI flag 1:1):
 
 | Tool | Key params | Returns |
 |---|---|---|
-| `convert` | `src` (req), `out` (req unless `dry_run`), `dry_run`, `default_type`, `type_map`, `fm_ref_keys`, `source_keys`, `map_citations`, `map_draft`, `status_map`, `canonicalize_status`, `stale_after_map`, `verified_by`, `workspace_root`, `group_by_type`, `include_backlinks`, `include_graph`, `strict` (**no** `external_root` — see above) | `convert` report envelope (`dry_run:true` → the ingestion-analysis preview, writes nothing) |
+| `convert` | `src` (req), `out` (req unless `dry_run`), `dry_run`, `default_type`, `type_map`, `fm_ref_keys`, `source_keys`, `map_citations`, `map_draft`, `status_map`, `canonicalize_status`, `stale_after_map`, `verified_by`, `workspace_root`, `group_by_type`, `include_backlinks`, `include_graph`, `strict` | `convert` report envelope (`dry_run:true` → the ingestion-analysis preview, writes nothing) |
 | `validate` | `bundle` (req), `strict` | `validate` report envelope |
 | `review` | `bundle` (req), `today`, `strict` | `review` report envelope |
 | `lint` | `src` (req), `today`, `strict` | `lint` report envelope |
