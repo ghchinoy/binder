@@ -65,7 +65,10 @@ type Options struct {
 	// config.PermitsStampWithoutFlag. Empty (default) means "not explicit".
 	VerifiedByExplicit bool
 	// VerifiedBySource is the disclosure token for the resolved actor's origin
-	// ("flag" | "config" | "input" (MCP) | "none"), surfaced in the report (Residual B).
+	// ("flag" | "config" | "none"), surfaced in the report (Residual B). This is a
+	// narrower set than report.go's Source, which also lists "input" (MCP): enrich
+	// is CLI-fed only (cmd/enrich.go passes vb.Source) and has no MCP tool, so an
+	// enrich source can never be "input".
 	VerifiedBySource string
 
 	// StatusNotes are pre-computed OKF §5.4 status-vocabulary messages (issue #23)
