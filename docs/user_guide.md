@@ -318,10 +318,27 @@ A plain-markdown file (no frontmatter fence) gets a fresh, valid block prepended
 2. **Idempotent.** A second run finds every key present → `unchanged` → **no
    write**. `generated.at` is stable across runs (set-when-absent).
 3. **Body + pre-existing keys byte-faithful.** enrich reuses the codec's
-   byte-faithful serializer: on a file it changes, unchanged frontmatter subtrees
-   are re-emitted verbatim (nested-map key order, list order, and scalar
-   quoting/folding preserved) and only the **added** top-level keys are encoded
-   fresh; the body is re-emitted as-is.
+   byte-faithful serializer: on a file it changes, every unchanged frontmatter
+   key is re-emitted **from its original source bytes** — nested-map and list
+   order, flow-vs-block style, interior spacing, scalar quoting/folding, YAML
+   tags (e.g. an `!!timestamp` never silently becomes an `!!str`), and top-level
+   comments are all preserved — and only the **added or changed** keys are
+   encoded fresh; the body is re-emitted as-is. This extends to **sibling
+   granularity** for a `verified` written as a **block sequence** (`verified:`
+   followed by `- { … }` entries): when that container legitimately changes
+   (e.g. a stamp appended to `verified`), the pre-existing sibling entries are
+   still emitted verbatim, so an existing human attestation is not reshaped
+   merely because a neighbour was added.
+
+   > **Known limitation (current, being closed).** The sibling-level guarantee
+   > is **not yet complete**. When `verified` is instead written as a
+   > single-line **flow sequence** (`verified: [{ … }]`) or as a **bare/nested
+   > mapping** (`verified: { … }`), appending a stamp currently re-encodes the
+   > *whole* value: the pre-existing entry's `by`/`at` keys are reordered and an
+   > `!!timestamp` becomes an `!!str`. This is a current shortfall against the
+   > byte-faithful goal, **not** intended behaviour — full preservation for
+   > these shapes is the goal. Until it lands, an attestation you need kept
+   > byte-for-byte is safest written as a **block sequence**.
 4. **Skip-unchanged (no git churn).** A file that needs no key is **not written
    at all** — no spurious diffs, no mtime bumps. Critical for git-tracked trees.
 5. **Skip-unparseable.** A file whose frontmatter will not parse (invalid YAML or
