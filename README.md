@@ -508,9 +508,12 @@ reported for context and never counted:
    different inputs — `lint` a **source corpus**, `review` a **bundle** — and
    only on those matched inputs do they agree. Aim `lint` at a bundle and it
    will mislead rather than refuse: it re-converts the already-converted files,
-   including the bundle's generated `index.md` (which links to every concept),
-   so orphans collapse to `[]` and the reserved `index.md` re-derives as
-   `index-note-2`.
+   including the bundle's generated per-directory `index.md` tree, which gives
+   every concept an inbound link from its own directory's index, so orphans
+   collapse to `[]` on every corpus shape (flat or nested). The reserved source
+   `index.md` also re-derives as an ordinary concept reported as an entrypoint
+   (`index-note`, or `index-note-2` when the source corpus already carried its
+   own `index.md`).
 5. **Stale** — `stale_after` reached as of `--today` (or `SOURCE_DATE_EPOCH`).
 6. **Schema violations** — a missing `type:` (`Detail: "missing type"`), or
    invalid frontmatter recovered under never-reject (`Detail: "invalid
