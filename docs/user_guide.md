@@ -694,9 +694,10 @@ It reports these checks:
    `lint` on a source corpus, `review` on the bundle converted from it — the two
    report the same orphans and the same entrypoints. `lint`'s input is a **source
    corpus**, and given a bundle it misleads rather than refuses (binder never
-   rejects): it re-converts the bundle's files including the generated `index.md`,
-   which links to every concept, so every concept gains an inbound edge, the
-   orphan list collapses to empty, and the reserved `index.md` re-derives as an
+   rejects): it re-converts the bundle's files including its generated
+   per-directory `index.md` tree, in which each index links that directory's
+   concepts plus its subdirectory indexes, so every concept gains an inbound edge,
+   the orphan list collapses to empty, and the root `index.md` re-derives as an
    ordinary concept reported as an entrypoint.
 4. **Entrypoints** — no inbound resolved edge but not a true orphan: an outward
    index into the corpus (advisory only; entrypoints never gate).
