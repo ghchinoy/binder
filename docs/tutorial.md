@@ -63,7 +63,8 @@ Throughout, keep two guarantees in mind — two things binder always holds to.
 `binder convert` never mutates its
 source, and binder never fabricates trust: it derives trust tiers from
 frontmatter, stamps an honest `generated` provenance for content it produced, and
-never invents a source or auto-stamps `verified`.
+never invents a source or auto-stamps `verified`. A `verified` attestation is
+always something you asked for — Part 2 shows exactly what counts as asking.
 
 ## Part 1: brownfield, ingesting a corpus you already have
 
@@ -478,7 +479,21 @@ enrich .
   enriched drafts/idea.md (added: generated, status, title, type, verified)
   enriched payments.md (added: generated, status, title, type, verified)
   enriched refunds.md (added: generated, status, verified)
+
+Trust (verified stamps):
+  actor: human:alice (source: flag)
+  stamped: 3 file(s)
+    - drafts/idea.md
+    - payments.md
+    - refunds.md
 ```
+
+The `Trust (verified stamps):` block is the **trust disclosure**. Any run that
+writes a `verified` stamp — or declines to write one — names the actor it used
+and where that actor came from; `flag` here, because you passed `--verified-by`
+on the command line. It is the receipt for the one thing binder does that asserts
+something on your behalf, so it is printed whether you asked for prose or
+`--json`, and whether or not anything was actually written.
 
 Look at the drafts file: it received `status: draft` from the `drafts=` prefix,
 `title` derived from its `# H1`, a `Note` type, and the `verified` and `generated`
@@ -524,12 +539,22 @@ SOURCE_DATE_EPOCH=1700000000 binder enrich . \
 ```text
 enrich .
 3 file(s): 0 enriched, 3 unchanged, 0 skipped
+
+Trust (verified stamps):
+  actor: human:alice (source: flag)
+  stamped: 0 file(s)
 ```
+
+The disclosure prints anyway, and `stamped: 0 file(s)` is exactly the point: you
+asked for a stamp and binder is telling you none was needed. Stamps de-duplicate
+by `(by, at)`, and the clock is pinned, so the stamp your first run wrote is the
+stamp this run would have written.
 
 ### Step 5: stop retyping the actor — `binder config`
 
 You have now typed `--verified-by "human:alice"` twice. `binder config set`
-persists it so every later run picks it up:
+persists a default — but **where** you persist it decides whether binder will
+stamp from it at all. Start with the default location:
 
 ```bash
 binder config set verified_by "human:alice"
@@ -580,52 +605,157 @@ SOURCE_DATE_EPOCH=1700000000 binder enrich .
 ```text
 enrich .
 4 file(s): 1 enriched, 3 unchanged, 0 skipped
-  enriched pricing.md (added: generated, title, type, verified)
+  enriched pricing.md (added: generated, title, type)
+
+Trust (verified stamps):
+  note: ignored repo-local .binder.yaml verified_by "human:alice": a repo-local config does not authorize stamping (pass --verified-by to stamp)
 ```
 
+`pricing.md` got its `type`, `title` and `generated` — and **no** `verified`
+stamp. Slow down here, because this is the shape of the whole trust model: a
+`.binder.yaml` lives inside a repository, so it travels. Clone somebody's corpus
+and their config file comes with it. A file that arrived in a clone you did not
+write cannot evidence a decision *you* made, so binder will not attest documents
+in your name on its say-so. It does not ignore the value silently either — the
+disclosure names it, and names what would honour it.
+
+The place that does count is your own home directory, because nothing but you
+puts a file there:
+
 ```bash
-cat pricing.md
+binder config unset verified_by
+binder config set --global verified_by "human:alice"
+```
+
+The first prints `Unset verified_by in .binder.yaml (reverted to default)` and,
+with no keys left in it, deletes `.binder.yaml` altogether. The second writes
+`$XDG_CONFIG_HOME/binder/config.yaml` (`~/.config/binder/config.yaml` by default)
+and prints the absolute path it wrote. Now run the identical enrich again:
+
+```bash
+SOURCE_DATE_EPOCH=1700000000 binder enrich .
 ```
 
 ```text
----
-type: Note
-title: Pricing
-verified:
-  - at: "2023-11-14T22:13:20Z"
-    by: human:alice
-generated:
-  at: "2023-11-14T22:13:20Z"
-  by: binder/0.3.0
----
+enrich .
+4 file(s): 1 enriched, 3 unchanged, 0 skipped
+  enriched pricing.md (added: verified)
 
-# Pricing
-
-How we price. See [payments](payments.md).
+Trust (verified stamps):
+  actor: human:alice (source: config)
+  stamped: 1 file(s)
+    - pricing.md
 ```
 
-The actor came from the config file, not the command line. This does **not**
-weaken never-fabricate-trust: binder still stamps `verified` only because *you*
-configured an actor. With no flag and no configured `verified_by`, nothing is
-written.
+Same command, same corpus, different answer — and `source: config` is how you
+tell a stamp you asked for on the command line from one your own default
+supplied. This does **not** weaken never-fabricate-trust: binder stamped
+`verified` only because *you* recorded that actor as your default. With no flag
+and no global `verified_by`, nothing is written.
 
-`config get` prints one resolved value (handy in scripts), and `config unset`
-reverts a key to its default:
+> One more thing worth knowing before you commit a `.binder.yaml`: binder loads
+> exactly **one** config file, and `./.binder.yaml` wins the search. A
+> repo-local file therefore hides your global one entirely — which is why the
+> unset above was needed before the global default could take effect.
+
+`config get` prints one resolved value (handy in scripts):
 
 ```bash
 binder config get verified_by
-binder config unset verified_by
 ```
 
 ```text
 human:alice
-Unset verified_by in .binder.yaml (reverted to default)
 ```
+
+`config unset` reverts a key to its default, and it needs the same `-g` you used
+to set it: the value now lives in the global file, so a bare
+`binder config unset verified_by` would answer `Key verified_by is not set in
+.binder.yaml` and change nothing. Leave the default in place for the next step;
+Step 6 ends by removing it.
 
 The other keys are `default_type`, `gemini_model`, `gemini_location`,
 `gemini_project`, and `gemini_backend`; dotted spellings like `gemini.project`
 are accepted and written back as snake_case. An unknown key is a usage error
 (exit `2`).
+
+### Step 6: binder does not co-sign
+
+Your global default now stamps documents as you enrich them. What happens to a
+document that somebody else has already attested? Try it in a scratch directory
+so the corpus you built above stays as it is:
+
+```bash
+mkdir -p /tmp/kb-shared && cd /tmp/kb-shared
+
+cat > handbook.md <<'EOF'
+---
+type: Playbook
+title: Escalation handbook
+verified:
+  - by: human:bob
+    at: 2026-01-05T00:00:00Z
+---
+# Escalation handbook
+
+Bob reviewed this.
+EOF
+
+SOURCE_DATE_EPOCH=1700000000 binder enrich .
+```
+
+```text
+enrich .
+1 file(s): 1 enriched, 0 unchanged, 0 skipped
+  enriched handbook.md (added: generated)
+
+Trust (verified stamps):
+  actor: human:alice (source: config)
+  stamped: 0 file(s)
+  skipped: 1 file(s) (a different identity already attested; pass --verified-by to co-sign)
+    - handbook.md (already attested by human:bob)
+```
+
+Your default said *attest my work*; it did not say *add my name beside Bob's*. So
+binder **skipped** the stamp and told you it did.
+
+A skip is not a rejection. The run exits `0`, the file was still enriched (it
+needed `generated`), and Bob's attestation is exactly as he left it. If
+co-signing is what you actually mean, say it explicitly — the flag is exempt from
+this rule, because typing it *is* the decision:
+
+```bash
+SOURCE_DATE_EPOCH=1700000000 binder enrich . --verified-by "human:alice"
+```
+
+```text
+enrich .
+1 file(s): 1 enriched, 0 unchanged, 0 skipped
+  enriched handbook.md (added: verified)
+
+Trust (verified stamps):
+  actor: human:alice (source: flag)
+  stamped: 1 file(s)
+    - handbook.md
+```
+
+`handbook.md` now carries both attestations, Bob's first and untouched:
+
+```text
+verified:
+  - by: human:bob
+    at: 2026-01-05T00:00:00Z
+  - at: "2023-11-14T22:13:20Z"
+    by: human:alice
+```
+
+Take the default away again when you are done, and go back to the greenfield
+corpus for the rest of the tutorial:
+
+```bash
+binder config unset --global verified_by
+cd /tmp/kb
+```
 
 ### The status vocabulary and the actor convention
 
@@ -676,9 +806,27 @@ derives a trust tier from the
 `human-reviewed`, other verification yields `machine-confirmed`, none yields
 `unverified`); it never stores a credibility score. It stamps an honest
 `generated: binder/<version>` for content it produced, and it never auto-stamps
-`verified`: with no `--verified-by` and no configured `verified_by`, no
-verification is written. When an agent drives binder, the same rule binds the
-agent: do not stamp trust you cannot assert.
+`verified`. Steps 5 and 6 are that rule in three parts:
+
+- **No flag, no stamp.** A `verified` stamp needs `--verified-by` on the run, or
+  a `verified_by` default in your own global config.
+- **A repo-local `.binder.yaml` does not authorize one** — it can arrive inside
+  somebody else's clone, and binder reports the value rather than acting on it.
+- **binder does not co-sign.** Against a document a different identity has
+  already attested, a stamp from a default is skipped and disclosed as skipped;
+  only an explicit `--verified-by` co-signs.
+
+Every one of those decisions is disclosed, in prose and in `--json`, so a run
+that stamped nothing is distinguishable from a run that never tried. When an
+agent drives binder, the same rule binds the agent: do not stamp trust you cannot
+assert.
+
+One origin this part did not exercise: `BINDER_VERIFIED_BY` in the environment
+also permits a stamp without the flag. Such a stamp is disclosed like any other
+and names `env` as its source, and binder will not co-sign from it. The
+[user guide](user_guide.md#binder_verified_by) has the details, and
+[the full rules](user_guide.md#writing-a-verified-stamp) cover the JSON
+disclosure fields.
 
 ## Cross-check your bundle with okf
 
