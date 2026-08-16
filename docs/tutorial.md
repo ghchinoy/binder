@@ -382,11 +382,12 @@ source, run it on a clean git tree and review the diff.
 
 ### Step 1: create a small corpus
 
-Work somewhere outside the binder clone — Part 1 left you `cd`'d into it, and the
-advice above is to run `enrich` on a clean git tree:
+Work somewhere outside any binder checkout — including the shallow clone Part 1
+made — because `enrich` mutates the tree it is pointed at and the advice above is
+to run it on a clean git tree:
 
 ```bash
-cd /tmp        # anywhere outside the binder clone
+cd /tmp        # anywhere outside a binder checkout
 
 mkdir -p kb/drafts
 cd kb
