@@ -2803,7 +2803,8 @@ others gate on the emitted bundle.
 
 The project's own exit gate additionally cross-checks binder's verdicts against
 the external [`okfcli/okf`](https://github.com/okfcli/okf) validator in both
-directions (`make gate`); see the README's Development section.
+directions (`make gate`); see
+[Differential-validation exit gate](RELEASING.md#differential-validation-exit-gate).
 
 ## Worked end-to-end example
 
