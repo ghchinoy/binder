@@ -151,6 +151,22 @@ goreleaser release --snapshot --clean   # build all targets, no publish
 ./dist/binder_linux_amd64_v1/binder --version
 ```
 
+## Differential-validation exit gate
+
+`make check` (gofmt + `go vet` + `go test ./...`) is the toolchain-only gate. The
+project's **full** exit gate additionally cross-checks binder's own verdicts
+against the vendor-neutral [`okfcli/okf`](https://github.com/okfcli/okf)
+validator (v0.3.0) in both directions:
+
+```sh
+make okf-install  # go install github.com/okfcli/okf/cmd/okf@v0.3.0
+make gate         # local checks + external differential validation
+```
+
+`make gate` runs `scripts/interop.sh`, which compares binder's and `okf`'s
+verdicts in both directions and fails on any unexpected disagreement. It is a
+maintainer/CI gate: installing or running binder never requires `okf`.
+
 ## Deferred (Phase 4)
 
 cosign signatures and SBOMs are intentionally **not** configured yet (no

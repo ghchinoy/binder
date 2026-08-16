@@ -7,7 +7,7 @@ bundle and validates OKF bundles against the spec's conformance rules.
 ![license](https://img.shields.io/badge/license-Apache--2.0-blue)
 ![go](https://img.shields.io/badge/go-1.26.1+-00ADD8)
 
-**Status: Phase 2 complete** — a Go CLI that converts a non-OKF markdown corpus
+**Available today** — a Go CLI that converts a non-OKF markdown corpus
 into a conformant [OKF v0.2](https://github.com/GoogleCloudPlatform/knowledge-catalog)
 bundle, extracts every relationship signal (wikilinks, anchor links, frontmatter
 refs, hashtags), maps corpus-native provenance into the trust vocabulary,
@@ -26,7 +26,6 @@ via `binder config`, and supports `--strict` CI gating.
 - [Agent Skill / Plugin](#agent-skill--plugin)
 - [MCP server (`binder mcp`)](#mcp-server-binder-mcp)
 - [How it works](#how-it-works)
-- [Development](#development)
 - [Roadmap](#roadmap)
 - [Contributing](#contributing)
 - [License](#license)
@@ -81,10 +80,6 @@ Two properties make it trustworthy for pipelines:
   through verbatim — including nested-map and list key order — so a round-trip
   changes nothing it did not have to change.
 
-Verdicts are differential-validated against the vendor-neutral
-[`okfcli/okf`](https://github.com/okfcli/okf) validator (v0.3.0) in both
-directions as part of the exit gate.
-
 ## Installation
 
 **Homebrew** (macOS and Linux — the recommended path):
@@ -135,9 +130,10 @@ sudo mv binder /usr/local/bin/
 binder --version    # binder/<version> — the stamp never carries a leading "v"
 ```
 
-Each archive also contains `LICENSE` and `README.md`. Signatures and SBOMs are
-not published yet — `checksums.txt` is the integrity artifact today (see
-[docs/RELEASING.md](docs/RELEASING.md#deferred-phase-4)).
+Each archive also contains `LICENSE` and `README.md` — and nothing else: no
+docs directory, no sample corpus. Cosign signatures and SBOMs are **not**
+published yet, so `checksums.txt` is the integrity artifact today; see
+[what is deferred, and why](docs/RELEASING.md#deferred-phase-4).
 
 **Go toolchain** (requires Go 1.26.1+, the floor declared in `go.mod`):
 
@@ -145,20 +141,19 @@ not published yet — `checksums.txt` is the integrity artifact today (see
 go install github.com/ghchinoy/binder@latest
 ```
 
-**From source:**
+`go install` stamps the binary cleanly, exactly like Homebrew and the direct
+download: `binder --version` prints `binder/0.3.0`, no leading `v`.
 
-```bash
-git clone https://github.com/ghchinoy/binder.git
-cd binder
-make build        # -> bin/binder
-```
+> **Winget** — not published yet (tracked in
+> [#40](https://github.com/ghchinoy/binder/issues/40)). Windows users: take the
+> release `.zip` above.
 
-> **Windows package managers.** A `winget` package is not published yet — the
-> publisher was removed in
-> [#46](https://github.com/ghchinoy/binder/pull/46) while the cross-repo
-> publishing token is sorted out
-> ([#40](https://github.com/ghchinoy/binder/issues/40)). Use the direct-download
-> `.zip` above on Windows in the meantime.
+**From source.** For anyone who prefers building their own binaries, and the way
+to run a commit that has not been released yet: clone the repo and run
+`make build` with Go 1.26.1+. The resulting binary reports a Go module
+pseudo-version rather than a release version;
+[CONTRIBUTING.md](CONTRIBUTING.md#development) covers what that affects, and is
+where to start if you want to change binder rather than just run it.
 
 ## Usage
 
@@ -222,8 +217,14 @@ binder infer path/to/corpus
 ```text
 bundle: path/to/bundle
 concepts: 2, reserved files: 1
+scope: reserved-file structure (index.md, log.md) not validated; verdict covers concept files only
 RESULT: conformant (OKF 0.2)
 ```
+
+The `scope:` line appears whenever the bundle has reserved files, because
+structural validation of `index.md`/`log.md` is not implemented in this release.
+A `conformant` verdict covers the concept files only — it is not a claim about a
+surface the validator never examined.
 
 ### Machine-readable output (`--json`) and exit codes
 
@@ -250,7 +251,8 @@ binder validate path/to/bundle --json
     "root": "path/to/bundle",
     "num_concepts": 2,
     "num_reserved": 1,
-    "findings": []
+    "findings": [],
+    "reserved_structure_checked": false
   }
 }
 ```
@@ -1015,64 +1017,43 @@ schemas and examples.
   injected once at the composition root (`cmd/root.go`) — every other package
   depends only on the `okf` interfaces.
 
-## Development
-
-```bash
-git clone https://github.com/ghchinoy/binder.git
-cd binder
-make build        # -> bin/binder
-make check        # gate: gofmt + go vet + go test ./...
-```
-
-Requires **Go 1.26.1+** (the floor declared in `go.mod`). Dependencies are pinned
-via `go.mod`/`go.sum` and fetched from the Go module proxy at build time
-(network required).
-
-The full exit gate additionally cross-checks binder's verdicts against the
-external `okfcli/okf` validator:
-
-```bash
-make okf-install  # go install github.com/okfcli/okf/cmd/okf@v0.3.0
-make gate         # local checks + external differential validation
-```
-
-`make gate` runs `scripts/interop.sh`, which compares binder's and `okf`'s
-verdicts in both directions and fails on any unexpected disagreement.
-
 ## Roadmap
 
-The following is **planned, not yet shipped**:
+**Shipped today** — the complete v0.3.0 surface, checkable against
+`binder --help`:
+
+- the CLI verbs `convert`, `validate`, `index`, `review`, `lint`, `infer`,
+  `graph`, `config`, and `enrich`, plus the stdio
+  [MCP server](#mcp-server-binder-mcp) (`binder mcp`);
+- the `okf-convert` [Agent Skill / Plugin](#agent-skill--plugin);
+- the declarative trust/lifecycle flags `--status-map`, `--stale-after-map`,
+  and `--verified-by`;
+- `--strict` gating, `--canonicalize-status`, `convert --external-root`,
+  `--entrypoint` on `review` and `lint`, and `enrich --overwrite-keys`.
+
+**Planned, not yet shipped** — what binder does *not* do today:
 
 - **A community-core codec adapter** (e.g. `--okf-impl=community`): a second
   `Codec` behind the existing interface, slotted in only after it is confirmed
   byte-complete against the golden bundles.
+- **Structural validation of the reserved files** `index.md` and `log.md`.
+  `validate` checks concept files only and prints a `scope:` line saying so
+  (see [Usage](#usage)).
+- **Cosign signatures, SBOMs, and a `winget` package** for releases;
+  `checksums.txt` is the integrity artifact today (see
+  [Installation](#installation)).
 
-**Shipped, layered over the settled CLI contract:** the
-[Agent Skill and Agent-Plugin bundle](#agent-skill--plugin) (`okf-convert`, #14),
-then the [MCP server mode](#mcp-server-binder-mcp) (`binder mcp`, #15) — the
-additive convert/validate/review/lint/graph tools over the same OKF core, since
-joined by the read-only graph tools `list_graphs`
-([#32](https://github.com/ghchinoy/binder/pull/32)) and `query_graph`
-([#33](https://github.com/ghchinoy/binder/issues/33)). (These were sequenced
-Skill/Plugin **before** MCP, so MCP builds on already-settled `--json` payloads.)
-Declarative trust/lifecycle flags (`--status-map`, `--stale-after-map`,
-`--verified-by`; #7), `binder config` (#10), the standalone `binder lint` (#8),
-in-place `binder enrich` (#5), the type-map proposer `binder infer` (#38), and
-`--strict` mode have also shipped (see above). The v0.3.0 cycle added the
-opt-in `--canonicalize-status` (#23), `convert --external-root` (#25), the
-entrypoint-versus-orphan reclassification with `--entrypoint` on `review` and
-`lint` (#24), and `enrich --overwrite-keys` (#22). The
-[user guide](docs/user_guide.md#roadmap--planned-features) maps each to its issue.
-
-Today's shipped surface is the `convert`, `validate`, `index`, `review`, `lint`,
-`infer`, `graph`, `config`, `enrich`, and `mcp` CLI described above, plus the
-`okf-convert` Agent Skill/Plugin.
+The [user guide](docs/user_guide.md#roadmap--planned-features) maps each shipped
+feature to the issue it came from;
+[CONTRIBUTING.md](CONTRIBUTING.md#feature-history-and-sequencing) records how
+that surface was sequenced.
 
 ## Contributing
 
-Pull requests are welcome. For major changes, please open an issue first to
-discuss what you'd like to change. Make sure `make check` passes and add tests
-for new behavior.
+Pull requests are welcome. How to build binder from a clone, run `make check`,
+and how the shipped surface was sequenced are in
+[CONTRIBUTING.md](CONTRIBUTING.md); the release process and the project's full
+exit gate are in [docs/RELEASING.md](docs/RELEASING.md).
 
 ## License
 
