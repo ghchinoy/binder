@@ -43,28 +43,29 @@ disclosed (`.result.verified` in `--json`). The remaining trap is a *default you
 set* silently applying to a corpus you did not mean it for:
 
 > A `verified` stamp is written only from an **explicit `--verified-by`**, or
-> from a default **you set** — `BINDER_VERIFIED_BY` in the environment, or
-> `verified_by:` in your **global** config (`~/.config/binder/config.yaml`).
-> Those two count as you having chosen a default and **will** stamp `convert`
-> and `enrich` (which writes into your **source tree**) without the flag. A
-> **repo-local `./.binder.yaml`** `verified_by` does **not** authorize
-> stamping — binder ignores it for that purpose and discloses that it did.
+> from a default **you set** in your **global** config
+> (`~/.config/binder/config.yaml`). A global `verified_by:` counts as you having
+> chosen a default and **will** stamp `convert` and `enrich` (which writes into
+> your **source tree**) without the flag. **Neither `BINDER_VERIFIED_BY` (env)
+> nor a repo-local `./.binder.yaml` authorizes stamping** — binder refuses both
+> and discloses the refused value in `.result.verified.note`.
 
-So the risk is no longer a stray repo-local file; it is an inherited env export
-or a machine-wide global default applying where you did not intend. Step 1
-checks for such a configured attester before you run anything.
+So the risk is no longer a stray repo-local file *or* an env export — both are
+now refused. The remaining risk is a machine-wide **global** default applying
+where you did not intend. Step 1 checks for such a configured attester before you
+run anything.
 
 - Do **not** pass `--verified-by` unless a real, named actor actually attests to
   the content. A verification stamp is a claim; only make claims that are true.
 - Do **not** let a *default you set* stamp a corpus it should not. If step 1
-  finds a live env/global attester you cannot vouch for here, pass
+  finds a live global-config attester you cannot vouch for here, pass
   `--verified-by ""` explicitly to suppress it.
 - Do **not** invent `sources`/provenance the corpus does not contain.
 - Do **not** write a credibility score or trust *tier* into any concept — tiers
   are *derived* on read, never stored.
 
 binder will also **decline to co-sign**: when a concept already carries a
-`verified` attestation from a *different* identity, a non-explicit (env/global)
+`verified` attestation from a *different* identity, a non-explicit (global-config)
 default does **not** add a second stamp — it skips and discloses the skip under
 `.result.verified.skipped`. Only an explicit `--verified-by` co-signs. Propose
 trust to the user; defer all stamping to deterministic binder. The full
@@ -137,15 +138,16 @@ tool-agnostic **`okf-author`** skill in
 [`ghchinoy/agent-skills` → `plugins/okf-authoring`](https://github.com/ghchinoy/agent-skills/tree/main/plugins/okf-authoring).
 
 **Then check whether an attester is already configured** — per the guardrail
-above, an env or *global*-config `verified_by` you never passed will still stamp
-(a repo-local one will not).
+above, a *global*-config `verified_by` you never passed will still stamp (an env
+`BINDER_VERIFIED_BY` and a repo-local one will not).
 
 **Pin your working directory first, and run every later step from it.** binder
 looks for `./.binder.yaml` relative to the *current* directory, so run this
-pre-flight from the corpus directory to see the same config binder will. An
-env/global default stamps regardless of cwd; a repo-local `./.binder.yaml` does
-**not** stamp, but you still want the pre-flight to surface that it exists so you
-are not surprised by its `config_file` shadowing the global one.
+pre-flight from the corpus directory to see the same config binder will. A
+global default stamps regardless of cwd; `BINDER_VERIFIED_BY` and a repo-local
+`./.binder.yaml` do **not** stamp, but you still want the pre-flight to surface
+that they exist so you are not surprised by a repo-local `config_file` shadowing
+the global one.
 
 ```bash
 cd <the directory you will run every binder command from>
@@ -159,9 +161,9 @@ path never authorizes a stamp):
 | Reply | Meaning | Do |
 |---|---|---|
 | `{"config_file":"","verified_by":{"value":"","source":"default"}}` | nothing configured | proceed — nothing will stamp |
-| `{"config_file":"","verified_by":{"value":"human:x","source":"env"}}` | inherited from `BINDER_VERIFIED_BY` | **stop** — a stray export **will** stamp; it is not an attestation |
+| `{"config_file":"","verified_by":{"value":"human:x","source":"env"}}` | inherited from `BINDER_VERIFIED_BY` | **does not stamp** — env is refused and disclosed in `.result.verified.note`; pass `--verified-by` only if a real actor attests |
 | `{"config_file":".binder.yaml","verified_by":{"value":"human:x","source":"file"}}` | repo-local setting — **does not stamp** (Option A) | binder ignores it for stamping and discloses so; pass `--verified-by` only if a real actor attests |
-| `{"config_file":"/home/u/.config/binder/config.yaml","verified_by":{"value":"human:x","source":"file"}}` | machine-wide default — **will stamp** | treat as the `env` row |
+| `{"config_file":"/home/u/.config/binder/config.yaml","verified_by":{"value":"human:x","source":"file"}}` | machine-wide default — **will stamp** | **stop** — a global default stamps without the flag; pass `--verified-by ""` to suppress it unless a real actor attests |
 
 `source` **cannot** separate the last two rows — both report `file` — yet they
 behave **oppositely**: the global one stamps, the repo-local one does not.
@@ -230,16 +232,16 @@ optional fields are **legal** — fix only what is genuinely wrong. Decision tab
   ```
 
   **Check `.result.verified` in the dry-run before applying.** By default — no
-  flag, no env/global default (step 1) — it stays empty and **no** `verified` is
-  written. If a default *you set* is live, the dry-run discloses exactly what it
-  will stamp, and `verified` also appears in that file's `added`:
+  flag, no global default (step 1) — it stays empty and **no** `verified` is
+  written. If a global default *you set* is live, the dry-run discloses exactly
+  what it will stamp, and `verified` also appears in that file's `added`:
 
   ```json
   { "actor": "human:you", "source": "config", "num_stamped": 3,
     "skipped": [], "num_skipped": 0 }
   ```
 
-  Add `--verified-by ""` to **suppress** an env/global default you cannot vouch
+  Add `--verified-by ""` to **suppress** a global default you cannot vouch
   for here; it is not needed when nothing is configured. Nothing unstamps a
   `verified` block after the fact (and there is no MCP `enrich` tool), so decide
   before applying. binder will not co-sign a concept a *different* identity
@@ -267,11 +269,12 @@ binder review   <bundle> --json | jq '.result | {by_type, tiers, orphans, stale,
 ```
 
 **`convert` applies the same stamping decision as `enrich`** — the CLI's
-`--verified-by` resolution, not a quirk of either command. A default *you set*
-(env, or global config) that you don't suppress writes `verified` into **every
-concept in the bundle**, and `review` then reports them `human-reviewed` rather
-than `unverified`. A repo-local `./.binder.yaml` does **not** stamp. Measured on
-the sample corpus (5 concepts) with `binder/0.3.1`:
+`--verified-by` resolution, not a quirk of either command. A **global**-config
+default *you set* that you don't suppress writes `verified` into **every concept
+in the bundle**, and `review` then reports them `human-reviewed` rather than
+`unverified`. Neither `BINDER_VERIFIED_BY` nor a repo-local `./.binder.yaml`
+stamps — both are refused and disclosed. Measured on the sample corpus
+(5 concepts) with `binder/0.3.1`:
 
 | step-5 `convert` | attester in scope | stamped | `review` tiers |
 |---|---|---|---|
@@ -280,10 +283,13 @@ the sample corpus (5 concepts) with `binder/0.3.1`:
 | no flag | repo-local `./.binder.yaml` → `verified_by: human:ghost` | 0 of 5 (ignored) | `{"unverified":5}` |
 
 The ignored repo-local case is disclosed in `.result.verified.note`
-(`ignored repo-local .binder.yaml verified_by ...`). Pass a real `--verified-by`
-only when a real actor genuinely attests. Confirm with the `tiers`
-line in the `review` output below — it is the cheapest check that no claim was
-fabricated.
+(`ignored repo-local .binder.yaml verified_by ...`). An inherited
+`BINDER_VERIFIED_BY` behaves the same way — it is refused (0 stamped) and
+disclosed with a parallel note (`ignored BINDER_VERIFIED_BY "...": an
+environment default does not authorize stamping ...`), so only a **global**
+config `verified_by` stamps without the flag. Pass a real `--verified-by` only
+when a real actor genuinely attests. Confirm with the `tiers` line in the
+`review` output below — it is the cheapest check that no claim was fabricated.
 
 `binder validate` checks the OKF §11 hard rule that every non-reserved `.md` has
 parseable frontmatter with a **non-empty `type`** — that is §11.1 and §11.2 only.
@@ -306,15 +312,16 @@ for the raw edge export, and `binder infer <corpus> --json` to propose a
 
 Load [`references/trust-discipline.md`](references/trust-discipline.md). binder
 stamps an honest `generated: binder/<ver>`, never *invents* an actor, and by
-default writes no `verified` at all — but a default **you set** (env or global
-config) will stamp one, and it discloses every stamp under `.result.verified`.
+default writes no `verified` at all — but a default **you set** in your global
+config will stamp one, and it discloses every stamp under `.result.verified`.
 Hold the line binder cannot hold for you:
 
 - No `--verified-by` unless a **real, named actor actually attests** — never
   auto-pass it, never default it to yourself/the agent.
-- No env/global default stamping where it should not. Re-check step 1 if you have
-  changed environment since; pass `--verified-by ""` to suppress an attester you
-  cannot vouch for here. (A repo-local `./.binder.yaml` never stamps.)
+- No global default stamping where it should not. Re-check step 1 if your config
+  changed since; pass `--verified-by ""` to suppress an attester you cannot vouch
+  for here. (Neither `BINDER_VERIFIED_BY` nor a repo-local `./.binder.yaml` ever
+  stamps — both are refused and disclosed.)
 - No invented provenance; enable `--source-keys`/`--map-citations` only for keys
   that carry *real* provenance.
 - Never store a credibility score/tier — tiers are **derived** (`binder review`

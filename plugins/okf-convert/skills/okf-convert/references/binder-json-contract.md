@@ -163,15 +163,16 @@ list of injected keys; byte-faithful.
 
 **`.result.verified` is the run-level trust disclosure (0.3.1+).** It is `actor:
 "", source: "none"` when nothing was stamped. A stamp is written only from an
-explicit `--verified-by` or a default *you* set — `BINDER_VERIFIED_BY`, or
-`verified_by:` in your **global** config; a repo-local `.binder.yaml` does **not**
-stamp (it is reported in `.result.verified.note` instead). When a stamp is
-written, `actor`/`source` name it, `stamped` lists the paths, and the per-file
-`added` also gains `verified`. When a *different* identity already attested a
-concept, a non-explicit default declines to co-sign: the concept appears under
-`skipped` (`{ "path": ..., "existing_actor": ... }`) and the prior attestation is
-left untouched. Inspect the disclosure and per-file `added` before applying, and
-pass `--verified-by ""` to suppress an env/global default you cannot vouch for:
+explicit `--verified-by` or a default *you* set — `verified_by:` in your
+**global** config. Neither `BINDER_VERIFIED_BY` (env) nor a repo-local
+`.binder.yaml` stamps; each is refused and reported in `.result.verified.note`
+instead. When a stamp is written, `actor`/`source` name it, `stamped` lists the
+paths, and the per-file `added` also gains `verified`. When a *different* identity
+already attested a concept, a non-explicit default declines to co-sign: the
+concept appears under `skipped` (`{ "path": ..., "existing_actor": ... }`) and the
+prior attestation is left untouched. Inspect the disclosure and per-file `added`
+before applying, and pass `--verified-by ""` to suppress a global default you
+cannot vouch for:
 
 ```bash
 binder enrich <corpus> --dry-run --json | jq -c '.result.verified'
