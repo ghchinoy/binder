@@ -698,10 +698,11 @@ It reports these checks:
    per-directory `index.md` tree, in which each index links that directory's
    concepts plus its subdirectory indexes. Each ordinary concept therefore gains
    an inbound edge from its own directory's index, and each directory index gains
-   one from its **parent's** index (an index never links itself), leaving the root
-   `index.md` as the only file with no inbound edge: the orphan list collapses to
-   empty, and the root index re-derives as an ordinary concept reported as an
-   entrypoint.
+   one from its **parent's** index (an index never links itself), leaving the
+   bundle's own **generated** root `index.md` as the only file with no inbound
+   edge: the orphan list collapses to empty, and that generated index — renamed by
+   the re-conversion, so not a recognized root — re-derives as an ordinary concept
+   reported as an entrypoint for its outbound edges.
 4. **Entrypoints** — no inbound resolved edge but not a true orphan: an outward
    index into the corpus (advisory only; entrypoints never gate).
 5. **Stale** — `stale_after` reached as of `--today` (honours `SOURCE_DATE_EPOCH`).
