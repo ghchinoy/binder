@@ -35,28 +35,40 @@ The OKF v0.2 specification itself is
 ## The one guardrail that overrides everything: never fabricate trust
 
 binder stamps an honest `generated: binder/<version>` provenance mark, and it
-never **invents** a `verified` actor or `sources` out of nothing. But it will
-faithfully stamp `verified` with an actor it was **configured** with, and that is
-the trap in this skill:
+never **invents** a `verified` actor or `sources` out of nothing. As of
+`binder/0.3.1` it is also **safe by default**: with no `--verified-by` flag and
+no attester *you* configured, `convert` and `enrich` write **no** `verified`
+stamp at all. A stamp is written only when you decide it, and every stamp is
+disclosed (`.result.verified` in `--json`). The remaining trap is a *default you
+set* silently applying to a corpus you did not mean it for:
 
-> `--verified-by` resolves through binder's normal precedence chain — **flag >
-> env > config file > built-in default**. An inherited `BINDER_VERIFIED_BY`, or a
-> `verified_by:` key in a `.binder.yaml` you did not write, makes **both**
-> `convert` and `enrich` write a verification claim you never typed. `enrich`
-> writes it into your **source tree**.
+> A `verified` stamp is written only from an **explicit `--verified-by`**, or
+> from a default **you set** in your **global** config
+> (`~/.config/binder/config.yaml`). A global `verified_by:` counts as you having
+> chosen a default and **will** stamp `convert` and `enrich` (which writes into
+> your **source tree**) without the flag. **Neither `BINDER_VERIFIED_BY` (env)
+> nor a repo-local `./.binder.yaml` authorizes stamping** — binder refuses both
+> and discloses the refused value in `.result.verified.note`.
 
-So "never pass `--verified-by`" is *not* sufficient to avoid making a false
-claim. Step 1 checks for a configured actor before you run anything.
+So the risk is no longer a stray repo-local file *or* an env export — both are
+now refused. The remaining risk is a machine-wide **global** default applying
+where you did not intend. Step 1 checks for such a configured attester before you
+run anything.
 
 - Do **not** pass `--verified-by` unless a real, named actor actually attests to
   the content. A verification stamp is a claim; only make claims that are true.
-- Do **not** let one arrive by configuration. If step 1 finds a configured actor
-  you cannot vouch for, pass `--verified-by ""` explicitly to suppress it.
+- Do **not** let a *default you set* stamp a corpus it should not. If step 1
+  finds a live global-config attester you cannot vouch for here, pass
+  `--verified-by ""` explicitly to suppress it.
 - Do **not** invent `sources`/provenance the corpus does not contain.
 - Do **not** write a credibility score or trust *tier* into any concept — tiers
   are *derived* on read, never stored.
 
-Propose trust to the user; defer all stamping to deterministic binder. The full
+binder will also **decline to co-sign**: when a concept already carries a
+`verified` attestation from a *different* identity, a non-explicit (global-config)
+default does **not** add a second stamp — it skips and discloses the skip under
+`.result.verified.skipped`. Only an explicit `--verified-by` co-signs. Propose
+trust to the user; defer all stamping to deterministic binder. The full
 treatment — including the `--verified-by` guardrail — is in
 [`references/trust-discipline.md`](references/trust-discipline.md), loaded at
 step 6.
@@ -84,7 +96,7 @@ reject the flag.) Of those, **six** print the deterministic `binder.report/v1`
 envelope — `convert`, `enrich`, `validate`, `review`, `lint`, and `infer`:
 
 ```json
-{ "binder": "binder/0.3.0", "command": "convert",
+{ "binder": "binder/0.3.1", "command": "convert",
   "schema": "binder.report/v1", "result": { } }
 ```
 
@@ -103,11 +115,14 @@ error. Full shapes: [`references/binder-json-contract.md`](references/binder-jso
 
 ```bash
 command -v binder || { echo "binder not installed"; exit 1; }
-binder --version    # need binder/0.3.0 or newer
+binder --version    # need binder/0.3.1 or newer
 ```
 
-**Minimum version is `binder/0.3.0`.** Earlier builds predate parts of the
-`--json` contract this skill parses.
+**Minimum version is `binder/0.3.1`.** Safe-by-default stamping (no stamp
+without an explicit flag or a default you set), the repo-local exclusion, and the
+`.result.verified` disclosure this skill relies on all landed in `0.3.1`. Earlier
+builds stamp `verified` from ambient config *without* the flag and predate parts
+of the `--json` contract this skill parses.
 
 If binder is **absent**, install it — do **not** fake a conversion:
 
@@ -123,33 +138,39 @@ tool-agnostic **`okf-author`** skill in
 [`ghchinoy/agent-skills` → `plugins/okf-authoring`](https://github.com/ghchinoy/agent-skills/tree/main/plugins/okf-authoring).
 
 **Then check whether an attester is already configured** — per the guardrail
-above, a `verified_by` you never passed will still stamp.
+above, a *global*-config `verified_by` you never passed will still stamp (an env
+`BINDER_VERIFIED_BY` and a repo-local one will not).
 
 **Pin your working directory first, and run every later step from it.** binder
-looks for `./.binder.yaml` relative to the *current* directory, so this check and
-the `convert`/`enrich` runs it protects must share one cwd. Run the pre-flight
-from a parent directory and it reports a clean `default` while `convert`, run
-from the corpus directory, stamps every concept — the check and the risk would be
-looking at different files.
+looks for `./.binder.yaml` relative to the *current* directory, so run this
+pre-flight from the corpus directory to see the same config binder will. A
+global default stamps regardless of cwd; `BINDER_VERIFIED_BY` and a repo-local
+`./.binder.yaml` do **not** stamp, but you still want the pre-flight to surface
+that they exist so you are not surprised by a repo-local `config_file` shadowing
+the global one.
 
 ```bash
 cd <the directory you will run every binder command from>
 binder config --json | jq -c '.result | {config_file, verified_by: .values.verified_by}'
 ```
 
-Match the reply against this table before running anything:
+Match the reply against this table before running anything (binder itself keys
+its stamping decision on the `config_file` discriminator below — a repo-local
+path never authorizes a stamp):
 
 | Reply | Meaning | Do |
 |---|---|---|
-| `{"config_file":"","verified_by":{"value":"","source":"default"}}` | nothing configured | proceed |
-| `{"config_file":"","verified_by":{"value":"human:x","source":"env"}}` | inherited from `BINDER_VERIFIED_BY` | **stop** — a stray export is not an attestation |
-| `{"config_file":".binder.yaml","verified_by":{"value":"human:x","source":"file"}}` | deliberate per-corpus setting | surface it to the user, then proceed |
-| `{"config_file":"/home/u/.config/binder/config.yaml","verified_by":{"value":"human:x","source":"file"}}` | machine-wide default | treat as the `env` row |
+| `{"config_file":"","verified_by":{"value":"","source":"default"}}` | nothing configured | proceed — nothing will stamp |
+| `{"config_file":"","verified_by":{"value":"human:x","source":"env"}}` | inherited from `BINDER_VERIFIED_BY` | **does not stamp** — env is refused and disclosed in `.result.verified.note`; pass `--verified-by` only if a real actor attests |
+| `{"config_file":".binder.yaml","verified_by":{"value":"human:x","source":"file"}}` | repo-local setting — **does not stamp** (Option A) | binder ignores it for stamping and discloses so; pass `--verified-by` only if a real actor attests |
+| `{"config_file":"/home/u/.config/binder/config.yaml","verified_by":{"value":"human:x","source":"file"}}` | machine-wide default — **will stamp** | **stop** — a global default stamps without the flag; pass `--verified-by ""` to suppress it unless a real actor attests |
 
-`source` **cannot** separate the last two rows — both report `file`.
-`config_file` is the discriminator: binder loads **exactly one** config file, and
-a repo-local `.binder.yaml` suppresses the global one entirely rather than
-merging with it. (See the binder user guide, *Configuration*.) `binder config`
+`source` **cannot** separate the last two rows — both report `file` — yet they
+behave **oppositely**: the global one stamps, the repo-local one does not.
+`config_file` is the discriminator: binder loads **exactly one** config file, a
+repo-local `.binder.yaml` suppresses the global one entirely rather than merging
+with it, and Option A honors *only* the global path for a no-flag stamp. (See the
+binder user guide, *Configuration*.) `binder config`
 itself does not accept `--verified-by`, so a `flag` source never appears here —
 that case is one you typed yourself and already own.
 
@@ -201,24 +222,32 @@ optional fields are **legal** — fix only what is genuinely wrong. Decision tab
 ### 4. Remediate at the source — never fabricate
 
 - Missing required frontmatter (`type`/`title`/`generated`): prefer `binder
-  enrich` — additive, frontmatter-only, byte-faithful, and atomic. It rewrites
+  enrich` — additive, frontmatter-only, and atomic. It rewrites
   your **source tree in place**, so commit or stash first. Preview, then apply:
 
   ```bash
   binder enrich <corpus> --dry-run --json | jq -c '.result.files[] | select(.added|length>0)'
-  binder enrich <corpus> --verified-by "" --json      # apply
+  binder enrich <corpus> --dry-run --json | jq -c '.result.verified'   # trust disclosure
+  binder enrich <corpus> --json                      # apply (safe by default)
   ```
 
-  **Read `added` in the dry-run before applying.** If it contains `verified`, a
-  configured actor (step 1) is about to stamp an attestation into your source:
+  **Check `.result.verified` in the dry-run before applying.** By default — no
+  flag, no global default (step 1) — it stays empty and **no** `verified` is
+  written. If a global default *you set* is live, the dry-run discloses exactly
+  what it will stamp, and `verified` also appears in that file's `added`:
 
   ```json
-  {"path":"topics/architecture.md","added":["generated","verified"]}
+  { "actor": "human:you", "source": "config", "num_stamped": 3,
+    "skipped": [], "num_skipped": 0 }
   ```
 
-  `--verified-by ""` suppresses that, and it is the **only** mitigation — there is
-  no MCP `enrich` tool, and nothing unstamps a `verified` block after the fact.
-  Drop the flag only when a real actor genuinely attests.
+  Add `--verified-by ""` to **suppress** a global default you cannot vouch
+  for here; it is not needed when nothing is configured. Nothing unstamps a
+  `verified` block after the fact (and there is no MCP `enrich` tool), so decide
+  before applying. binder will not co-sign a concept a *different* identity
+  already attested unless you pass an explicit `--verified-by` — it reports those
+  under `.result.verified.skipped` and leaves the prior attestation untouched.
+  Pass a real `--verified-by` only when a real actor genuinely attests.
 
   Enrich is idempotent **per actor within the same clock second only**. Stamps
   dedupe on `(by, at)`, so re-running under a wall clock appends a new stamp every
@@ -239,21 +268,28 @@ binder validate <bundle> --json | jq '.result.findings'   # [] ⇒ conformant (e
 binder review   <bundle> --json | jq '.result | {by_type, tiers, orphans, stale, unresolved}'
 ```
 
-**`convert` stamps from ambient config exactly as `enrich` does** — this is the
-CLI's `--verified-by` resolution chain, not a quirk of either command. Omitting
-`--verified-by ""` here while a configured actor is live writes `verified` into
-**every concept in the bundle**, and `review` will then report those concepts as
-`human-reviewed` rather than `unverified`. Measured on the sample corpus with a
-`.binder.yaml` carrying `verified_by: human:ghost`:
+**`convert` applies the same stamping decision as `enrich`** — the CLI's
+`--verified-by` resolution, not a quirk of either command. A **global**-config
+default *you set* that you don't suppress writes `verified` into **every concept
+in the bundle**, and `review` then reports them `human-reviewed` rather than
+`unverified`. Neither `BINDER_VERIFIED_BY` nor a repo-local `./.binder.yaml`
+stamps — both are refused and disclosed. Measured on the sample corpus
+(5 concepts) with `binder/0.3.1`:
 
-| step-5 `convert` | stamped concepts | `review` tiers |
-|---|---|---|
-| without `--verified-by ""` | 5 of 5 | `{"human-reviewed":5}` |
-| with `--verified-by ""` | 0 of 5 | `{"unverified":5}` |
+| step-5 `convert` | attester in scope | stamped | `review` tiers |
+|---|---|---|---|
+| no flag | global `~/.config/binder/config.yaml` → `verified_by: human:ghost` | 5 of 5 | `{"human-reviewed":5}` |
+| `--verified-by ""` | same global default | 0 of 5 | `{"unverified":5}` |
+| no flag | repo-local `./.binder.yaml` → `verified_by: human:ghost` | 0 of 5 (ignored) | `{"unverified":5}` |
 
-Drop the flag only when a real actor genuinely attests. Confirm with the `tiers`
-line in the `review` output below — it is the cheapest check that no claim was
-fabricated.
+The ignored repo-local case is disclosed in `.result.verified.note`
+(`ignored repo-local .binder.yaml verified_by ...`). An inherited
+`BINDER_VERIFIED_BY` behaves the same way — it is refused (0 stamped) and
+disclosed with a parallel note (`ignored BINDER_VERIFIED_BY "...": an
+environment default does not authorize stamping ...`), so only a **global**
+config `verified_by` stamps without the flag. Pass a real `--verified-by` only
+when a real actor genuinely attests. Confirm with the `tiers` line in the
+`review` output below — it is the cheapest check that no claim was fabricated.
 
 `binder validate` checks the OKF §11 hard rule that every non-reserved `.md` has
 parseable frontmatter with a **non-empty `type`** — that is §11.1 and §11.2 only.
@@ -275,15 +311,17 @@ for the raw edge export, and `binder infer <corpus> --json` to propose a
 ### 6. Trust-extraction review — the never-fabricate-trust crux
 
 Load [`references/trust-discipline.md`](references/trust-discipline.md). binder
-stamps an honest `generated: binder/<ver>` and never *invents* an actor — but it
-will stamp `verified` from a **configured** one. Hold the line binder cannot hold
-for you:
+stamps an honest `generated: binder/<ver>`, never *invents* an actor, and by
+default writes no `verified` at all — but a default **you set** in your global
+config will stamp one, and it discloses every stamp under `.result.verified`.
+Hold the line binder cannot hold for you:
 
 - No `--verified-by` unless a **real, named actor actually attests** — never
   auto-pass it, never default it to yourself/the agent.
-- No *configured* attester either. Re-check step 1 if you have changed directory
-  or environment since; pass `--verified-by ""` to suppress an actor you cannot
-  vouch for.
+- No global default stamping where it should not. Re-check step 1 if your config
+  changed since; pass `--verified-by ""` to suppress an attester you cannot vouch
+  for here. (Neither `BINDER_VERIFIED_BY` nor a repo-local `./.binder.yaml` ever
+  stamps — both are refused and disclosed.)
 - No invented provenance; enable `--source-keys`/`--map-citations` only for keys
   that carry *real* provenance.
 - Never store a credibility score/tier — tiers are **derived** (`binder review`

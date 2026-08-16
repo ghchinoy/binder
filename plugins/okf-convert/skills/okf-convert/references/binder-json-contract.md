@@ -2,7 +2,7 @@
 
 Load this when you need the exact shape of what a binder command emits, so you
 **parse structured output with `jq`** and never scrape prose. Every shape below
-was taken from real `binder/0.3.0` output.
+was taken from real `binder/0.3.1` output.
 
 ## The report envelope (`binder.report/v1`)
 
@@ -11,7 +11,7 @@ result in the same envelope:
 
 ```json
 {
-  "binder":  "binder/0.3.0",
+  "binder":  "binder/0.3.1",
   "command": "convert",
   "schema":  "binder.report/v1",
   "result":  { }
@@ -61,7 +61,12 @@ by default.
                     "raw_target": "/docs/nope.md", "text": "missing" } ],
   "num_concepts": 3, "num_links": 2, "num_resolved": 1,
   "num_unresolved": 1, "num_recovered": 0, "dry_run": true,
-  "status_notes": []                           // advisory notes about the run
+  "status_notes": [],                          // advisory notes about the run
+  "verified": {                                // trust disclosure (0.3.1+); see below
+    "actor": "", "source": "none",             // "" / "none" when nothing was stamped
+    "stamped": [], "num_stamped": 0,           // out-relative paths that got the stamp
+    "skipped": [], "num_skipped": 0            // co-signs declined (different identity)
+  }                                            // + "note" when a repo-local config was ignored
 }
 ```
 
@@ -144,19 +149,33 @@ binder lint <corpus> --json | jq '.result | {broken_links, missing_titles, schem
   "num_files": 3, "num_enriched": 3, "num_unchanged": 0, "num_skipped": 0,
   "files": [ { "path": "adr/one.md", "status": "would-enrich",
                "added": [ "generated", "title", "type" ] } ],
-  "warnings": [], "status_notes": []
+  "warnings": [], "status_notes": [],
+  "verified": {                                // trust disclosure (0.3.1+); same shape as convert
+    "actor": "", "source": "none",
+    "stamped": [], "num_stamped": 0,
+    "skipped": [], "num_skipped": 0
+  }
 }
 ```
 
 `status` ∈ `enriched | unchanged | would-enrich | skipped`. `added` is the sorted
-list of injected keys; byte-faithful.
+list of injected keys.
 
-**`added` is the trust disclosure.** If a `verified_by` is configured (env or
-config file), `added` will contain `verified` and enrich will write an attestation
-into your source. Filter for it before applying, and pass `--verified-by ""` to
-suppress:
+**`.result.verified` is the run-level trust disclosure (0.3.1+).** It is `actor:
+"", source: "none"` when nothing was stamped. A stamp is written only from an
+explicit `--verified-by` or a default *you* set — `verified_by:` in your
+**global** config. Neither `BINDER_VERIFIED_BY` (env) nor a repo-local
+`.binder.yaml` stamps; each is refused and reported in `.result.verified.note`
+instead. When a stamp is written, `actor`/`source` name it, `stamped` lists the
+paths, and the per-file `added` also gains `verified`. When a *different* identity
+already attested a concept, a non-explicit default declines to co-sign: the
+concept appears under `skipped` (`{ "path": ..., "existing_actor": ... }`) and the
+prior attestation is left untouched. Inspect the disclosure and per-file `added`
+before applying, and pass `--verified-by ""` to suppress a global default you
+cannot vouch for:
 
 ```bash
+binder enrich <corpus> --dry-run --json | jq -c '.result.verified'
 binder enrich <corpus> --dry-run --json | jq -c '.result.files[] | select(.added|length>0)'
 ```
 
@@ -182,7 +201,7 @@ binder graph <bundle> --json | jq '{n: (.nodes|length), e: (.edges|length)}'
 
 ```jsonc
 {
-  "binder": "binder/0.3.0", "command": "config", "schema": "binder.config/v1",
+  "binder": "binder/0.3.1", "command": "config", "schema": "binder.config/v1",
   "result": {
     "config_file": "/home/u/.config/binder/config.yaml",   // "" when none
     "values": {

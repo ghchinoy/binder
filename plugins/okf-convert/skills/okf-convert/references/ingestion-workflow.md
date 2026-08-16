@@ -92,19 +92,24 @@ optional fields are legal in OKF; only fix what is genuinely wrong.
 
 - **Missing required frontmatter** (`type`/`title`/`generated`): prefer
   `binder enrich`. It is frontmatter-only, additive (adds only *absent* keys),
-  byte-faithful, and atomic. It rewrites the **source tree in place**, so commit
+  and atomic. It rewrites the **source tree in place**, so commit
   or stash before running it on a git-tracked corpus. Preview first:
 
   ```bash
   binder enrich <corpus> --dry-run --json | jq -c '.result.files[] | select(.added|length>0)'
-  binder enrich <corpus> --verified-by "" --json      # apply
+  binder enrich <corpus> --dry-run --json | jq -c '.result.verified'   # trust disclosure
+  binder enrich <corpus> --json                       # apply (safe by default)
   ```
 
-  `enrich` never *invents* a verifier, but it **will** stamp `verified` from a
-  configured actor (`BINDER_VERIFIED_BY`, or `verified_by:` in a `.binder.yaml`) —
-  writing an attestation into your source that nobody typed. The dry-run discloses
-  it: `added` will contain `verified`. `--verified-by ""` suppresses it and is the
-  only mitigation, since nothing removes a stamp afterwards. See
+  `enrich` never *invents* a verifier and, as of `binder/0.3.1`, writes no
+  `verified` at all unless you pass `--verified-by` or have set a default yourself
+  in your **global** config (`verified_by:` in `~/.config/binder/config.yaml`).
+  Neither `BINDER_VERIFIED_BY` (env) nor a repo-local `.binder.yaml` stamps — both
+  are refused and disclosed in `.result.verified.note`. When a global default you
+  set is live it **does** write an attestation into your source, and the dry-run
+  discloses it: `added` will contain `verified` and `.result.verified` names the
+  actor/source. Add `--verified-by ""` to suppress a global default you cannot
+  vouch for (nothing removes a stamp afterwards). See
   [`trust-discipline.md`](trust-discipline.md).
 
   Enrich is idempotent **only within a single clock second** — stamps dedupe on
@@ -131,13 +136,16 @@ binder validate <bundle> --json | jq '.result.findings'   # [] ⇒ conformant, e
 binder review   <bundle> --json | jq '.result | {by_type, tiers, orphans, stale, unresolved}'
 ```
 
-- `--verified-by ""` on `convert` is not optional boilerplate. `convert` resolves
-  `--verified-by` through the same flag > env > config file > default chain as
-  `enrich`, so a configured actor stamps **every concept in the bundle** and
-  `review` reports them `human-reviewed` instead of `unverified`. Run all of this
-  from the directory you checked in step 1 — binder resolves `./.binder.yaml`
-  against the current directory, so a pre-flight run elsewhere protects nothing.
-  See [`trust-discipline.md`](trust-discipline.md).
+- `--verified-by ""` on `convert` is a defensive suppressor, not mandatory
+  boilerplate. `convert` resolves `--verified-by` through the same
+  flag > env > **global** config > default chain as `enrich`, but only a
+  **global**-config default you set stamps **every concept in the bundle** (and
+  `review` then reports them `human-reviewed` instead of `unverified`);
+  `BINDER_VERIFIED_BY` and a repo-local `.binder.yaml` do **not** stamp (refused
+  and disclosed), and with nothing configured the bundle is `unverified` without
+  the flag. Add `--verified-by ""` when step 1 found a global attester you cannot
+  vouch for. Run from the directory you checked in step 1 so the pre-flight sees the same
+  `config_file` binder will. See [`trust-discipline.md`](trust-discipline.md).
 - `validate` must reach `findings: []` (exit 0). That is the hard gate.
 - `review` advisories (orphans, stale, unresolved, tiers) are for *understanding*,
   not zeroing — decide per the table in §B whether each is expected.

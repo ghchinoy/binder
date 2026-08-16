@@ -17,10 +17,13 @@ import (
 // verb is covered separately here, as is the widened coverage the finding asked
 // for: the original report was about enrich, and this pins convert too.
 //
-// Whether stamping git-trackable content from ambient config is desirable is
-// UNDER OWNER REVIEW and not settled here; this test makes the current behaviour
-// visible and pinned. A future change to it is a DECISION, NOT A REGRESSION, and
-// its name is deliberately not invariant-shaped for that reason.
+// The owner has now RULED on this behaviour (it is no longer under review): a
+// GLOBAL home config verified_by IS the user's own decision to set a default, so
+// stamping from it without a flag is PERMITTED (config.PermitsStampWithoutFlag).
+// A repo-local ./.binder.yaml does NOT satisfy the exception (Option A) and is
+// covered separately. This test therefore pins settled, ruled behaviour; its name
+// stays non-invariant-shaped so a later policy change reads as a DECISION, not a
+// silent regression.
 //
 // Each verb carries an anti-vacuity control (a "_no_config" subtest): with no
 // config the same run writes NO verified stamp, so the positive assertion cannot

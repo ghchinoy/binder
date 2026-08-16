@@ -18,7 +18,7 @@ It deliberately contains three triage cases so you can exercise the full loop:
 binder convert . --dry-run --json | jq '.result | {num_concepts, num_unresolved, num_recovered}'
 binder lint . --json | jq '.result | {broken_links, missing_titles, schema_violations}'
 
-# 4. Remediate the source frontmatter (additive, byte-faithful)
+# 4. Remediate the source frontmatter (additive)
 binder enrich . --dry-run --json | jq '.result.files'
 binder enrich . --json
 

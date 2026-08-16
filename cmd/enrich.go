@@ -35,17 +35,21 @@ func newEnrichCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 			"to the markdown files under <src>, IN PLACE. It touches FRONTMATTER ONLY:\n" +
 			"unlike `binder convert`, it does no link rewriting, no index generation, no\n" +
 			"\"## Related\" section, and no tag merge — bodies are otherwise untouched.\n\n" +
-			"It is safe on a git-tracked tree: additive/never-clobber (only ABSENT keys\n" +
-			"are added), idempotent (a second run writes nothing), byte-faithful (body and\n" +
-			"unchanged pre-existing keys are preserved exactly), and atomic (temp file + rename, so\n" +
+			"It is safe on a git-tracked tree: additive/never-clobber (it adds only ABSENT\n" +
+			"keys and never overwrites an existing value; the sole exception is an authorized\n" +
+			"`verified` stamp, which is APPENDED to any existing `verified` list, never\n" +
+			"replacing a prior attestation), idempotent unless a `verified` stamp advances\n" +
+			"(a rerun writes nothing when no verifier is set or the clock is pinned via\n" +
+			"SOURCE_DATE_EPOCH; with a live verifier under a moving clock a rerun appends a\n" +
+			"fresh stamp, since stamps dedup on (by, at)), and atomic (temp file + rename, so\n" +
 			"an interrupt never corrupts a source file). Files needing no key are not\n" +
 			"written at all. Files whose frontmatter will not parse, and reserved files\n" +
 			"(index.md/log.md), are skipped and never mutated.\n\n" +
 			"Additive/never-clobber is the DEFAULT. --overwrite-keys <k1,k2,...> is an\n" +
 			"opt-in exception that REFRESHES only the named keys in place even when they\n" +
 			"already exist (e.g. --overwrite-keys status,stale_after after a new\n" +
-			"benchmark release). Every other pre-existing key, custom frontmatter, key\n" +
-			"order, and surrounding bytes stay byte-faithful; it respects --dry-run, the\n" +
+			"benchmark release). Every other pre-existing key, custom frontmatter, and\n" +
+			"key order are left in place; it respects --dry-run, the\n" +
 			"atomic write, and skip-unchanged. Trust/attestation keys (verified,\n" +
 			"verified_by, sources, generated, and the other provenance keys) are REFUSED\n" +
 			"(exit 2) — overwriting them could destroy a human attestation.\n\n" +
@@ -92,34 +96,41 @@ func newEnrichCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 			cfg.BindFlag(config.KeyDefaultType, cmd.Flags().Lookup("default-type"))
 			defaultType = cfg.GetString(config.KeyDefaultType)
 
-			// Resolve verified_by (flag > config default) and validate the effective
-			// actor with okf.IsValidActor (option (a)): an invalid value is a usage
-			// error (exit 2). Mirrors convert exactly.
+			// Resolve verified_by under the never-fabricate-trust ruling, mirroring
+			// convert exactly: explicit --verified-by always stamps; otherwise a stamp
+			// is written only when the resolved origin satisfies the user-set exception
+			// (config.PermitsStampWithoutFlag). An invalid actor is a usage error (exit 2).
 			cfg.BindFlag(config.KeyVerifiedBy, cmd.Flags().Lookup("verified-by"))
-			verifiedBy = cfg.GetString(config.KeyVerifiedBy)
-			if verifiedBy != "" && !okf.IsValidActor(verifiedBy) {
-				return config.InvalidActorError(verifiedBy)
+			vb, err := resolveVerifiedBy(cfg)
+			if err != nil {
+				return err
 			}
+			verifiedBy = vb.Actor
 
 			opts := enrich.Options{
-				Codec:         codec,
-				DefaultType:   defaultType,
-				TypeMap:       typeMap,
-				StatusMap:     statusMap,
-				StatusDefault: statusDefault,
-				StatusNotes:   statusNotes,
-				StaleAfterMap: staleAfterMap,
-				VerifiedBy:    verifiedBy,
-				OverwriteKeys: overwriteKeys,
-				Version:       Version,
-				Now:           resolveNow(),
-				DryRun:        dryRun,
+				Codec:              codec,
+				DefaultType:        defaultType,
+				TypeMap:            typeMap,
+				StatusMap:          statusMap,
+				StatusDefault:      statusDefault,
+				StatusNotes:        statusNotes,
+				StaleAfterMap:      staleAfterMap,
+				VerifiedBy:         verifiedBy,
+				VerifiedByExplicit: vb.Explicit,
+				VerifiedBySource:   vb.Source,
+				OverwriteKeys:      overwriteKeys,
+				Version:            Version,
+				Now:                resolveNow(),
+				DryRun:             dryRun,
 			}
 			rep, err := enrich.Enrich(src, opts)
 			if err != nil {
 				// Path already validated above; any failure here is IO/internal (exit 3).
 				return err
 			}
+			// Disclose a resolved-but-unhonored verifier (a BINDER_VERIFIED_BY env
+			// default or a repo-local config, neither of which authorizes stamping).
+			rep.Verified.Note = vb.Note
 
 			// The report is ALWAYS emitted before the gate signals, so the gate
 			// never suppresses output.
@@ -142,7 +153,7 @@ func newEnrichCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 	cmd.Flags().StringVar(&typeMapRaw, "type-map", "", "per-directory type overrides, e.g. \"docs=Guide,adr=Decision\"")
 	cmd.Flags().StringVar(&statusMapRaw, "status-map", "", "per-directory status, e.g. \"archive=deprecated,drafts=draft,default=active\" (set only when status absent)")
 	cmd.Flags().StringVar(&staleAfterRaw, "stale-after-map", "", "per-directory stale_after relative to now, e.g. \"07-benchmarks=+6m,legacy=+0d\" (grammar +Nd/+Nm/+Ny; set only when absent)")
-	cmd.Flags().StringVar(&verifiedBy, "verified-by", "", "actor to append as a verified stamp, e.g. \"human:ghchinoy\" or \"binder/0.3.0\" (defaults to config verified_by; "+config.ActorFormsHint+")")
+	cmd.Flags().StringVar(&verifiedBy, "verified-by", "", "actor to append as a verified stamp, e.g. \"human:ghchinoy\" or \"binder/0.3.0\"; a stamp is written ONLY when passed here, or when verified_by is set in your GLOBAL config (neither BINDER_VERIFIED_BY nor a repo-local .binder.yaml authorizes stamping; "+config.ActorFormsHint+")")
 	cmd.Flags().StringVar(&overwriteRaw, "overwrite-keys", "", "opt-in: comma-separated keys to REFRESH in place even when present, e.g. \"status,stale_after\" (default is additive/never-clobber; trust keys "+strings.Join(okf.ProtectedTrustKeys(), ", ")+" are refused)")
 	cmd.Flags().BoolVar(&canonicalizeStat, "canonicalize-status", false, "opt-in: rewrite known --status-map aliases to the OKF §5.4 vocabulary (active->stable, wip/in-progress->draft, archived/legacy->deprecated); off by default, each rewrite is reported")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "report what would be enriched without writing anything")

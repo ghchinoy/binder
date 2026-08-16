@@ -41,6 +41,17 @@ type convertInput struct {
 	Strict             bool     `json:"strict,omitempty" jsonschema:"gate semantics only; does not change the payload (parity with the CLI flag)"`
 }
 
+// mcpVerifiedBySource is the disclosure source token for an MCP-supplied
+// verified_by. MCP resolves the actor from tool input ONLY (never config), so a
+// set value is an explicit per-invocation input; unset means no stamp. It maps to
+// the same VerifiedStampReport.Source vocabulary the CLI uses.
+func mcpVerifiedBySource(actor string) string {
+	if actor == "" {
+		return "none"
+	}
+	return "input"
+}
+
 // registerConvert wires the convert tool. dry_run:true → convert.Analyze (the
 // preview; never writes); dry_run:false → convert.Convert writing to out. The
 // returned *convert.Report is byte-identical to `binder convert --json` /
@@ -104,26 +115,31 @@ func registerConvert(s *mcp.Server, d *deps) {
 		}
 
 		opts := convert.Options{
-			Codec:            d.codec,
-			DefaultType:      defaultType,
-			TypeMap:          typeMap,
-			StatusMap:        statusMap,
-			StatusDefault:    statusDefault,
-			StatusNotes:      statusVocab.Notes,
-			StaleAfterMap:    staleAfterMap,
-			VerifiedBy:       in.VerifiedBy,
-			FMRefKeys:        convert.ParseFMRefKeys(in.FMRefKeys),
-			Version:          d.version,
-			Now:              resolveNow(),
-			DryRun:           in.DryRun,
-			MapCitations:     in.MapCitations,
-			SourceKeys:       convert.ParseFMRefKeys(in.SourceKeys),
-			MapDraft:         in.MapDraft,
-			WorkspaceRoot:    in.WorkspaceRoot,
-			ExternalRoots:    in.ExternalRoot,
-			GroupByType:      in.GroupByType,
-			IncludeBacklinks: in.IncludeBacklinks,
-			IncludeGraph:     in.IncludeGraph,
+			Codec:         d.codec,
+			DefaultType:   defaultType,
+			TypeMap:       typeMap,
+			StatusMap:     statusMap,
+			StatusDefault: statusDefault,
+			StatusNotes:   statusVocab.Notes,
+			StaleAfterMap: staleAfterMap,
+			VerifiedBy:    in.VerifiedBy,
+			// MCP resolves verified_by from tool input ONLY and never loads config
+			// (unchanged). A passed actor is therefore an EXPLICIT per-invocation act,
+			// like a --verified-by flag: it stamps and may co-sign (Residual A exempt).
+			VerifiedByExplicit: in.VerifiedBy != "",
+			VerifiedBySource:   mcpVerifiedBySource(in.VerifiedBy),
+			FMRefKeys:          convert.ParseFMRefKeys(in.FMRefKeys),
+			Version:            d.version,
+			Now:                resolveNow(),
+			DryRun:             in.DryRun,
+			MapCitations:       in.MapCitations,
+			SourceKeys:         convert.ParseFMRefKeys(in.SourceKeys),
+			MapDraft:           in.MapDraft,
+			WorkspaceRoot:      in.WorkspaceRoot,
+			ExternalRoots:      in.ExternalRoot,
+			GroupByType:        in.GroupByType,
+			IncludeBacklinks:   in.IncludeBacklinks,
+			IncludeGraph:       in.IncludeGraph,
 		}
 
 		report, err := convert.Convert(in.Src, in.Out, opts)

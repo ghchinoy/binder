@@ -50,6 +50,11 @@ const (
 // environment variable name, e.g. verified_by → BINDER_VERIFIED_BY.
 const EnvPrefix = "BINDER"
 
+// LocalConfigName is the repo-local config file, consulted FIRST in the search
+// order (findConfigFile). Per the owner ruling (Option A) a verified_by set here
+// does NOT satisfy the user-set stamping exception — see PermitsStampWithoutFlag.
+const LocalConfigName = ".binder.yaml"
+
 // defaultType is the built-in default for the default_type key; it mirrors the
 // convert command's historical --default-type default so behavior is unchanged.
 const defaultType = "Note"
@@ -176,6 +181,99 @@ func (c *Config) Source(key string) string {
 
 func envKey(key string) string {
 	return EnvPrefix + "_" + strings.ToUpper(key)
+}
+
+// VerifiedByOrigin classifies where the resolved verified_by value came from, at
+// the granularity the never-fabricate-trust stamping decision needs. Source()
+// collapses a repo-local .binder.yaml and a global user config into "file"; the
+// user-set stamping exception (PermitsStampWithoutFlag) must tell them apart, so
+// this is a separate, finer classification used only by the stamp gate.
+type VerifiedByOrigin int
+
+const (
+	// OriginNone: no verifier was determined (default/empty).
+	OriginNone VerifiedByOrigin = iota
+	// OriginFlag: an explicit --verified-by on THIS invocation.
+	OriginFlag
+	// OriginEnv: the BINDER_VERIFIED_BY environment variable.
+	OriginEnv
+	// OriginRepoConfig: a repo-local ./.binder.yaml.
+	OriginRepoConfig
+	// OriginGlobalConfig: the global user config (XDG/HOME).
+	OriginGlobalConfig
+)
+
+// String renders the origin for trust disclosure (Residual B): the token that
+// appears as the "source" of a written stamp. Repo-local config never authorizes
+// a stamp on its own, so it never surfaces here as a write source.
+func (o VerifiedByOrigin) String() string {
+	switch o {
+	case OriginFlag:
+		return "flag"
+	case OriginEnv:
+		return "env"
+	case OriginGlobalConfig, OriginRepoConfig:
+		return "config"
+	default:
+		return "none"
+	}
+}
+
+// VerifiedByOrigin reports the origin of the resolved verified_by actor, using
+// the same precedence viper applies (flag > env > file > default) but keeping the
+// repo-local vs global config distinction the stamp gate depends on. It returns
+// OriginNone when the resolved value is empty.
+func (c *Config) VerifiedByOrigin() VerifiedByOrigin {
+	if c.v == nil || strings.TrimSpace(c.v.GetString(KeyVerifiedBy)) == "" {
+		return OriginNone
+	}
+	if f, ok := c.boundFlags[KeyVerifiedBy]; ok && f != nil && f.Changed {
+		return OriginFlag
+	}
+	if _, ok := os.LookupEnv(envKey(KeyVerifiedBy)); ok {
+		return OriginEnv
+	}
+	if c.v.InConfig(KeyVerifiedBy) {
+		if c.configFile == filepath.Join(".", LocalConfigName) {
+			return OriginRepoConfig
+		}
+		return OriginGlobalConfig
+	}
+	return OriginNone
+}
+
+// PermitsStampWithoutFlag is THE single predicate for the owner's user-set
+// stamping exception: does a verified_by resolved from this origin count as the
+// user having decided on a default, permitting a `verified` stamp WITHOUT a
+// per-invocation --verified-by?
+//
+// This is deliberately the one place the exception is decided, so implementing
+// (or later revising) the ruling is a one-line change here rather than logic
+// scattered across the command tree. The reviewer checks the ruling here.
+//
+// OWNER RULING (was HELD, decided 2026-08-16 — Option A):
+//   - OriginGlobalConfig → YES. A config in the user's OWN home directory
+//     evidences a decision by THIS user.
+//   - OriginRepoConfig   → NO. A repo-local ./.binder.yaml can arrive inside a
+//     git clone somebody else authored, so it cannot evidence a decision by this
+//     user. It is treated the same as no config: no flag, no stamp. Flip THIS
+//     case to change that answer.
+//   - OriginEnv → NO. The owner ruled that BINDER_VERIFIED_BY does NOT authorize
+//     a stamp without an explicit --verified-by — an inherited environment export
+//     is not a per-invocation decision to attest, and it gets the same treatment
+//     as a repo-local file. Flip THIS case to change that answer.
+//
+// OriginFlag is handled by the caller (an explicit flag always stamps) and is not
+// part of the "without flag" question, so it returns false here.
+func PermitsStampWithoutFlag(o VerifiedByOrigin) bool {
+	switch o {
+	case OriginGlobalConfig:
+		return true
+	default:
+		// OriginEnv (owner ruling), OriginRepoConfig (Option A), OriginFlag,
+		// OriginNone.
+		return false
+	}
 }
 
 // ResolvedValue is one key's resolved value plus its source, for `binder config`.
