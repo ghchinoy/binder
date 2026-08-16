@@ -26,7 +26,7 @@ func newLintCmd(codec okf.Codec) *cobra.Command {
 			"nothing) and reports broken links (incl. #anchors), missing titles, orphan\n" +
 			"concepts, entrypoints, stale concepts, and schema violations (missing\n" +
 			"type:, invalid frontmatter). A concept with no inbound links is an\n" +
-			"ENTRYPOINT when it links out (or is a recognized root README.md/index.md,\n" +
+			"ENTRYPOINT when it links out (or is a recognized root README.md,\n" +
 			"or is named via --entrypoint) and a true ORPHAN only when it has no inbound\n" +
 			"AND no outbound links. Unlike `binder review`/`binder validate`, which read\n" +
 			"an emitted bundle, lint sees the corpus as authored — a missing title or\n" +
@@ -88,6 +88,6 @@ func newLintCmd(codec okf.Codec) *cobra.Command {
 	cmd.Flags().StringVar(&today, "today", "", "date (YYYY-MM-DD) used for staleness; defaults to now")
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "emit the lint report as deterministic JSON (schema "+clijson.SchemaVersion+") instead of prose")
 	cmd.Flags().BoolVar(&strict, "strict", false, "gate (exit 1) when any lint finding is present; without it lint never gates (never-reject)")
-	cmd.Flags().StringSliceVar(&entrypoints, "entrypoint", nil, "concept id or path to treat as an entrypoint, not an orphan (repeatable); root README.md and index.md are recognized automatically")
+	cmd.Flags().StringSliceVar(&entrypoints, "entrypoint", nil, "concept id or path to treat as an entrypoint, not an orphan (repeatable); root README.md is recognized automatically")
 	return cmd
 }

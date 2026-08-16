@@ -31,7 +31,7 @@ type ConceptView struct {
 	Orphan   bool     `json:"orphan"`
 	// Entrypoint is true when the concept has no inbound resolved edge but is a
 	// legitimate root rather than a true orphan: it has outbound resolved edges, or
-	// it is a recognized root entrypoint (README.md/index.md), or it was designated
+	// it is a recognized root entrypoint (README.md), or it was designated
 	// via --entrypoint. Orphan and Entrypoint are mutually exclusive; both require
 	// zero inbound edges (issue #24).
 	Entrypoint bool `json:"entrypoint"`
@@ -47,7 +47,7 @@ type Report struct {
 	Orphans     []string         `json:"orphans"`
 	// Entrypoints are concepts with no inbound resolved edge that are NOT true
 	// orphans (issue #24): they have outbound resolved edges, or are a recognized
-	// root entrypoint (README.md/index.md), or were designated via --entrypoint. A
+	// root entrypoint (README.md), or were designated via --entrypoint. A
 	// root README that indexes the corpus lands here, not in Orphans. Advisory only.
 	Entrypoints []string `json:"entrypoints"`
 	Stale       []string `json:"stale"`
@@ -67,7 +67,7 @@ type Report struct {
 // (YYYY-MM-DD, used for staleness). Node roles are classified by inbound/outbound
 // resolved edges (issue #24): a concept with no inbound AND no outbound edge is a
 // true ORPHAN; a concept with no inbound but with outbound edges — or one that is
-// a recognized root entrypoint (README.md/index.md) or was designated via
+// a recognized root entrypoint (README.md) or was designated via
 // `entrypoints` — is an ENTRYPOINT, not an orphan. Both are reported for the user
 // to wire up or accept, never removed; the classification is advisory only and
 // never gates. `entrypoints` designates additional concepts (by id or path) as
@@ -132,7 +132,7 @@ func Review(b *okf.Bundle, today string, entrypoints []string) *Report {
 		stale := okf.IsStale(c, today)
 		// Node role (issue #24): only a concept with no inbound edge is ever an
 		// orphan or an entrypoint. Among those, it is an ENTRYPOINT when it links
-		// outward, is a recognized root (README.md/index.md), or was designated;
+		// outward, is a recognized root (README.md), or was designated;
 		// otherwise it is a TRUE ORPHAN (no inbound AND no outbound). The two are
 		// mutually exclusive.
 		noInbound := inbound[c.ID] == 0
