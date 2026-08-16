@@ -1336,17 +1336,18 @@ identity.
 *prefer* as the node key when a concept carries it. It is a read preference, not a
 rename — nothing is written. The sample bundle's concepts carry a `slug` key:
 
-```console
-# default: path identity
-$ ... "arguments":{"bundle":"docs/examples/graph-sample/orders-kb"} ...
-{"strategy":"path","key":""}
+Each line below is a `list_graphs` call made with the wrapper above, its payload
+filtered with `jq '.result.graphs[0].node_key'`:
 
-# id_key honored because the frontmatter key resolves
-$ ... "arguments":{"bundle":"docs/examples/graph-sample/orders-kb","id_key":"slug"} ...
-{"strategy":"frontmatter","key":"slug"}
+```text
+arguments: {"bundle":"docs/examples/graph-sample/orders-kb"}
+node_key:  {"strategy":"path","key":""}                     # default: path identity
+
+arguments: {"bundle":"docs/examples/graph-sample/orders-kb","id_key":"slug"}
+node_key:  {"strategy":"frontmatter","key":"slug"}          # id_key resolves, so honored
 ```
 
-(Filtering the tool payload with `jq '.result.graphs[0].node_key'`.) `strategy` is
+`strategy` is
 `frontmatter` only when the key resolves on at least one concept; otherwise it stays
 `path` with the key still echoed. The value is never invented — a concept missing the
 key keeps its path id.
@@ -1489,12 +1490,21 @@ finding):
 
 Node result sets are capped at **1000**. On overflow the results are **sorted, then
 truncated** to the cap and the payload flags `truncated: true` — this is not an
-error. Against a 1200-node corpus, a `lookup` by label returns the first 1000 ids in
-sort order:
+error. To see it, build a corpus larger than the cap:
 
-```console
-$ ... "op":"lookup","label":"Item" ...   # filtered with jq
-{"count":1000,"truncated":true,"first":"items/item-00000","last":"items/item-00999"}
+```bash
+mkdir -p /tmp/big/items
+for i in $(seq 0 1199); do n=$(printf '%05d' "$i"); \
+  printf -- '---\ntype: Item\ntitle: Item %s\n---\n# Item %s\n' "$n" "$n" > "/tmp/big/items/item-$n.md"; done
+binder convert /tmp/big -o /tmp/bigbundle
+```
+
+A `lookup` by label against it returns the first 1000 ids in sort order. The call and
+its payload, filtered to a summary with `jq`:
+
+```text
+arguments: {"bundle":"/tmp/bigbundle","op":"lookup","label":"Item"}
+result:    {"count":1000,"truncated":true,"first":"items/item-00000","last":"items/item-00999"}
 ```
 
 #### Empty results are answers, not errors
