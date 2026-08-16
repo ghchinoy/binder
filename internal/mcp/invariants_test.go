@@ -1,6 +1,12 @@
 package mcp
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -61,6 +67,65 @@ func TestDeterminism_SourceDateEpoch(t *testing.T) {
 	want := cliJSON(t, "review", goldenBundle, "--json")
 	if got != want {
 		t.Fatalf("review payload not deterministic under SOURCE_DATE_EPOCH\n--- MCP ---\n%s\n--- CLI ---\n%s", got, want)
+	}
+}
+
+// fingerprintDir returns a stable hash over every file's relative path and
+// bytes under root, so any write/mutation to the bundle changes it.
+func fingerprintDir(t *testing.T, root string) string {
+	t.Helper()
+	h := sha256.New()
+	var paths []string
+	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.IsDir() {
+			paths = append(paths, p)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk %s: %v", root, err)
+	}
+	sort.Strings(paths)
+	for _, p := range paths {
+		rel, _ := filepath.Rel(root, p)
+		h.Write([]byte(rel))
+		h.Write([]byte{0})
+		b, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatalf("read %s: %v", p, err)
+		}
+		h.Write(b)
+		h.Write([]byte{0})
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// TestListGraphsReadOnly is the read-only invariant gate (design §C.3 #2): a
+// list_graphs call — including one that passes an id_key, the only new authoring
+// surface — leaves the bundle bytes byte-for-byte unchanged. It never writes to
+// the bundle, never mutates frontmatter, and never mints an id.
+func TestListGraphsReadOnly(t *testing.T) {
+	before := fingerprintDir(t, goldenBundle)
+
+	// Plain call.
+	if res := callTool(t, "list_graphs", map[string]any{"bundle": goldenBundle, "today": fixedToday}); res.IsError {
+		t.Fatalf("list_graphs must not be a tool error on a conformant bundle: %s", toolText(t, res))
+	}
+	// Call with an id_key (the identity/authoring surface) — still read-only: an
+	// absent key must NOT be stamped into any concept's frontmatter.
+	if res := callTool(t, "list_graphs", map[string]any{
+		"bundle": goldenBundle,
+		"today":  fixedToday,
+		"id_key": "concept-id",
+	}); res.IsError {
+		t.Fatalf("list_graphs with id_key must not be a tool error: %s", toolText(t, res))
+	}
+
+	if after := fingerprintDir(t, goldenBundle); after != before {
+		t.Fatalf("bundle bytes changed after list_graphs (read-only invariant violated)\nbefore=%s\nafter =%s", before, after)
 	}
 }
 
