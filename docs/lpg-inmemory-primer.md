@@ -464,6 +464,13 @@ appendix (§7).
 | Label lookup, **selective** (10 of 100k match) | **319.6 ns/op** | 484,456 ns/op | **~1,500×** |
 | Label lookup, **non-selective** (~20k of 100k match) | 1,176,413 ns/op | 1,584,779 ns/op | **~1.35×** |
 
+> **Reproducibility note.** The **selective** row above (319.6 ns/op, ~1,500×) is
+> *not* reproducible from the harness as printed in §7. That listing builds only the
+> evenly distributed labels `L0`–`L4` and benchmarks `NodesByLabel("L0")` — which is
+> the *non-selective* row. §7's closing paragraph describes the rare-label setup this
+> selective row needs, but the code that produced it is not shown on this page, so
+> running the printed harness alone will not regenerate this one row.
+
 Two conclusions follow, and the second is the one most often missed:
 
 1. **Adjacency indexing is not optional at scale.** One neighbor lookup over
@@ -642,6 +649,14 @@ func (g *Graph) NodesByLabelNaive(label string) []*Node {
 	return res
 }
 ```
+
+> **Note — these snippets are illustrative, not a complete program.** They are
+> deliberately elided for readability rather than a single package you can build.
+> In particular the naive baselines above iterate `g.edgeList` and `g.nodeList` —
+> flat-slice fields that the `Graph` struct in §2.2 does not declare (it keeps only
+> the maps `nodes`, `edges`, `out`, `in`, `byLabel`) — so this listing will not
+> `go build` as printed. Read it as a faithful sketch of the approach, not code to
+> paste and run.
 
 The selectivity result (§4, row 2 vs row 3) comes from adding a rare label `RARE`
 to just 10 of the 100k nodes and benchmarking `NodesByLabel("RARE")` (10 matches,
