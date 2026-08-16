@@ -46,6 +46,48 @@ func IsBrokenConceptRef(raw string) bool {
 	return strings.HasSuffix(strings.ToLower(strings.TrimSpace(t)), ".md")
 }
 
+// rootEntrypointNames are the conventional corpus-root entrypoint documents: a
+// document that links OUTWARD into the rest of the corpus rather than being linked
+// into. They are auto-recognized as entrypoints (not orphans) by `binder review`
+// and `binder lint` even when they have no inbound edges (issue #24). Kept here,
+// in the review/lint-shared package, so the two surfaces can never drift on what
+// counts as a root entrypoint — the same anti-drift rationale as the predicates
+// above.
+var rootEntrypointNames = map[string]bool{"readme.md": true, "index.md": true}
+
+// IsRootEntrypoint reports whether relPath is a conventional corpus-root
+// entrypoint document (README.md or index.md at the corpus root). Matching is
+// case-insensitive on the file name and requires the file to sit at the root (no
+// directory component), so a nested docs/README.md is NOT auto-recognized — only
+// the corpus root README/index serve as the primary index (issue #24).
+func IsRootEntrypoint(relPath string) bool {
+	rel := strings.TrimSpace(relPath)
+	if rel == "" || strings.ContainsAny(rel, "/\\") {
+		return false
+	}
+	return rootEntrypointNames[strings.ToLower(rel)]
+}
+
+// EntrypointSet normalizes user-designated entrypoint identifiers into a set keyed
+// by concept id. Each entry may be given as a concept id ("docs/intro") or as a
+// bundle-relative path ("docs/intro.md"); a trailing ".md" (any case) and
+// surrounding whitespace are stripped so either form matches a concept's ID. Empty
+// entries are ignored. It is advisory input only — it never mints an identity,
+// merely reclassifies an existing concept from orphan to entrypoint.
+func EntrypointSet(designations []string) map[string]bool {
+	set := make(map[string]bool, len(designations))
+	for _, d := range designations {
+		id := strings.TrimSpace(d)
+		if len(id) >= 3 && strings.EqualFold(id[len(id)-3:], ".md") {
+			id = id[:len(id)-3]
+		}
+		if id != "" {
+			set[id] = true
+		}
+	}
+	return set
+}
+
 // ResidualWikilinks returns the targets of any [[...]] / [[...|alias]] wikilinks
 // left in body, excluding those inside code spans/blocks (matching the
 // converter's code-aware handling). By construction these are unresolved

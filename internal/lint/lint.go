@@ -39,7 +39,8 @@ type Report struct {
 	NumConcepts      int       `json:"num_concepts"`      // concepts discovered
 	BrokenLinks      []Finding `json:"broken_links"`      // raw target (incl. #anchor) naming no concept/heading
 	MissingTitles    []string  `json:"missing_titles"`    // concept ids with no authored title: and no first H1
-	Orphans          []string  `json:"orphans"`           // 0 inbound AND 0 outbound resolved edges
+	Orphans          []string  `json:"orphans"`           // 0 inbound AND 0 outbound resolved edges (true orphans)
+	Entrypoints      []string  `json:"entrypoints"`       // 0 inbound but outbound/recognized-root/designated (issue #24)
 	Stale            []string  `json:"stale"`             // okf.IsStale as of today
 	SchemaViolations []Finding `json:"schema_violations"` // Detail: "missing type" | "invalid frontmatter: <err>"
 }
@@ -47,12 +48,13 @@ type Report struct {
 // Lint computes the corpus health report from the resolved concepts and source
 // facts convert.Analyze produced, as of today (YYYY-MM-DD, for staleness). It is
 // read-only and deterministic. The caller sets Report.Src.
-func Lint(concepts []*okf.Concept, facts []convert.SourceFacts, today string) *Report {
+func Lint(concepts []*okf.Concept, facts []convert.SourceFacts, today string, entrypoints []string) *Report {
 	r := &Report{
 		NumConcepts:      len(concepts),
 		BrokenLinks:      []Finding{},
 		MissingTitles:    []string{},
 		Orphans:          []string{},
+		Entrypoints:      []string{},
 		Stale:            []string{},
 		SchemaViolations: []Finding{},
 	}
@@ -151,11 +153,13 @@ func Lint(concepts []*okf.Concept, facts []convert.SourceFacts, today string) *R
 		}
 	}
 
-	// Check 3 — orphans: a concept with 0 inbound AND 0 outbound resolved edges (a
-	// truly disconnected node). Edges come from the SINGLE resolved-edge definition
-	// graph.EdgesFromConcepts — the same edges `binder graph` and the #9 catalog
-	// see — so lint never forks resolution. This both-direction rule is stricter
-	// than review's inbound-only orphan, which is intended (design §5).
+	// Check 3 — node roles (issue #24). Edges come from the SINGLE resolved-edge
+	// definition graph.EdgesFromConcepts — the same edges `binder graph` and the #9
+	// catalog see — so lint never forks resolution. A concept with no inbound edge
+	// is either a true ORPHAN (also no outbound) or an ENTRYPOINT (has outbound, or
+	// is a recognized root README.md/index.md, or was designated via --entrypoint).
+	// review now applies the identical rule, so the two surfaces agree — the earlier
+	// inbound-only/both-direction divergence is retired. Both are advisory.
 	edges := graph.EdgesFromConcepts(concepts)
 	inbound := make(map[string]int, len(concepts))
 	outbound := make(map[string]int, len(concepts))
@@ -163,12 +167,17 @@ func Lint(concepts []*okf.Concept, facts []convert.SourceFacts, today string) *R
 		outbound[e.From]++
 		inbound[e.To]++
 	}
+	designated := linkcheck.EntrypointSet(entrypoints)
 
 	// Check 4 — stale: okf.IsStale as of today. today is deterministic (the
 	// command derives it from --today or SOURCE_DATE_EPOCH). Inherently advisory.
 	for _, c := range concepts {
-		if inbound[c.ID] == 0 && outbound[c.ID] == 0 {
-			r.Orphans = append(r.Orphans, c.ID)
+		if inbound[c.ID] == 0 {
+			if outbound[c.ID] > 0 || designated[c.ID] || linkcheck.IsRootEntrypoint(c.RelPath) {
+				r.Entrypoints = append(r.Entrypoints, c.ID)
+			} else {
+				r.Orphans = append(r.Orphans, c.ID)
+			}
 		}
 		if okf.IsStale(c, today) {
 			r.Stale = append(r.Stale, c.ID)
@@ -195,6 +204,7 @@ func (r *Report) sortAll() {
 	sortFindings(r.SchemaViolations)
 	sort.Strings(r.MissingTitles)
 	sort.Strings(r.Orphans)
+	sort.Strings(r.Entrypoints)
 	sort.Strings(r.Stale)
 }
 
@@ -233,7 +243,11 @@ func (r *Report) String() string {
 	for _, f := range r.SchemaViolations {
 		fmt.Fprintf(&b, "    %s: %s\n", f.Concept, f.Detail)
 	}
-	fmt.Fprintf(&b, "  orphans: %d\n", len(r.Orphans))
+	fmt.Fprintf(&b, "  entrypoints (outbound, no inbound): %d\n", len(r.Entrypoints))
+	for _, id := range r.Entrypoints {
+		fmt.Fprintf(&b, "    %s\n", id)
+	}
+	fmt.Fprintf(&b, "  orphans (no inbound or outbound links): %d\n", len(r.Orphans))
 	for _, id := range r.Orphans {
 		fmt.Fprintf(&b, "    %s\n", id)
 	}

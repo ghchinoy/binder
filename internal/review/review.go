@@ -29,6 +29,12 @@ type ConceptView struct {
 	Stale    bool     `json:"stale"`
 	Attested bool     `json:"attested"`
 	Orphan   bool     `json:"orphan"`
+	// Entrypoint is true when the concept has no inbound resolved edge but is a
+	// legitimate root rather than a true orphan: it has outbound resolved edges, or
+	// it is a recognized root entrypoint (README.md/index.md), or it was designated
+	// via --entrypoint. Orphan and Entrypoint are mutually exclusive; both require
+	// zero inbound edges (issue #24).
+	Entrypoint bool `json:"entrypoint"`
 }
 
 // Report is the outcome of reviewing a bundle.
@@ -39,9 +45,14 @@ type Report struct {
 	ByType      map[string]int   `json:"by_type"`
 	Tiers       map[okf.Tier]int `json:"tiers"`
 	Orphans     []string         `json:"orphans"`
-	Stale       []string         `json:"stale"`
-	Attested    []string         `json:"attested"`
-	Unresolved  []Edge           `json:"unresolved"`
+	// Entrypoints are concepts with no inbound resolved edge that are NOT true
+	// orphans (issue #24): they have outbound resolved edges, or are a recognized
+	// root entrypoint (README.md/index.md), or were designated via --entrypoint. A
+	// root README that indexes the corpus lands here, not in Orphans. Advisory only.
+	Entrypoints []string `json:"entrypoints"`
+	Stale       []string `json:"stale"`
+	Attested    []string `json:"attested"`
+	Unresolved  []Edge   `json:"unresolved"`
 	// UnparsedFrontmatter lists concepts carrying the binder recovery marker
 	// (okf.RecoveryMarkerKey) — a file whose original frontmatter would not parse
 	// and was preserved as body by `binder convert` (never-reject, design-v2 §4.6).
@@ -53,10 +64,15 @@ type Report struct {
 }
 
 // Review computes the review report for a loaded bundle as of `today`
-// (YYYY-MM-DD, used for staleness). An orphan is a concept that no other concept
-// links to (no inbound resolved edge); it is reported for the user to wire up or
-// accept, never removed.
-func Review(b *okf.Bundle, today string) *Report {
+// (YYYY-MM-DD, used for staleness). Node roles are classified by inbound/outbound
+// resolved edges (issue #24): a concept with no inbound AND no outbound edge is a
+// true ORPHAN; a concept with no inbound but with outbound edges — or one that is
+// a recognized root entrypoint (README.md/index.md) or was designated via
+// `entrypoints` — is an ENTRYPOINT, not an orphan. Both are reported for the user
+// to wire up or accept, never removed; the classification is advisory only and
+// never gates. `entrypoints` designates additional concepts (by id or path) as
+// entrypoints, over and above the general rule and the recognized roots.
+func Review(b *okf.Bundle, today string, entrypoints []string) *Report {
 	// Slices are initialized so an empty review serializes to [] not null (#13).
 	r := &Report{
 		Root:                b.Root,
@@ -65,6 +81,7 @@ func Review(b *okf.Bundle, today string) *Report {
 		ByType:              map[string]int{},
 		Tiers:               map[okf.Tier]int{},
 		Orphans:             []string{},
+		Entrypoints:         []string{},
 		Stale:               []string{},
 		Attested:            []string{},
 		Unresolved:          []Edge{},
@@ -82,14 +99,22 @@ func Review(b *okf.Bundle, today string) *Report {
 		exists[c.ID] = true
 	}
 
+	// Inbound and outbound resolved-edge counts drive the orphan/entrypoint split.
+	// An edge counts only when it is resolved, names a concept that exists, and is
+	// not a self-loop — the same live-edge test used for orphans before #24.
 	inbound := map[string]int{}
+	outbound := map[string]int{}
 	for _, c := range b.Concepts {
 		for _, l := range c.Links {
 			if l.Resolved && exists[l.TargetID] && l.TargetID != c.ID {
 				inbound[l.TargetID]++
+				outbound[c.ID]++
 			}
 		}
 	}
+	// Concepts the user designated as entrypoints (by id or path), in addition to
+	// the general rule and the recognized root entrypoints.
+	designated := linkcheck.EntrypointSet(entrypoints)
 
 	concepts := append([]*okf.Concept(nil), b.Concepts...)
 	sort.Slice(concepts, func(i, j int) bool { return concepts[i].ID < concepts[j].ID })
@@ -105,14 +130,24 @@ func Review(b *okf.Bundle, today string) *Report {
 		r.Tiers[tier]++
 
 		stale := okf.IsStale(c, today)
-		orphan := inbound[c.ID] == 0
+		// Node role (issue #24): only a concept with no inbound edge is ever an
+		// orphan or an entrypoint. Among those, it is an ENTRYPOINT when it links
+		// outward, is a recognized root (README.md/index.md), or was designated;
+		// otherwise it is a TRUE ORPHAN (no inbound AND no outbound). The two are
+		// mutually exclusive.
+		noInbound := inbound[c.ID] == 0
+		entrypoint := noInbound && (outbound[c.ID] > 0 || designated[c.ID] || linkcheck.IsRootEntrypoint(c.RelPath))
+		orphan := noInbound && !entrypoint
 
 		r.Concepts = append(r.Concepts, ConceptView{
 			ID: c.ID, Type: c.Type, Tier: tier,
-			Stale: stale, Attested: c.Trust.Attested, Orphan: orphan,
+			Stale: stale, Attested: c.Trust.Attested, Orphan: orphan, Entrypoint: entrypoint,
 		})
 		if orphan {
 			r.Orphans = append(r.Orphans, c.ID)
+		}
+		if entrypoint {
+			r.Entrypoints = append(r.Entrypoints, c.ID)
 		}
 		if stale {
 			r.Stale = append(r.Stale, c.ID)
@@ -189,7 +224,11 @@ func (r *Report) String() string {
 	for _, id := range r.UnparsedFrontmatter {
 		fmt.Fprintf(&b, "    %s\n", id)
 	}
-	fmt.Fprintf(&b, "  orphans (no inbound links): %d\n", len(r.Orphans))
+	fmt.Fprintf(&b, "  entrypoints (outbound, no inbound): %d\n", len(r.Entrypoints))
+	for _, id := range r.Entrypoints {
+		fmt.Fprintf(&b, "    %s\n", id)
+	}
+	fmt.Fprintf(&b, "  orphans (no inbound or outbound links): %d\n", len(r.Orphans))
 	for _, id := range r.Orphans {
 		fmt.Fprintf(&b, "    %s\n", id)
 	}

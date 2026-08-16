@@ -64,6 +64,60 @@ func TestReviewStrict(t *testing.T) {
 	}
 }
 
+// TestReviewEntrypointDoesNotGateStrict: an entrypoint (issue #24) is advisory
+// signal, not a gating finding — a corpus whose only "no inbound" node is a root
+// README that links out passes --strict, whereas a true orphan still gates.
+func TestReviewEntrypointDoesNotGateStrict(t *testing.T) {
+	t.Setenv("SOURCE_DATE_EPOCH", "1700000000")
+
+	// README links out to guide; guide is linked-to. No orphans, so nothing gates.
+	entrypoint := writeTree(t, map[string]string{
+		"README.md": "---\ntype: Note\ntitle: Home\n---\n# Home\n\nSee the [guide](guide.md).\n",
+		"guide.md":  "---\ntype: Guide\ntitle: Guide\n---\n# Guide\n",
+	})
+	if _, code := runCLI(t, "review", entrypoint); code != clijson.ExitSuccess {
+		t.Errorf("entrypoint corpus bare: exit = %d, want 0", code)
+	}
+	if _, code := runCLI(t, "review", entrypoint, "--strict"); code != clijson.ExitSuccess {
+		t.Errorf("entrypoint must not gate under --strict: exit = %d, want 0", code)
+	}
+
+	// A true orphan (no inbound AND no outbound) still gates under --strict.
+	orphan := writeTree(t, map[string]string{
+		"lonely.md": "---\ntype: Note\ntitle: Lonely\n---\n# Lonely\n",
+	})
+	if _, code := runCLI(t, "review", orphan, "--strict"); code != clijson.ExitFindings {
+		t.Errorf("true orphan must still gate under --strict: exit = %d, want 1", code)
+	}
+}
+
+// TestLintEntrypointDoesNotGateStrict: the same never-reject posture for `binder
+// lint` over a SOURCE corpus.
+func TestLintEntrypointDoesNotGateStrict(t *testing.T) {
+	t.Setenv("SOURCE_DATE_EPOCH", "1700000000")
+
+	entrypoint := writeTree(t, map[string]string{
+		"README.md": "---\ntype: Note\ntitle: Home\n---\n# Home\n\nSee the [guide](guide.md).\n",
+		"guide.md":  "---\ntype: Guide\ntitle: Guide\n---\n# Guide\n",
+	})
+	if _, code := runCLI(t, "lint", entrypoint, "--strict"); code != clijson.ExitSuccess {
+		t.Errorf("entrypoint corpus must not gate lint --strict: exit = %d, want 0", code)
+	}
+
+	// A true orphan still gates.
+	orphan := writeTree(t, map[string]string{
+		"lonely.md": "---\ntype: Note\ntitle: Lonely\n---\n# Lonely\n",
+	})
+	if _, code := runCLI(t, "lint", orphan, "--strict"); code != clijson.ExitFindings {
+		t.Errorf("true orphan must still gate lint --strict: exit = %d, want 1", code)
+	}
+
+	// The designation flag turns that orphan into a non-gating entrypoint.
+	if _, code := runCLI(t, "lint", orphan, "--strict", "--entrypoint", "lonely"); code != clijson.ExitSuccess {
+		t.Errorf("designated entrypoint must not gate lint --strict: exit = %d, want 0", code)
+	}
+}
+
 // TestConvertStrict: unresolved links gate only under --strict.
 func TestConvertStrict(t *testing.T) {
 	t.Setenv("SOURCE_DATE_EPOCH", "1700000000")

@@ -11,9 +11,10 @@ import (
 
 // reviewInput mirrors `binder review` flags 1:1 (design §Tool surface).
 type reviewInput struct {
-	Bundle string `json:"bundle" jsonschema:"path to the OKF bundle directory to review"`
-	Today  string `json:"today,omitempty" jsonschema:"date (YYYY-MM-DD) used for staleness; defaults to now (honors SOURCE_DATE_EPOCH)"`
-	Strict bool   `json:"strict,omitempty" jsonschema:"gate semantics only; does not change the payload (parity with the CLI flag)"`
+	Bundle      string   `json:"bundle" jsonschema:"path to the OKF bundle directory to review"`
+	Today       string   `json:"today,omitempty" jsonschema:"date (YYYY-MM-DD) used for staleness; defaults to now (honors SOURCE_DATE_EPOCH)"`
+	Strict      bool     `json:"strict,omitempty" jsonschema:"gate semantics only; does not change the payload (parity with the CLI flag)"`
+	Entrypoints []string `json:"entrypoints,omitempty" jsonschema:"concept ids or paths to treat as entrypoints, not orphans (parity with --entrypoint); root README.md and index.md are recognized automatically"`
 }
 
 // registerReview wires the review tool: it loads the bundle and calls the
@@ -31,7 +32,7 @@ func registerReview(s *mcp.Server, d *deps) {
 		if err != nil {
 			return nil, nil, err
 		}
-		rep := review.Review(b, todayOrNow(in.Today))
+		rep := review.Review(b, todayOrNow(in.Today), in.Entrypoints)
 		return d.encode("review", rep)
 	})
 }

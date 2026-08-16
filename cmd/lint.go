@@ -14,21 +14,25 @@ import (
 
 func newLintCmd(codec okf.Codec) *cobra.Command {
 	var (
-		today   string
-		jsonOut bool
-		strict  bool
+		today       string
+		jsonOut     bool
+		strict      bool
+		entrypoints []string
 	)
 	cmd := &cobra.Command{
 		Use:   "lint <corpus>",
 		Short: "Check a source markdown corpus for broken links, missing titles, orphans, stale, schema issues",
 		Long: "Lint performs a read-only pass over a SOURCE markdown corpus (it writes\n" +
-			"nothing) and reports five health checks: broken links (incl. #anchors),\n" +
-			"missing titles, orphan concepts, stale concepts, and schema violations\n" +
-			"(missing type:, invalid frontmatter). Unlike `binder review`/`binder\n" +
-			"validate`, which read an emitted bundle, lint sees the corpus as authored —\n" +
-			"a missing title or type: is masked once convert defaults it.\n\n" +
-			"Findings are advisory: bare lint always exits 0. Use --strict to gate\n" +
-			"(exit 1) when any finding is present, e.g. in CI.",
+			"nothing) and reports broken links (incl. #anchors), missing titles, orphan\n" +
+			"concepts, entrypoints, stale concepts, and schema violations (missing\n" +
+			"type:, invalid frontmatter). A concept with no inbound links is an\n" +
+			"ENTRYPOINT when it links out (or is a recognized root README.md/index.md,\n" +
+			"or is named via --entrypoint) and a true ORPHAN only when it has no inbound\n" +
+			"AND no outbound links. Unlike `binder review`/`binder validate`, which read\n" +
+			"an emitted bundle, lint sees the corpus as authored — a missing title or\n" +
+			"type: is masked once convert defaults it.\n\n" +
+			"Findings are advisory: bare lint always exits 0 (entrypoints never gate).\n" +
+			"Use --strict to gate (exit 1) when any finding is present, e.g. in CI.",
 		Args: exactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			src := args[0]
@@ -60,7 +64,7 @@ func newLintCmd(codec okf.Codec) *cobra.Command {
 				return err
 			}
 
-			rep := lint.Lint(concepts, facts, today)
+			rep := lint.Lint(concepts, facts, today, entrypoints)
 			rep.Src = src
 
 			// Report is ALWAYS emitted before the gate signals, so the gate never
@@ -84,5 +88,6 @@ func newLintCmd(codec okf.Codec) *cobra.Command {
 	cmd.Flags().StringVar(&today, "today", "", "date (YYYY-MM-DD) used for staleness; defaults to now")
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "emit the lint report as deterministic JSON (schema "+clijson.SchemaVersion+") instead of prose")
 	cmd.Flags().BoolVar(&strict, "strict", false, "gate (exit 1) when any lint finding is present; without it lint never gates (never-reject)")
+	cmd.Flags().StringSliceVar(&entrypoints, "entrypoint", nil, "concept id or path to treat as an entrypoint, not an orphan (repeatable); root README.md and index.md are recognized automatically")
 	return cmd
 }
