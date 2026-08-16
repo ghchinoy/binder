@@ -83,11 +83,12 @@ command and are the properties that make binder safe in a pipeline:
 
 ## Commands
 
-The binary exposes nine commands. All bundle-reading commands
+The binary exposes ten commands. All bundle-reading commands
 (`validate`/`index`/`review`/`graph`) load a bundle through the same codec, so
-their views of concepts, links, and trust always agree. `lint` and `enrich` are
-the exceptions: they read (and, for `enrich`, mutate) a **source corpus** (not a
-bundle) through the same converter machinery. `mcp` is a transport rather than a
+their views of concepts, links, and trust always agree. `lint`, `enrich`, and
+`infer` are the exceptions: they read (and, for `enrich`, mutate) a **source
+corpus** rather than a bundle; `lint` and `enrich` do so through the same
+converter machinery, and `infer` never writes at all. `mcp` is a transport rather than a
 corpus/bundle command; it exposes the additive verbs over stdio (see
 [MCP server](#mcp-server-binder-mcp)).
 
@@ -99,13 +100,14 @@ binder index      (Re)generate the per-directory index.md nav tree (spec §8)
 binder review     Summarize a bundle: concepts, links, orphans, trust tiers, stale
 binder lint       Report source-corpus health before conversion (writes nothing)
 binder graph      Export the bundle's concept graph (dot|json|graphml|html)
-binder config     Show the resolved effective configuration and each value's source
-binder mcp        Run binder as a stdio MCP server (convert/validate/review/lint/graph/list_graphs)
+binder infer      Inspect a source markdown corpus and propose a --type-map
+binder config     Manage configuration (show, get, set, unset)
+binder mcp        Run binder as a stdio MCP server (convert/validate/review/lint/graph/list_graphs/query_graph)
 ```
 
 Every command supports `-h`/`--help`. The root binary supports `-v`/`--version`.
-`validate`, `review`, `lint`, `convert`, and `enrich` also support `--strict` to
-gate advisories in CI (see [Strict mode](#strict-mode)); configuration is resolved
+`validate`, `review`, `lint`, `convert`, `enrich`, and `infer` also support
+`--strict` to gate advisories in CI (see [Strict mode](#strict-mode)); configuration is resolved
 once with the precedence flag > env > file > default (see [`config`](#config)).
 
 `convert` and `enrich` are complementary and single-purpose: `convert` compiles a
@@ -146,7 +148,7 @@ Output is required unless you pass `--dry-run`.
 | `--type-map` | — | Per-directory type overrides, e.g. `"docs=Guide,adr=Decision"`. The longest (most specific) matching directory key wins. |
 | `--status-map` | — | Per-directory `status`, e.g. `"archive=deprecated,drafts=draft,default=active"`. Longest-prefix match; `default=` is the fallback. Set **only when `status` is absent** (never clobbers an authored value). See [Declarative trust & lifecycle](#declarative-trust--lifecycle-flags). |
 | `--stale-after-map` | — | Per-directory `stale_after` relative to now, e.g. `"07-benchmarks=+6m,legacy=+0d"`. Grammar `+Nd`/`+Nm`/`+Ny` (days/months/years, UTC `YYYY-MM-DD`). Longest-prefix match; set **only when `stale_after` is absent**. |
-| `--verified-by` | config `verified_by` | Actor appended as a `verified` stamp, e.g. `"human:ghchinoy"` or `"binder/0.1.0"`. Validated with the actor grammar; an invalid value is a usage error (exit 2). Appends only — never rewrites the derived tier. See [Declarative trust & lifecycle](#declarative-trust--lifecycle-flags). |
+| `--verified-by` | config `verified_by` | Actor appended as a `verified` stamp, e.g. `"human:ghchinoy"` or `"binder/0.3.0"`. Validated with the actor grammar; an invalid value is a usage error (exit 2). Appends only — never rewrites the derived tier. See [Declarative trust & lifecycle](#declarative-trust--lifecycle-flags). |
 | `--fm-ref-keys` | — | Frontmatter keys treated as relationship edges, e.g. `"related,parent"`. |
 | `--workspace-root` | `<src>` root | Boundary within which `file://` links resolve to internal edges. See [`file://` link resolution](#file-link-resolution). |
 | `--external-root` | — | Declare a **known** sibling-workspace root (repeatable). A `file://` link that resolves under it stays external (never internalized) but its outside-root advisory is suppressed. An empty value is a usage error (exit 2). See [`file://` link resolution](#file-link-resolution). |
@@ -507,19 +509,54 @@ available via `binder graph`). Crucially, these annotations derive from the
 `From=concept → To=target`), via a single shared helper — so the catalog and the
 graph can never drift apart.
 
+Each edge entry is suffixed with the **link text in parentheses** — the
+relationship label carried by the markdown link that produced the edge. The same
+pair of concepts can therefore appear more than once under one entry when the
+source document links to it with different text.
+
+Running, from a checkout of the binder repo:
+
+```bash
+binder convert testdata/corpus-rich -o build/rich \
+  --group-by-type --include-backlinks --include-graph
+```
+
+produces this `# Catalog` section at the end of `build/rich/index.md`:
+
 ```markdown
 # Catalog
 
-## Pattern
+## Attested Computation
 
-* [Alpha](/patterns/alpha.md)
-  * backlink: [Beta](/patterns/beta.md)
-  * link: [Setup](/guides/setup.md)
+* [Revenue Calc](/attested/calc.md)
+  * link: [Orders Table](/tables/orders.md) (Orders Table)
 
-## (untyped)
+## BigQuery Table
 
-* [misc/notes](/misc/notes.md)
+* [Orders Table](/tables/orders.md)
+  * backlink: [Revenue Calc](/attested/calc.md) (Orders Table)
+  * backlink: [Setup Guide](/guides/setup.md) (Orders Table)
+  * backlink: [Introduction](/intro.md) (Orders Table)
+  * backlink: [Introduction](/intro.md) (orders schema)
+  * link: [Introduction](/intro.md) (introduction)
+
+## Guide
+
+* [Setup Guide](/guides/setup.md)
+  * backlink: [Introduction](/intro.md) (setup)
+  * link: [Orders Table](/tables/orders.md) (Orders Table)
+
+## Note
+
+* [Guides Index](/guides/index-note.md)
+* [Introduction](/intro.md)
+  * backlink: [Orders Table](/tables/orders.md) (introduction)
+  * link: [Setup Guide](/guides/setup.md) (setup)
+  * link: [Orders Table](/tables/orders.md) (Orders Table)
+  * link: [Orders Table](/tables/orders.md) (orders schema)
 ```
+
+(This corpus has no untyped concepts, so no `## (untyped)` group is emitted.)
 
 ### `review`
 
@@ -797,20 +834,22 @@ binder config unset gemini.project
 
 ## JSON output (`--json`) and the exit-code contract
 
-`convert`, `enrich`, `validate`, `review`, `lint`, and `graph` accept `--json` for
+`convert`, `enrich`, `validate`, `review`, `lint`, `infer`, `graph`, and `config`
+(including `config list`, `config get`, `config set`, and `config unset`) accept
+`--json` for
 scripting, agents, and CI. Prose is the default and is **byte-unchanged** when
 `--json` is absent — `--json` is a presentation layer over the already-computed
 report, it changes no behavior and fabricates no fields or trust data.
 
 ### The envelope (schema `binder.report/v1`)
 
-`convert`, `enrich`, `validate`, `review`, and `lint` wrap their existing report
-struct in a thin envelope that carries the provenance and schema tag a consumer
-needs to parse it safely:
+`convert`, `enrich`, `validate`, `review`, `lint`, and `infer` wrap their existing
+report struct in a thin envelope that carries the provenance and schema tag a
+consumer needs to parse it safely:
 
 ```json
 {
-  "binder": "binder/0.1.0",
+  "binder": "binder/0.3.0",
   "command": "convert",
   "schema": "binder.report/v1",
   "result": { }
@@ -820,16 +859,25 @@ needs to parse it safely:
 | Envelope field | Meaning |
 |---|---|
 | `binder` | The producing binder version, `binder/<version>` (same string as `--version`). |
-| `command` | `convert` \| `enrich` \| `validate` \| `review` \| `lint`. |
+| `command` | `convert` \| `enrich` \| `validate` \| `review` \| `lint` \| `infer`. |
 | `schema` | The report contract identifier. Bumped **only** on a breaking change to a payload's shape or field names, so a consumer can branch on it. |
 | `result` | The command's report object (see per-command fields below). |
 
-`graph` is the deliberate exception — see [graph JSON](#graph-json-a-raw-export-not-the-envelope).
+`config` uses the **same envelope shape with a different contract**: `schema` is
+`binder.config/v1` and `command` is `config` (for both bare `config` and
+`config list`), `config get`, `config set`, or `config unset`. See
+[`config`](#config).
+
+`graph` is the deliberate exception — see [graph JSON](#graph-json--a-raw-export-not-the-envelope).
 
 ### Determinism
 
 JSON output is deterministic: fixed 2-space indentation, HTML escaping **off**
-(so `<`, `>`, `&` are literal), object keys sorted, and a trailing newline. All
+(so `<`, `>`, `&` are literal), a stable field order, and a trailing newline.
+Struct-backed objects — including the envelope itself — emit in
+field-declaration order (`binder`, `command`, `schema`, `result`), which is
+deterministic but not alphabetical; map-valued objects such as `by_type`,
+`tiers`, and `config`'s `values` do have their keys sorted alphabetically. All
 timestamps derive from `SOURCE_DATE_EPOCH` (via `--today` for the read
 commands), so two runs on the same input are byte-identical:
 
@@ -876,9 +924,58 @@ Each `concepts[]` object: `rel_path`, `type`, `title`, `num_links`,
 | `warnings` | array of string | Preserve-or-advise notices (`path: message`). |
 
 Each `files[]` object: `path` (source-relative), `status` ∈
-`enriched|unchanged|would-enrich|skipped`, `added` (sorted keys injected, omitted
-when empty), and `reason` (for `skipped`, e.g. `unparseable frontmatter: <err>`).
-Empty arrays serialize as `[]`.
+`enriched|unchanged|would-enrich|skipped`, `added` (sorted keys injected),
+`overwritten` (sorted keys **refreshed in place** under
+[`--overwrite-keys`](#opt-in-refresh---overwrite-keys)), and `reason` (for
+`skipped`, e.g. `unparseable frontmatter: <err>`). A key is reported under
+exactly one of `added` (it was absent) or `overwritten` (it was present and was
+replaced).
+
+**Emptiness convention — it is not uniform, so branch on presence.** Inside
+`files[]`, `added`, `overwritten`, and `reason` are all omitted when empty, so a
+file that needed nothing serializes as just `{"path": …, "status": "unchanged"}`.
+The top-level arrays behave the other way: `warnings` and `status_notes` are
+**always present** and serialize as `[]` when empty (as do `entrypoints` in
+`review --json` and `lint --json`). Treat an absent `files[].overwritten` as
+"nothing was overwritten", and do not expect the same rule at both levels:
+
+A second `enrich` pass over a tree whose `status` was already set by a first
+pass, this time refreshing it:
+
+```bash
+binder enrich src --overwrite-keys status --status-map "archive=stable" --json
+```
+
+```json
+{
+  "binder": "binder/0.3.0",
+  "command": "enrich",
+  "schema": "binder.report/v1",
+  "result": {
+    "src": "src",
+    "dry_run": false,
+    "num_files": 2,
+    "num_enriched": 1,
+    "num_unchanged": 1,
+    "num_skipped": 0,
+    "files": [
+      {
+        "path": "README.md",
+        "status": "unchanged"
+      },
+      {
+        "path": "archive/a.md",
+        "status": "enriched",
+        "overwritten": [
+          "status"
+        ]
+      }
+    ],
+    "warnings": [],
+    "status_notes": []
+  }
+}
+```
 
 ### `validate --json` — `result` fields
 
@@ -942,7 +1039,7 @@ finding is present. See the [exit-code contract](#exit-code-contract).
       "dir": "subsystems",
       "suggested_type": "Subsystem",
       "source": "folder",
-      "rationale": "well-known directory name "subsystems"",
+      "rationale": "well-known directory name \"subsystems\"",
       "sample_files": ["subsystems/audio.md"]
     }
   ],
@@ -979,9 +1076,58 @@ Every command maps its outcome onto four stable codes. The code is about the
 | Code | Name | Meaning | Emitted by (today) |
 |---|---|---|---|
 | `0` | success | Completed with no gating findings. Advisories may be present — they are reported but never gate. | all commands, normal case |
-| `1` | findings-present | A gating condition: `validate` spec §11 non-conformance (unparseable frontmatter or a missing/empty `type`), or — under [`--strict`](#strict-mode) — any advisory promoted to a gating finding. | `validate`, `review`, `lint`, `convert`, `enrich` (with `--strict`) |
-| `2` | usage-error | Bad flags/args — unknown flag, missing/extra argument, or a conflicting `--json`/`--format`. | any command |
-| `3` | io-error | Cannot read the corpus/bundle, a write failure, or an internal error. | any command |
+| `1` | findings-present | A gating condition: `validate` spec §11 non-conformance (unparseable frontmatter or a missing/empty `type`), or — under [`--strict`](#strict-mode) — any advisory promoted to a gating finding. | `validate`, `review`, `lint`, `convert`, `enrich`, `infer` (with `--strict`) |
+| `2` | usage-error | Bad flags/args — an unknown subcommand or flag, a missing/extra argument, a conflicting `--json`/`--format`, an unparseable `--today`, a malformed `--status-map`, or an `--overwrite-keys` list naming a trust-provenance key. Also: a missing source path for `lint`/`enrich`/`infer` (see below). | any command |
+| `3` | io-error | Cannot read the corpus/bundle, a write failure, or an internal error. Includes a missing path for `convert`/`validate`/`review`/`index`/`graph` (see below). | any command |
+
+#### The missing-path asymmetry (`2` vs `3`)
+
+A nonexistent path is **not** classified the same way by every command, and the
+split is deliberate. `lint`, `enrich`, and `infer` treat it as **argument
+validation** and exit `2`; `convert`, `validate`, `review`, `index`, and `graph`
+treat it as an **I/O failure** and exit `3`. Script accordingly — do not assume a
+single code for "path not found":
+
+```console
+$ binder lint     /no/such/path; echo $?
+2
+$ binder enrich   /no/such/path; echo $?
+2
+$ binder infer    /no/such/path; echo $?
+2
+$ binder convert  /no/such/path -o /tmp/x; echo $?
+3
+$ binder validate /no/such/path; echo $?
+3
+$ binder review   /no/such/path; echo $?
+3
+$ binder index    /no/such/path; echo $?
+3
+$ binder graph    /no/such/path; echo $?
+3
+```
+
+#### Other observed exit-`2` cases
+
+```console
+$ binder bogus; echo $?                                        # unknown subcommand
+2
+$ binder graph build/bundle --format bogus; echo $?            # unknown --format
+2
+$ binder graph build/bundle --today notadate; echo $?          # unparseable --today
+2
+$ binder graph build/bundle --json --format dot; echo $?       # conflicting output flags
+2
+$ binder enrich docs/ --overwrite-keys sources; echo $?        # refused trust key
+2
+```
+
+The refused-trust-key case is **fail-fast and total**: naming any of the
+protected trust-provenance keys (`attester`, `computation`, `executor`,
+`generated`, `parameters`, `runtime`, `sources`, `usage_window`, `verified`,
+`verified_by`) in `--overwrite-keys` aborts the whole run before any file is
+touched — nothing is written, not even for files the list would not have
+affected. See [Opt-in refresh: `--overwrite-keys`](#opt-in-refresh---overwrite-keys).
 
 **Never-reject is preserved by default.** Broken links, orphans, staleness,
 recovered frontmatter, and missing optional trust are all **advisories** — by
@@ -1011,13 +1157,20 @@ The per-command contract:
 | `validate` | trust advisories (malformed trust, actor-convention, date-shape warnings) | spec §11 hard non-conformance (unparseable frontmatter, missing/empty `type`) |
 | `review` | any review finding: orphans, stale concepts, unresolved links, unparsed-frontmatter recoveries | — |
 | `lint` | any lint finding: broken links, missing titles, orphans, stale, schema violations | — |
-| `convert` | unresolved links or recovery warnings | — (a clean run is exit `0` even under `--strict`) |
-| `enrich` | skipped (unparseable-frontmatter) files + preserve-or-advise findings | — (a clean run is exit `0` even under `--strict`) |
+| `convert` | unresolved links, recovery warnings, or non-conformant `--status-map` status values | — (a clean run is exit `0` even under `--strict`) |
+| `enrich` | skipped (unparseable-frontmatter) files, preserve-or-advise findings, or non-conformant `--status-map` status values | — (a clean run is exit `0` even under `--strict`) |
+| `infer` | any warning or inference failure (in practice, Gemini-tier warnings — the deterministic tiers do not warn) | — |
 
-`--strict` is available on `validate`, `review`, `lint`, `convert`, and `enrich`.
-A clean run stays exit `0` even with `--strict` set, so the flag is safe to leave
-on permanently in CI. `index`, `graph`, and `config` have no advisory surface and
-do not take it.
+The `--status-map` vocabulary gate is the one that fires **before** anything is
+written: `convert --strict` exits `1` without creating the output directory, and
+`enrich --strict` exits `1` without touching a single source file. Adding
+`--canonicalize-status` resolves a known alias and the run returns to exit `0`.
+See [Declarative trust & lifecycle](#declarative-trust--lifecycle-flags).
+
+`--strict` is available on `validate`, `review`, `lint`, `convert`, `enrich`, and
+`infer`. A clean run stays exit `0` even with `--strict` set, so the flag is safe
+to leave on permanently in CI. `index`, `graph`, and `config` have no advisory
+surface and do not take it.
 
 ```bash
 # Fail CI on any unresolved link or recovered file, not just spec violations
@@ -1032,7 +1185,7 @@ binder lint     docs/ --strict
 
 An agent or script can enumerate binder's surface without parsing prose reports:
 
-- **`binder --version`** prints `binder/<version>` (e.g. `binder/0.1.0`) — the
+- **`binder --version`** prints `binder/<version>` (e.g. `binder/0.3.0`) — the
   exact string that appears in the JSON envelope's `binder` field. (`--version`
   is a root flag; passing it to a subcommand is a usage error.)
 - **`binder --help`** lists every command; **`binder <cmd> --help`** prints that
@@ -1053,6 +1206,10 @@ harness (Claude Code, Cursor, Zed). Each tool returns the **same** deterministic
 corresponding `binder <cmd> --json`: the handlers call the same internal
 functions and the same JSON encoder the CLI uses, so the payloads are
 byte-identical and can never drift from `--json`.
+
+The server registers **seven** tools: `convert`, `validate`, `review`, `lint`,
+`graph`, `list_graphs`, and `query_graph`. (`enrich` is excluded because it
+mutates the source tree — see [Behavior and invariants](#behavior-and-invariants).)
 
 `binder mcp` is a **transport, not a report-producing command** — it takes no
 positional args and has no `--json` flag (its *outputs* are the structured tool
@@ -1641,7 +1798,7 @@ Key rules binder enforces on emit:
   ```yaml
   generated:
     at: "2023-11-14T22:13:20Z"
-    by: binder/0.1.0
+    by: binder/0.3.0
   ```
 
 - **Reserved-name source files are never dropped.** A source `index.md`/`log.md`
@@ -1717,7 +1874,7 @@ fabricates provenance (spec §5.1).
 | Attested-Computation family | `runtime`, `parameters`, `computation`, `executor`, `attester` | Preserved and shape-checked. A concept of type `Attested Computation` requires `runtime` (advisory). binder does **not** execute attestations (no runtime). |
 
 The **actor convention** (spec §7): `"<producer>/<version>"` for tools/agents
-(e.g. `binder/0.1.0`, `reference_agent/gemini`), or one of the `human:`,
+(e.g. `binder/0.3.0`, `reference_agent/gemini`), or one of the `human:`,
 `process:`, `team:` prefixes for people, processes, and teams (e.g.
 `human:alice`).
 
@@ -1789,7 +1946,7 @@ the same discipline as the trust-mapping flags: deterministic, additive, and
   `(by, at)`; it never rewrites the derived trust tier — the tier stays computed
   from the `verified` events (see [Derived trust tiers](#derived-trust-tiers)).
   The actor is validated with the actor grammar (`human:<id>`, `process:<id>`,
-  `team:<id>`, or `<producer>/<version>` such as `binder/0.1.0`); an invalid
+  `team:<id>`, or `<producer>/<version>` such as `binder/0.3.0`); an invalid
   value is a **usage error** (exit 2) that lists the valid forms. If unset, the
   flag falls back to the `verified_by` [config](#config) key (which is itself
   validated fail-fast at config-load).
@@ -1981,7 +2138,13 @@ RESULT: conformant (OKF 0.2)
 ```
 
 **3. Review** (revenue is human-reviewed via `verified.by: human:alice`;
-overview is unverified):
+overview is unverified). Keep the clock pinned here too — `review` derives its
+staleness date from `SOURCE_DATE_EPOCH`, so an unpinned run prints today's date
+and the example stops reproducing:
+
+```bash
+SOURCE_DATE_EPOCH=1700000000 binder review bundle
+```
 
 ```text
 binder review
@@ -1994,12 +2157,17 @@ binder review
     human-reviewed: 1
     machine-confirmed: 0
     unverified: 1
-  stale (as of 2026-08-15): 0
+  stale (as of 2023-11-14): 0
   attested computations: 0
   unparsed frontmatter (recovered as body): 0
-  orphans (no inbound links): 0
+  entrypoints (outbound, no inbound): 0
+  orphans (no inbound or outbound links): 0
   unresolved links: 0
 ```
+
+`1700000000` is `2023-11-14`, which is why the staleness date reads that way:
+the whole point of pinning is that the report does not change from one day to
+the next.
 
 **4. Graph** (render with Graphviz):
 
@@ -2058,7 +2226,8 @@ on already-settled `--json` payloads rather than the reverse.
   [Agent Skill / Plugin](../README.md#agent-skill--plugin).
 - **MCP server mode** (`binder mcp`): — ✅ shipped
   ([#15](https://github.com/ghchinoy/binder/issues/15)). binder's *additive*
-  convert/validate/review/lint/graph tools over stdio (no read/search
+  `convert`/`validate`/`review`/`lint`/`graph`/`list_graphs`/`query_graph` tools
+  over stdio (no read/search
   re-implementation), returning the same `binder.report/v1` payloads as `--json`.
   See [MCP server (`binder mcp`)](#mcp-server-binder-mcp).
 
