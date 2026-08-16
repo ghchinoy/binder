@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 const brokenLinksCorpus = "../../testdata/corpus-lint-links"
@@ -47,15 +49,340 @@ func TestNeverFabricateTrust_InvalidActor(t *testing.T) {
 	}
 }
 
-// TestNeverFabricateTrust_NoAutoStamp: the server never auto-applies verified_by.
-// Convert WITHOUT verified_by is byte-identical to the CLI without --verified-by;
-// no stamp is invented. (A stamp only ever appears when explicitly passed.)
+// TestNeverFabricateTrust_NoAutoStamp is the never-fabricate-trust gate for the
+// MCP convert tool: a verified actorstamp appears on a written concept ONLY when
+// verified_by is explicitly passed in the tool input; the server never invents
+// one. It observes the field the invariant is named for by running REAL converts
+// and reading the written concept files.
+//
+// It deliberately does NOT use --dry-run. The dry-run report carries no trust
+// fields at all — the byte-parity of that report is pinned separately by
+// TestConvertDryRunParity — so a dry-run comparison can never observe stamping
+// and would be structurally incapable of catching a fabricated stamp. That is
+// the exact defect this test was rewritten to remove.
+//
+// The positive control lives INSIDE the assertion (anti-vacuity): an explicit
+// verified_by MUST raise the verified-stamp count above the source baseline, or
+// the test errors rather than passing. So it cannot silently decay into asserting
+// nothing if the write path ever stops stamping.
 func TestNeverFabricateTrust_NoAutoStamp(t *testing.T) {
-	got := toolText(t, callTool(t, "convert", map[string]any{"src": richCorpus, "dry_run": true}))
-	want := cliJSON(t, "convert", richCorpus, "--dry-run", "--json")
-	if got != want {
-		t.Fatalf("convert without verified_by diverged from CLI (possible fabricated trust)\n--- MCP ---\n%s\n--- CLI ---\n%s", got, want)
+	// The corpus already carries some verified stamps in its source frontmatter;
+	// those are legitimately carried forward and are the baseline against which a
+	// fabricated stamp shows up.
+	//
+	// We assert on the STAMPS THEMSELVES — the total number of verified stamps and
+	// the set of distinct actors — NOT on the number of files that carry any stamp.
+	// A file-count detector is structurally blind to the one fabrication we have
+	// actually observed on this project: an actor the human never authorised
+	// APPENDED onto a concept that was ALREADY verified. That file already carried
+	// a verified stamp, so the file count does not move, and the append goes unseen.
+	// Counting the stamps and the actors moves in exactly that case.
+	baseActors := verifiedActors(t, richCorpus)
+	baseSet := actorSet(baseActors)
+
+	// Positive control / anti-vacuity: an explicit actor DOES stamp, proving the
+	// instrument can observe the field it asserts on.
+	stampedOut := t.TempDir()
+	if res := callTool(t, "convert", map[string]any{
+		"src":         richCorpus,
+		"out":         stampedOut,
+		"verified_by": "human:alice",
+	}); res.IsError {
+		t.Fatalf("convert with an explicit verified_by must succeed: %s", toolText(t, res))
 	}
+	stampedActors := verifiedActors(t, stampedOut)
+	if len(stampedActors) <= len(baseActors) {
+		t.Fatalf("anti-vacuity: explicit verified_by did not raise the total verified-stamp count "+
+			"above the source baseline (%d <= %d); the test can no longer observe stamping",
+			len(stampedActors), len(baseActors))
+	}
+	if !actorSet(stampedActors)["human:alice"] {
+		t.Fatalf("anti-vacuity: explicit verified_by=human:alice produced no human:alice stamp; "+
+			"the instrument cannot observe the actor it asserts on (saw %v)", stampedActors)
+	}
+
+	// The invariant: with NO verified_by the server invents nothing. Two claims,
+	// each of which a file-count detector misses:
+	//   1. the TOTAL stamp count is exactly the source baseline — no stamp is
+	//      appended anywhere, INCLUDING onto an already-verified concept; and
+	//   2. no actor appears that the source did not already carry — a fabricated
+	//      actor is a failure wherever it lands, whether or not the file that
+	//      receives it was previously verified.
+	plainOut := t.TempDir()
+	if res := callTool(t, "convert", map[string]any{
+		"src": richCorpus,
+		"out": plainOut,
+	}); res.IsError {
+		t.Fatalf("convert without verified_by must succeed: %s", toolText(t, res))
+	}
+	plainActors := verifiedActors(t, plainOut)
+	if len(plainActors) != len(baseActors) {
+		t.Fatalf("MCP convert changed the total verified-stamp count from %d (source) to %d without "+
+			"an explicit verified_by (never-fabricate-trust violated: the server auto-stamped)\n"+
+			"  source: %v\n  written: %v", len(baseActors), len(plainActors), baseActors, plainActors)
+	}
+	for _, a := range plainActors {
+		if !baseSet[a] {
+			t.Fatalf("MCP convert introduced verified actor %q that the source never carried, without "+
+				"an explicit verified_by (never-fabricate-trust violated: a fabricated actor was "+
+				"appended)\n  source actors: %v\n  written actors: %v", a, baseActors, plainActors)
+		}
+	}
+}
+
+// countActorFiles counts concept files under root that carry a verified stamp
+// for the given actor. It reads the actor STRUCTURALLY from parsed frontmatter
+// (see verifiedActors), not by substring, so it detects the actor identically no
+// matter how the serializer quoted it — human:alice, 'human:alice', or
+// "human:alice", in a block or a flow mapping — and never mistakes a "by:" under
+// generated: (or any other key) for a verified stamp. This is what makes the
+// detector outlive a change to binder's serialization quoting.
+func countActorFiles(t *testing.T, root, actor string) int {
+	t.Helper()
+	n := 0
+	err := filepath.Walk(root, func(p string, fi os.FileInfo, err error) error {
+		if err != nil || fi.IsDir() || !strings.HasSuffix(p, ".md") {
+			return err
+		}
+		b, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		for _, a := range verifiedActorsIn(t, p, b) {
+			if a == actor {
+				n++
+				break
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walking %s: %v", root, err)
+	}
+	return n
+}
+
+// verifiedActors parses the YAML frontmatter of every .md file under root with
+// the repo's own parser (gopkg.in/yaml.v3 — the library binder itself uses to
+// read and write these files) and returns the actor of EVERY verified stamp, one
+// element per stamp so repeated actors and multiple stamps on one file are all
+// counted. Reading the actor structurally rather than by substring means an actor
+// is reported identically whether it was serialized human:alice, 'human:alice',
+// or "human:alice", in a block or a flow mapping.
+func verifiedActors(t *testing.T, root string) []string {
+	t.Helper()
+	var actors []string
+	err := filepath.Walk(root, func(p string, fi os.FileInfo, err error) error {
+		if err != nil || fi.IsDir() || !strings.HasSuffix(p, ".md") {
+			return err
+		}
+		b, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		actors = append(actors, verifiedActorsIn(t, p, b)...)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walking %s: %v", root, err)
+	}
+	return actors
+}
+
+// verifiedActorsIn returns the actor of each verified stamp in a single file's
+// frontmatter, honouring both shapes binder emits and accepts: a sequence of
+// {by,at} mappings (the written form) and a single {by,at} mapping (a source
+// form, spec §5.2 treats it as a one-element list). A "by:" under any other key —
+// generated:, for instance — is never read as a verified stamp.
+func verifiedActorsIn(t *testing.T, path string, b []byte) []string {
+	t.Helper()
+	fm := frontmatterBytes(b)
+	if fm == "" {
+		return nil
+	}
+	var doc struct {
+		Verified yaml.Node `yaml:"verified"`
+	}
+	if err := yaml.Unmarshal([]byte(fm), &doc); err != nil {
+		t.Fatalf("parsing frontmatter of %s: %v", path, err)
+	}
+	type stamp struct {
+		By string `yaml:"by"`
+	}
+	var stamps []stamp
+	switch doc.Verified.Kind {
+	case yaml.SequenceNode:
+		if err := doc.Verified.Decode(&stamps); err != nil {
+			t.Fatalf("decoding verified list of %s: %v", path, err)
+		}
+	case yaml.MappingNode:
+		var one stamp
+		if err := doc.Verified.Decode(&one); err != nil {
+			t.Fatalf("decoding verified mapping of %s: %v", path, err)
+		}
+		stamps = []stamp{one}
+	default:
+		// Absent, explicit null, or a spec-invalid scalar: no actor to attribute.
+		return nil
+	}
+	var actors []string
+	for _, s := range stamps {
+		if s.By != "" {
+			actors = append(actors, s.By)
+		}
+	}
+	return actors
+}
+
+// frontmatterBytes returns the YAML frontmatter block of a markdown file's bytes
+// — the text between the opening "---" fence and the next "---" fence line — or ""
+// if the document has no frontmatter. Fence handling mirrors the codec's own
+// splitFrontmatter (a fence is a line that is exactly "---" after trimming
+// CR/LF).
+func frontmatterBytes(b []byte) string {
+	lines := strings.SplitAfter(string(b), "\n")
+	if len(lines) == 0 || strings.TrimRight(lines[0], "\r\n") != "---" {
+		return ""
+	}
+	offset := len(lines[0])
+	for i := 1; i < len(lines); i++ {
+		if strings.TrimRight(lines[i], "\r\n") == "---" {
+			return string(b)[len(lines[0]):offset]
+		}
+		offset += len(lines[i])
+	}
+	return ""
+}
+
+// actorSet collects a multiset of actors into a presence set.
+func actorSet(actors []string) map[string]bool {
+	s := make(map[string]bool, len(actors))
+	for _, a := range actors {
+		s[a] = true
+	}
+	return s
+}
+
+// TestActorDetectionIsSerializationIndependent proves — it does not assert — that
+// the trust detector reads an actor from parsed structure, not from serialization
+// form. binder-bytefaithful-fix is actively changing how these very keys are
+// quoted (bare scalars single-quoted on flow-mapping re-serialization); a
+// substring detector's blindness would move with that change, silently and in the
+// unsafe direction (a fabricated actor going unseen). This control constructs the
+// SAME stamp in every quoting/nesting form binder could emit and requires the
+// detector to return the identical answer for each, so the fix outlives that
+// change landing.
+//
+// It is deliberately NOT invariant-named: it guards the detector, not a product
+// guarantee.
+func TestActorDetectionIsSerializationIndependent(t *testing.T) {
+	const actor = "human:alice"
+
+	// The same verified stamp for `actor`, written five ways. A form-dependent
+	// detector returns a different count for at least one of these; a structural
+	// one returns 1 for every one.
+	forms := map[string]string{
+		"block_unquoted": "---\ntype: Note\nverified:\n  - by: human:alice\n    at: 2026-01-01T00:00:00Z\n---\n\n# X\n",
+		"block_single":   "---\ntype: Note\nverified:\n  - by: 'human:alice'\n    at: 2026-01-01T00:00:00Z\n---\n\n# X\n",
+		"block_double":   "---\ntype: Note\nverified:\n  - by: \"human:alice\"\n    at: 2026-01-01T00:00:00Z\n---\n\n# X\n",
+		"flow_list":      "---\ntype: Note\nverified: [{by: human:alice, at: 2026-01-01T00:00:00Z}]\n---\n\n# X\n",
+		"flow_mapping":   "---\ntype: Note\nverified: {by: 'human:alice', at: 2026-01-01T00:00:00Z}\n---\n\n# X\n",
+	}
+	for name, content := range forms {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, "c.md"), []byte(content), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if got := countActorFiles(t, dir, actor); got != 1 {
+				t.Fatalf("form %s: detector saw %d files stamping %s, want 1 — actor detection "+
+					"depends on serialization form", name, got, actor)
+			}
+		})
+	}
+
+	// Negative control #1: a DIFFERENT verified actor must not match, or the
+	// detector is just returning 1 for everything and the positives prove nothing.
+	t.Run("other_actor_not_matched", func(t *testing.T) {
+		dir := t.TempDir()
+		content := "---\ntype: Note\nverified:\n  - by: 'human:bob'\n    at: 2026-01-01T00:00:00Z\n---\n\n# X\n"
+		if err := os.WriteFile(filepath.Join(dir, "c.md"), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if got := countActorFiles(t, dir, actor); got != 0 {
+			t.Fatalf("negative control: detector matched %s in a file whose only verified stamp is "+
+				"human:bob (got %d)", actor, got)
+		}
+	})
+
+	// Negative control #2: the actor under generated: (NOT verified:) must not be
+	// read as a verified stamp — even written unquoted, the exact form the OLD
+	// substring detector ("by: "+actor) DID match. This is the substring detector's
+	// false positive that the structural one removes.
+	t.Run("generated_actor_not_a_verified_stamp", func(t *testing.T) {
+		dir := t.TempDir()
+		content := "---\ntype: Note\ngenerated:\n  by: human:alice\n  at: 2026-01-01T00:00:00Z\n---\n\n# X\n"
+		if err := os.WriteFile(filepath.Join(dir, "c.md"), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if got := countActorFiles(t, dir, actor); got != 0 {
+			t.Fatalf("detector counted a GENERATED actor as a verified stamp (got %d) — it is not "+
+				"reading the verified key structurally", got)
+		}
+	})
+}
+
+// TestCharacterize_MCPDoesNotResolveConfig is a CHARACTERIZATION test: it records
+// what the two surfaces currently DO, not what they must do. With a global user
+// config supplying verified_by and no explicit actor on either surface, the CLI
+// resolves the actor from config and stamps every concept, while the MCP server
+// does not load config at all and stamps nothing.
+//
+// This behaviour is UNDER ACTIVE REVIEW BY THE OWNER and is not settled. A future
+// change to it — making MCP resolve config, or making the CLI stop — is a
+// DECISION, NOT A REGRESSION; whoever makes it should update this test to match
+// rather than read a red here as a bug they caused. The name is deliberately NOT
+// invariant-shaped so it cannot launder disputed behaviour into a guarantee.
+//
+// It uses XDG_CONFIG_HOME to arm a GLOBAL config with no cwd manipulation, so it
+// is hermetic. It uses REAL converts, not --dry-run (the dry-run report carries
+// no trust fields). The anti-vacuity control lives inside the assertion: if the
+// CLI side stamps nothing the config no longer arms the stamp, so the test errors
+// rather than silently pinning "0 == 0".
+func TestCharacterize_MCPDoesNotResolveConfig(t *testing.T) {
+	xdg := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(xdg, "binder"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := filepath.Join(xdg, "binder", "config.yaml")
+	if err := os.WriteFile(cfg, []byte("verified_by: human:alice\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("XDG_CONFIG_HOME", xdg)
+
+	out := t.TempDir()
+	cliOut := filepath.Join(out, "cli")
+	mcpOut := filepath.Join(out, "mcp")
+
+	// Real converts, not --dry-run: the stamp only ever exists on disk.
+	cliJSON(t, "convert", richCorpus, "-o", cliOut, "--json")
+	if res := callTool(t, "convert", map[string]any{"src": richCorpus, "out": mcpOut}); res.IsError {
+		t.Fatalf("MCP convert must succeed: %s", toolText(t, res))
+	}
+
+	cliStamped := countActorFiles(t, cliOut, "human:alice")
+	mcpStamped := countActorFiles(t, mcpOut, "human:alice")
+
+	if cliStamped == 0 {
+		t.Fatalf("anti-vacuity: CLI produced 0 config-sourced verified stamps (config %s no longer "+
+			"arms the stamp?); the test can no longer observe the divergence", cfg)
+	}
+	if mcpStamped != 0 {
+		t.Fatalf("characterization changed: MCP stamped %d concept(s) from config — the server now "+
+			"loads config. If that change is intentional, update this test: it is a decision, not a "+
+			"regression", mcpStamped)
+	}
+	t.Logf("current behaviour: cli stamped=%d  mcp stamped=%d", cliStamped, mcpStamped)
 }
 
 // TestDeterminism_SourceDateEpoch: with SOURCE_DATE_EPOCH set, the default
