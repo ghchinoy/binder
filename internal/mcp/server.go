@@ -1,7 +1,8 @@
 // Package mcp is binder's stdio MCP server surface (issue #15). It exposes
-// binder's additive verbs (convert/validate/review/lint/graph) plus the
-// read-only list_graphs introspection tool as MCP tools that return the SAME
-// binder.report/v1 payloads as `--json`.
+// binder's additive verbs as MCP tools that return the SAME binder.report/v1
+// payloads as `--json`. The tools registered are convert, validate, review,
+// lint, graph, list_graphs, and query_graph — newServer is the authoritative
+// set; list_graphs and query_graph are the read-only graph introspection tools.
 //
 // The server adds NO business logic and NO second serialization path: each tool
 // handler decodes typed params, calls the existing internal/* entry point, and
@@ -39,6 +40,20 @@ type deps struct {
 // entry point cmd/mcp.go calls, keeping the SDK's Transport out of cmd.
 func Serve(ctx context.Context, codec okf.Codec, version string) error {
 	return newServer(codec, version).Run(ctx, &mcp.StdioTransport{})
+}
+
+// ToolNames returns the names of every tool the MCP server registers, in
+// registration order. It is the single declared enumeration of the tool set,
+// consumed by help text and doc guards so prose (e.g. `binder mcp`'s Long) can
+// be checked against the registered set and cannot silently understate it — the
+// exact drift that shipped when the help named five tools while seven were
+// registered. It is pinned to the actual registration by TestListTools (which
+// asserts newServer advertises exactly these names), so it cannot fall out of
+// sync with newServer without turning a test RED.
+func ToolNames() []string {
+	return []string{
+		"convert", "validate", "review", "lint", "graph", "list_graphs", "query_graph",
+	}
 }
 
 // newServer builds the MCP server with all tools registered. It is unexported
