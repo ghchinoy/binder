@@ -139,7 +139,7 @@ binder lint
   schema violations: 2
     README: missing type
     notes/scratch: missing type
-  entrypoints (outbound, no inbound): 1
+  entrypoints (no inbound links): 1
     README
   orphans (no inbound or outbound links): 2
     notes/scratch
@@ -153,19 +153,28 @@ Treat the orphan list as a to-do list for the corpus.
 
 A concept with nothing pointing *at* it is an **entrypoint** rather than an
 orphan when any of three things holds: it links out to something, it is a root
-`README.md`/`index.md`, or you named it with `--entrypoint` (repeatable, and it
-tolerates a trailing `.md`). `README` here qualifies on the first count. binder
-reports entrypoints separately and does **not** count them as findings, so a
-corpus with a legitimate front door is not penalised for having one, and
-`--strict` never gates on them.
+`README.md`, or you named it with `--entrypoint` (repeatable, and it tolerates a
+trailing `.md`). `README` here qualifies on the **second** count: it is the
+corpus-root `README.md`. It has no outbound edges of its own — every path it
+mentions sits inside a code span or a fenced block, so none of them is a
+markdown link — and renaming the file makes it a true orphan. binder reports
+entrypoints separately and does **not** count them as findings, so a corpus
+with a legitimate front door is not penalised for having one, and `--strict`
+never gates on them.
 
-Two edges of that rule are worth knowing. The section label reads
-`entrypoints (outbound, no inbound):`, but a root `README.md` with no links at
-all is listed there too — the label is narrower than the rule. And "root" means
-*root*: a nested `docs/README.md` is **not** recognized automatically and stays a
-true orphan until you pass `--entrypoint docs/README.md`. `binder review` applies
-exactly the same classification to a bundle, so `lint` and `review` never
-disagree about what is an orphan.
+One edge of that rule is worth knowing: "root" means *root*, and `README.md` is
+the only name recognized this way. A nested `docs/README.md` is **not**
+recognized automatically and stays a true orphan until you pass
+`--entrypoint docs/README.md`, and a root `index.md` is not recognized in any
+spelling — it is classified on its edges like any other concept (`convert`
+renames an authored lowercase `index.md` to `index-note.md` first).
+
+`binder review` applies the same rule to a bundle, but over a different graph:
+`lint` reads the corpus **as authored**, `review` reads the **emitted bundle**,
+and conversion happens in between. The two usually agree about what is an
+orphan, but agreement is not guaranteed — `convert --fm-ref-keys related`, for
+instance, materializes edges out of a frontmatter key that `lint` has no flag to
+read, so a note `lint` calls an orphan can reach `review` as an entrypoint.
 
 ### Step 2.5: let binder propose a type map
 
@@ -270,7 +279,7 @@ binder review
   stale (as of 2026-08-15): 0
   attested computations: 0
   unparsed frontmatter (recovered as body): 0
-  entrypoints (outbound, no inbound): 1
+  entrypoints (no inbound links): 1
     README
   orphans (no inbound or outbound links): 2
     notes/scratch
