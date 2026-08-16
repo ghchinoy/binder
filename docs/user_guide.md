@@ -163,7 +163,7 @@ Output is required unless you pass `--dry-run`.
 | `--type-map` | — | Per-directory type overrides, e.g. `"docs=Guide,adr=Decision"`. The longest (most specific) matching directory key wins. |
 | `--status-map` | — | Per-directory `status`, e.g. `"archive=deprecated,drafts=draft,default=active"`. Longest-prefix match; `default=` is the fallback. Set **only when `status` is absent** (never clobbers an authored value). See [Declarative trust & lifecycle](#declarative-trust--lifecycle-flags). |
 | `--stale-after-map` | — | Per-directory `stale_after` relative to now, e.g. `"07-benchmarks=+6m,legacy=+0d"`. Grammar `+Nd`/`+Nm`/`+Ny` (days/months/years, UTC `YYYY-MM-DD`). Longest-prefix match; set **only when `stale_after` is absent**. |
-| `--verified-by` | — (see [Writing a `verified` stamp](#writing-a-verified-stamp)) | Actor appended as a `verified` stamp, e.g. `"human:ghchinoy"` or `"binder/0.3.0"`. A stamp is written **only** for this flag, or for a `verified_by` default you set in your **global** user config (a repo-local `.binder.yaml` does not authorize one). Validated with the actor grammar; an invalid value is a usage error (exit 2). Appends only — never rewrites the derived tier. |
+| `--verified-by` | — (see [Writing a `verified` stamp](#writing-a-verified-stamp)) | Actor appended as a `verified` stamp, e.g. `"human:ghchinoy"` or `"binder/0.3.0"`. A stamp is written **only** for this flag, or for a `verified_by` default you set in your **global** user config (neither a repo-local `.binder.yaml` nor `BINDER_VERIFIED_BY` authorizes one). Validated with the actor grammar; an invalid value is a usage error (exit 2). Appends only — never rewrites the derived tier. |
 | `--canonicalize-status` | `false` | **Opt-in**: rewrite a known `--status-map` alias to the OKF §5.4 vocabulary (`active`→`stable`, `wip`/`in-progress`→`draft`, `archived`/`legacy`→`deprecated`). The vocabulary **check** is always on; this flag controls only the rewrite. Each rewrite is reported in `status_notes`. See [Status vocabulary and `--canonicalize-status`](#status-vocabulary-and---canonicalize-status). |
 | `--fm-ref-keys` | — | Frontmatter keys treated as relationship edges, e.g. `"related,parent"`. |
 | `--workspace-root` | `<src>` root | Boundary within which `file://` links resolve to internal edges. See [`file://` link resolution](#file-link-resolution). |
@@ -380,7 +380,7 @@ A plain-markdown file (no frontmatter fence) gets a fresh, valid block prepended
 | `--type-map` | — | Per-directory type overrides, e.g. `"docs=Guide,adr=Decision"`. Longest matching directory key wins. |
 | `--status-map` | — | Per-directory `status`, e.g. `"archive=deprecated,default=active"`; `default=` is the fallback. Set **only when `status` is absent**. |
 | `--stale-after-map` | — | Per-directory `stale_after` relative to the run clock (grammar `+Nd`/`+Nm`/`+Ny`, UTC `YYYY-MM-DD`); set **only when absent**. Malformed → exit 2. |
-| `--verified-by` | — (see [Writing a `verified` stamp](#writing-a-verified-stamp)) | Actor appended as a `verified` stamp, e.g. `"human:ghchinoy"`. A stamp is written **only** for this flag, or for a `verified_by` default you set in your **global** user config (a repo-local `.binder.yaml` does not authorize one). Invalid actor → exit 2. Appends only (dedup by `by,at`). |
+| `--verified-by` | — (see [Writing a `verified` stamp](#writing-a-verified-stamp)) | Actor appended as a `verified` stamp, e.g. `"human:ghchinoy"`. A stamp is written **only** for this flag, or for a `verified_by` default you set in your **global** user config (neither a repo-local `.binder.yaml` nor `BINDER_VERIFIED_BY` authorizes one). Invalid actor → exit 2. Appends only (dedup by `by,at`). |
 | `--canonicalize-status` | `false` | **Opt-in**: rewrite a known `--status-map` alias to the OKF §5.4 vocabulary (`active`→`stable`, `wip`/`in-progress`→`draft`, `archived`/`legacy`→`deprecated`). The vocabulary **check** is always on; this flag controls only the rewrite. Each rewrite is reported in `status_notes`. See [Status vocabulary and `--canonicalize-status`](#status-vocabulary-and---canonicalize-status). |
 | `--overwrite-keys` | — | **Opt-in** comma-separated keys to **refresh in place even when present**, e.g. `"status,stale_after"`. Default is additive/never-clobber. Scoped strictly to the named keys; trust keys are **refused** (exit 2). See [Opt-in refresh](#opt-in-refresh---overwrite-keys). |
 | `--strict` | `false` | Gate (exit 1) when any file is skipped or a preserve-or-advise finding is present. Without it these never gate (exit 0). |
@@ -1035,12 +1035,22 @@ flag  >  environment variable  >  config file  >  built-in default
   which one you are editing.
 - **Environment variables** use the `BINDER_` prefix, e.g. `BINDER_VERIFIED_BY`, `BINDER_DEFAULT_TYPE`, `BINDER_GEMINI_PROJECT`.
 
+That ordering is **resolution**: which layer supplies the value binder uses, and
+what `binder config` reports. One key adds a second, narrower question on top of
+it. **`verified_by` resolves by the precedence above but only *authorizes* a
+`verified` stamp from two of those layers** — the `--verified-by` flag, and a
+global user config file. A value resolved from `BINDER_VERIFIED_BY` or from a
+repo-local `./.binder.yaml` is reported by `binder config` like any other, and
+then refused for stamping, with the refusal disclosed on the run. Resolved and
+in effect are not the same thing for this key; see
+[Writing a `verified` stamp](#writing-a-verified-stamp).
+
 #### Configuration Keys
 
 | Key (snake or dotted) | Env | Default | Purpose |
 |---|---|---|---|
 | `default_type` | `BINDER_DEFAULT_TYPE` | `Note` | Concept type applied when none is present or mapped. |
-| `verified_by` | `BINDER_VERIFIED_BY` | — | Default actor appended as a `verified` stamp by `convert` / `enrich`. Validated against actor grammar. **A repo-local `./.binder.yaml` value does not authorize a stamp** — that is where `config set` writes without `-g`, and the value is reported but not acted on; a value in the global user config does authorize one. `BINDER_VERIFIED_BY` also permits a stamp, disclosed as `source: env`. See [Writing a `verified` stamp](#writing-a-verified-stamp). |
+| `verified_by` | `BINDER_VERIFIED_BY` | — | Default actor appended as a `verified` stamp by `convert` / `enrich`. Validated against actor grammar. **A repo-local `./.binder.yaml` value does not authorize a stamp** — that is where `config set` writes without `-g`, and the value is reported but not acted on; a value in the global user config does authorize one. **`BINDER_VERIFIED_BY` does not authorize one either** — it resolves as configuration, and the refusal is disclosed. See [Writing a `verified` stamp](#writing-a-verified-stamp). |
 | `gemini_model` (`gemini.model`) | `BINDER_GEMINI_MODEL` | `gemini-3.5-flash-lite` | Default Gemini model for `binder infer --gemini`. |
 | `gemini_location` (`gemini.location`) | `BINDER_GEMINI_LOCATION` | `global` | Default Google Cloud location for Vertex AI in `binder infer --gemini`. |
 | `gemini_project` (`gemini.project`) | `BINDER_GEMINI_PROJECT` | — | Default Google Cloud project for Vertex AI in `binder infer --gemini`. |
@@ -2613,9 +2623,11 @@ asking:
    `$HOME/.config/binder/config.yaml`. A file in your own home directory records
    a choice you made, so binder stamps from it without the flag.
 
-A third origin — the `BINDER_VERIFIED_BY` environment variable — also permits a
-stamp on the shipped binary. It has [its own subsection](#binder_verified_by)
-below.
+Those two are the whole list. Two other places a `verified_by` can come from —
+the `BINDER_VERIFIED_BY` [environment variable](#binder_verified_by) and a
+[repo-local `./.binder.yaml`](#a-repo-local-binderyaml-does-not-authorize-a-stamp)
+— resolve as configuration but do **not** authorize a stamp; each is refused and
+the refusal is disclosed. They have their own subsections below.
 
 With a verifier from none of these, **no flag means no stamp**: the run completes
 normally and writes no `verified` key. That is the default for every `convert`
@@ -2701,16 +2713,14 @@ Two consequences worth knowing:
 
 #### `BINDER_VERIFIED_BY`
 
-On the shipped binary, the `BINDER_VERIFIED_BY` environment variable permits a
-stamp without the flag, on both `convert` and `enrich`.
+`BINDER_VERIFIED_BY` **does not authorize a stamp.** With the variable exported
+and no `--verified-by` on the command line, `convert` and `enrich` write no
+`verified` key. An exported variable arrives from a `.envrc`, a devcontainer, a
+CI workflow, or a `make` target as readily as from the shell you typed in, so it
+does not evidence a decision by the person running this command.
 
-A stamp written from the environment is **always disclosed, and identifies the
-environment as its origin**: the prose block reads `(source: env)` and
-`result.verified.source` under `--json` is `"env"`. binder also **will not
-co-sign from an environment value** — where a different identity has already
-attested a concept, the stamp is declined and that concept is
-[skipped](#binder-does-not-co-sign), with the reason disclosed. Only an explicit
-`--verified-by` co-signs.
+As with a repo-local config, the value is not dropped in silence — the run
+discloses the verifier it declined to act on:
 
 ```bash
 BINDER_VERIFIED_BY="process:nightly-ingest" SOURCE_DATE_EPOCH=1700000000 \
@@ -2719,31 +2729,47 @@ BINDER_VERIFIED_BY="process:nightly-ingest" SOURCE_DATE_EPOCH=1700000000 \
 
 ```text
 Trust (verified stamps):
-  actor: process:nightly-ingest (source: env)
-  stamped: 1 file(s)
-    - overview.md
-  skipped: 1 file(s) (a different identity already attested; pass --verified-by to co-sign)
-    - metrics/revenue.md (already attested by human:alice)
+  note: ignored BINDER_VERIFIED_BY "process:nightly-ingest": an environment default does not authorize stamping (pass --verified-by to stamp)
 ```
 
-Where both are set, `BINDER_VERIFIED_BY` outranks a repo-local `./.binder.yaml`
-`verified_by` under the usual [precedence](#config): the
-environment value is the one that stamps, and the repo-local value is not used
-(the disclosure names the environment, and there is no ignored-repo-local note).
+Under `--json` the same refusal is `result.verified.note`, with `actor` empty and
+`source` `"none"` — a refused verifier is never a write source, so `"env"` does
+not appear there:
 
-It does not reach the [MCP server](#mcp-server-binder-mcp), which resolves a
+```json
+{
+  "actor": "",
+  "source": "none",
+  "stamped": [],
+  "num_stamped": 0,
+  "skipped": [],
+  "num_skipped": 0,
+  "note": "ignored BINDER_VERIFIED_BY \"process:nightly-ingest\": an environment default does not authorize stamping (pass --verified-by to stamp)"
+}
+```
+
+The variable is still resolved configuration in every other respect: `binder
+config` reports it as `verified_by: "…" (source: env)`, and a malformed value is
+still a fail-fast usage error (exit `2`) on every command.
+
+It also still **outranks** a repo-local `./.binder.yaml` in
+[precedence](#config). With both set, the note names the environment variable and
+the repo-local value is not separately reported — one refusal is disclosed, not
+two. (Whether a higher layer should shadow a lower one this way is open; see
+[issue #63](https://github.com/ghchinoy/binder/issues/63).)
+
+To stamp from automation, pass `--verified-by` on the command line: it is an
+explicit per-run act, it is honoured whatever the environment holds, and it is
+the only input that may [co-sign](#binder-does-not-co-sign). The variable does
+not reach the [MCP server](#mcp-server-binder-mcp) either, which resolves a
 verifier from its tool input alone.
-
-An exported variable can reach a shell from a checked-in `.envrc`, a
-devcontainer, a CI workflow, or a `make` target, so prefer `--verified-by` in
-automation you want to be self-evident from the command line.
 
 #### binder does not co-sign
 
 A default is consent to attest **your own** work, not to add your name beside
 somebody else's. So when a concept already carries a `verified` attestation by a
-**different** identity, a stamp resolved from the global config (or the
-environment) is **skipped** for that concept:
+**different** identity, a stamp resolved from the global config is **skipped**
+for that concept:
 
 ```bash
 binder config set --global verified_by "human:ghchinoy"
@@ -2818,12 +2844,12 @@ conditional on `--dry-run`, on anything being written, or on the output format:
 | Field | Type | Meaning |
 |---|---|---|
 | `actor` | string | The verifier that was stamped (or would be, under `--dry-run`); `""` when none was determined or when one was resolved but not honoured. |
-| `source` | string | Where `actor` came from: `flag` \| `env` \| `config` \| `none` (the MCP `convert` tool reports `input`). `config` is only ever the global user config — a repo-local one never authorizes a stamp, so it never appears as a write source. |
+| `source` | string | Where `actor` came from: `flag` \| `config` \| `none` (the MCP `convert` tool reports `input`). `config` is only ever the global user config; a repo-local one and `BINDER_VERIFIED_BY` never authorize a stamp, so neither ever appears as a write source. |
 | `stamped` | array of string | Concept paths that received the stamp, sorted. |
 | `num_stamped` | int | Length of `stamped`. |
 | `skipped` | array | Concepts where the stamp was declined to avoid co-signing, each `{ path, existing_actor }`, sorted by path. |
 | `num_skipped` | int | Length of `skipped`. |
-| `note` | string | Present **only** when there is a resolved-but-unhonoured verifier to report — today, a repo-local `verified_by`. Omitted otherwise. |
+| `note` | string | Present **only** when there is a resolved-but-unhonoured verifier to report — a repo-local `verified_by`, or a `BINDER_VERIFIED_BY` in the environment. Omitted otherwise. |
 
 The `verified` object is additive to the
 [`binder.report/v1` envelope](#the-envelope-schema-binderreportv1); the schema is
