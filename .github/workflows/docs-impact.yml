@@ -1,0 +1,65 @@
+name: Docs impact
+
+# Enforces the PR template's required "Docs impact" field (issue #104): the PR
+# body must contain the "## Docs impact" section AND have a box checked. The
+# gate checks whether the question was ANSWERED, never whether the answer is
+# correct — a "No" on a PR that does change user-visible output is a reviewer
+# finding, not a CI finding. Judging correctness would make the gate wrong often
+# enough to get disabled, and a disabled gate is worse than none.
+#
+# This is a separate workflow from ci.yml because it keys on the PR BODY, so it
+# must also re-run when the body is `edited` (an author fixing the field without
+# pushing a commit). The Go suite in ci.yml has no reason to re-run on a body
+# edit, so keeping them apart avoids that waste.
+#
+# The controls that keep this matcher honest — four bodies it must reject and
+# one it must accept, all DERIVED from the template by structural mutation with
+# zero transcribed fixtures — live in internal/docsimpact and run on every CI
+# invocation via ci.yml's `make check`. Permissive drift therefore breaks the
+# build loudly instead of passing forever.
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  docs-impact:
+    # Never fire on Dependabot or other bot PRs — a gate that nags bots gets
+    # disabled within a week.
+    #
+    # NOTE for whoever later wires branch protection: this skips the whole job
+    # for bot PRs, and GitHub records a skipped required check as SATISFIED (it
+    # does not block the merge). That is the intended outcome for bots here — but
+    # a skipped job is not a passing job. If this workflow is made a required
+    # check, a bot PR will merge without the gate ever running. `user.type` is
+    # set server-side by GitHub, so a human cannot forge it to obtain the skip.
+    if: github.event.pull_request.user.type != 'Bot'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # Build the gate to a binary so its exit code is preserved verbatim.
+      # `go run` collapses every non-zero exit to 1, which would erase the
+      # exit-1 (a finding) vs exit-2 (the gate could not run) distinction the
+      # gate depends on.
+      - name: Build docs-impact gate
+        run: go build -o bin/docs-impact-gate ./internal/docsimpact/cmd/gate
+
+      # PR_BODY is passed via env, never interpolated into the run script, so a
+      # crafted PR body cannot inject shell. The gate reads the body, not the
+      # diff. There is no `||` fallback: the binary's exit code is the whole
+      # verdict, so "ran and found nothing" can never be confused with "never
+      # ran".
+      - name: Check docs-impact field
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: ./bin/docs-impact-gate

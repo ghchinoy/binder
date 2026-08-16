@@ -89,6 +89,35 @@ func InCodeRegion(offset int, spans []Span) bool {
 	return false
 }
 
+// MaskCode returns body with every byte that goldmark classifies as code —
+// fenced code blocks, indented code blocks, and inline code spans — replaced by a
+// single space, leaving newlines and every byte offset intact. A line-anchored
+// scanner run over the result therefore reads only prose: a checkbox- or
+// heading-shaped line that is really quoted code is blanked, exactly as GitHub
+// renders it as literal text.
+//
+// This is the markdown-aware alternative to a line scanner that enumerates which
+// constructs count as code (and inevitably misses one). It is shared so any
+// caller that must ignore code regions — the docs-impact gate today, and the
+// heading-slug (issue #96) and inline-span (issue #99) paths that have the
+// identical indented-/inline-code blind spot — can reuse one CommonMark parse
+// instead of re-deriving the rule.
+func MaskCode(body string) string {
+	spans := CodeRegions(body)
+	if len(spans) == 0 {
+		return body
+	}
+	b := []byte(body)
+	for _, s := range spans {
+		for i := s.Start; i < s.End && i < len(b); i++ {
+			if b[i] != '\n' {
+				b[i] = ' '
+			}
+		}
+	}
+	return string(b)
+}
+
 func nodeText(n ast.Node, src []byte) string {
 	if n.Type() == ast.TypeInline {
 		return string(n.Text(src)) //nolint:staticcheck // Text is sufficient for a label
