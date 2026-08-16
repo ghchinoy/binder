@@ -90,7 +90,20 @@ func (c *Codec) Serialize(con *okf.Concept) ([]byte, error) {
 		b.WriteString("\n")
 	}
 	b.WriteString("---\n")
-	if body != "" && !strings.HasPrefix(body, "\n") {
+	// Emit the body exactly as it arrived. The body already carries its own
+	// leading separator from the source (splitFrontmatter returns everything after
+	// the closing fence, blank line included when present), so for a PARSED concept
+	// re-encoding must add nothing here: inserting a blank line corrupts the
+	// frontmatter/body boundary on every rewrite — a value overwrite, an appended
+	// key, even a pure round-trip — turning a body that abutted the fence into one
+	// preceded by a spurious blank. The insertion below is a synthesis convenience
+	// for converter-built concepts ONLY (OriginalFrontmatter nil, e.g. plain
+	// markdown with no fence), where a blank conventionally separates the
+	// synthesised frontmatter from the body. The `== nil` gate is LOAD-BEARING, not
+	// redundant: dropping it re-introduces the round-trip corruption, and deleting
+	// the whole block regresses six converter-synthesis test artifacts that rely on
+	// that conventional blank. See TestByteFaithfulBodyBoundary.
+	if con.OriginalFrontmatter == nil && body != "" && !strings.HasPrefix(body, "\n") {
 		b.WriteString("\n")
 	}
 	b.WriteString(body)
@@ -161,6 +174,20 @@ func spliceFrontmatter(fmText string, origRoot *yaml.Node, origOM, fm *okf.Order
 		if valEnd < keyLine {
 			valEnd = keyLine
 		}
+		// A multi-line FLOW collection closes on a line ("]" / "}" on its own line)
+		// that no yaml.v3 node reports, so maxNodeLine stops one line short. Left
+		// uncorrected, that closing line is disowned by this key: it leaks into the
+		// next span or the trailing region, and the value's own source region is
+		// handed to the splice without its closer — the flow match fails, the value
+		// is re-encoded, and the orphan "]" is emitted as stray bytes, producing
+		// UNPARSEABLE output. Extend valEnd to the line where the flow delimiters
+		// balance so the full value span (closer included) belongs to this key.
+		if vn.Style&yaml.FlowStyle != 0 &&
+			(vn.Kind == yaml.SequenceNode || vn.Kind == yaml.MappingNode) {
+			if e, ok := flowCloseLine(lines, vn.Line-1); ok && e > valEnd {
+				valEnd = e
+			}
+		}
 		pairs = append(pairs, span{kn.Value, keyLine, valEnd, vn})
 	}
 	// No parseable top-level keys (empty/degenerate block): fall back to a clean
@@ -220,6 +247,33 @@ func spliceFrontmatter(fmText string, origRoot *yaml.Node, origOM, fm *okf.Order
 		if items, ok := spliceSequenceItems(p.valNode, v, lines); ok {
 			out.WriteString(joinLines(p.keyLine, p.keyLine+1)) // the "key:" line verbatim
 			out.Write(items)
+			continue
+		}
+		// Same sibling-level preservation for the two shapes the block-sequence
+		// splice above cannot address by whole source lines: a FLOW sequence
+		// (`verified: [{…}]`, single- or multi-line) and a FLOW mapping
+		// (`verified: {…}`) that convert.applyVerifiedBy normalized to a []any
+		// before appending (valEnd already covers a multi-line closer). Both are
+		// re-emitted as a block sequence whose pre-existing entries are copied
+		// verbatim from their source bytes, so a human attestation keeps its flow
+		// style, {by,at} order, and !!timestamp tag when a neighbour is added. It
+		// is general: no key is singled out.
+		if block, ok := spliceFlowContainerToBlock(p.key, p.valNode, v,
+			joinLines(p.keyLine, p.valEnd+1)); ok {
+			ensureNL()
+			out.Write(block)
+			continue
+		}
+		// And for a BLOCK (dash-less) nested mapping — `verified:` followed by
+		// indented `by:`/`at:` lines — likewise normalized to a []any by
+		// applyVerifiedBy. It cannot be byte-identical (a lone mapping value must
+		// gain a `- ` marker and one indent level to become a sequence item), but
+		// its sub-entry lines are copied from source and re-indented, so the
+		// pre-existing attestation's tokens, sub-key order, and `!!timestamp` tag
+		// survive verbatim — only the block framing changes.
+		if block, ok := spliceBlockMapToSeq(p.key, p.valNode, v, lines); ok {
+			ensureNL()
+			out.Write(block)
 			continue
 		}
 		// Otherwise re-encode the whole value fresh.
@@ -297,6 +351,350 @@ func spliceSequenceItems(valNode *yaml.Node, desired any, lines []string) ([]byt
 			continue
 		}
 		fresh, err := encodeSeqItem(dv, indent)
+		if err != nil {
+			return nil, false
+		}
+		b.Write(fresh)
+	}
+	return b.Bytes(), true
+}
+
+// spliceFlowContainerToBlock re-emits a changed value whose SOURCE node is a
+// flow SEQUENCE (`verified: [{…}]`, on one line or spread across several) or a
+// flow MAPPING (`verified: {…}`) as a block sequence, keeping each unchanged
+// leading entry
+// byte-identical to the source and encoding only the added or changed entries
+// freshly. It exists because yaml.v3 cannot re-emit these shapes faithfully — it
+// drops flow interior spacing, reorders sub-keys, and retypes `!!timestamp` ->
+// `!!str` — so, exactly like the block-sequence splice, the pre-existing entries
+// (which can be human attestations) are copied from their source bytes rather
+// than re-encoded. convert.applyVerifiedBy normalizes a bare {by,at} mapping to a
+// one-element []any before appending, so the flow-mapping case arrives here with
+// desired of type []any and a single leading source entry.
+//
+// It returns the full "key:\n  - …\n" block and ok=true, or ok=false to let the
+// caller fall back to a whole-value re-encode (a non-[]any desired value, a
+// non-flow node, a source it cannot bound, or item counts that disagree with the
+// parsed node — anything this line model cannot address safely). region is the
+// exact source text of the key's own line(s), including the "key:" prefix. It is
+// general: no key is singled out.
+func spliceFlowContainerToBlock(key string, valNode *yaml.Node, desired any, region string) ([]byte, bool) {
+	if valNode == nil {
+		return nil, false
+	}
+	want, ok := desired.([]any)
+	if !ok {
+		return nil, false
+	}
+	flowText, ok := scanFlowValue(region)
+	if !ok {
+		return nil, false
+	}
+	var srcTexts []string
+	var srcVals []any
+	switch {
+	case valNode.Kind == yaml.SequenceNode && valNode.Style&yaml.FlowStyle != 0:
+		parts, ok := splitFlowSeqItems(flowText)
+		if !ok || len(parts) != len(valNode.Content) {
+			return nil, false
+		}
+		srcTexts = parts
+		for _, c := range valNode.Content {
+			srcVals = append(srcVals, nodeToValue(c))
+		}
+	case valNode.Kind == yaml.MappingNode && valNode.Style&yaml.FlowStyle != 0:
+		if len(flowText) == 0 || flowText[0] != '{' {
+			return nil, false
+		}
+		srcTexts = []string{flowText}
+		srcVals = []any{nodeToValue(valNode)}
+	default:
+		return nil, false
+	}
+
+	const indent = "  " // block items under a top-level key: 2-space marker indent
+	var b bytes.Buffer
+	b.WriteString(key)
+	b.WriteString(":\n")
+	for i, dv := range want {
+		if i < len(srcVals) && reflect.DeepEqual(srcVals[i], dv) {
+			b.WriteString(indent)
+			b.WriteString("- ")
+			b.WriteString(srcTexts[i]) // pre-existing entry, verbatim source bytes
+			b.WriteByte('\n')
+			continue
+		}
+		fresh, err := encodeSeqItem(dv, indent)
+		if err != nil {
+			return nil, false
+		}
+		b.Write(fresh)
+	}
+	return b.Bytes(), true
+}
+
+// flowCloseLine returns the 0-indexed line index of the line that carries the
+// closing delimiter of the flow collection beginning at or after startLine. It
+// concatenates the source from startLine, finds the first '{'/'[' and its
+// matching close via matchFlow (which honors nesting and quoted scalars across
+// newlines), then maps that byte offset back to a line index by counting the
+// newlines that precede it. ok is false when there is no flow delimiter or it
+// never balances. Used only to correct valEnd for multi-line flow values, so the
+// closing "]"/"}" line is owned by the value and never leaks.
+func flowCloseLine(lines []string, startLine int) (int, bool) {
+	if startLine < 0 {
+		startLine = 0
+	}
+	if startLine >= len(lines) {
+		return 0, false
+	}
+	region := strings.Join(lines[startLine:], "")
+	start := strings.IndexAny(region, "{[")
+	if start < 0 {
+		return 0, false
+	}
+	end, ok := matchFlow(region, start)
+	if !ok {
+		return 0, false
+	}
+	return startLine + strings.Count(region[:end], "\n"), true
+}
+
+// scanFlowValue returns the substring of region beginning at its first flow
+// delimiter ('{' or '[') and ending at the matching close, honoring single- and
+// double-quoted scalars. It operates on bytes and matches only ASCII delimiters,
+// so multi-byte (e.g. CJK) content inside values cannot produce a false match.
+// ok is false when there is no flow delimiter or it does not balance.
+func scanFlowValue(region string) (string, bool) {
+	start := strings.IndexAny(region, "{[")
+	if start < 0 {
+		return "", false
+	}
+	end, ok := matchFlow(region, start)
+	if !ok {
+		return "", false
+	}
+	return region[start : end+1], true
+}
+
+// commentEnd reports whether the '#' at s[i] begins a YAML comment and, if so,
+// returns the index of the '\n' that ends it (or len(s) if the comment runs to
+// the end of s). Per the YAML rule, a '#' begins a comment only when it is at the
+// start of the line OR is preceded by whitespace; a '#' with a non-space neighbour
+// ("a#b") is an ordinary character. The caller must only invoke this OUTSIDE a
+// quoted scalar, so a '#' inside quotes ("x #1") is never treated as a comment.
+// The terminating newline is a structural separator and is NOT part of the span.
+func commentEnd(s string, i int) (int, bool) {
+	if i < 0 || i >= len(s) || s[i] != '#' {
+		return 0, false
+	}
+	if i > 0 {
+		// '\r' is load-bearing, not dead. ParseConcept only collapses "\r\n"→"\n";
+		// a LONE '\r' (a classic-Mac break, or a stray CR) survives into
+		// OriginalFrontmatter, and yaml.v3 accepts it as a line break, so such
+		// input reaches this scanner with a '#' directly after a '\r'. Dropping
+		// this case makes a line-start comment after a lone CR read as ordinary
+		// text, which re-breaks a changed multi-line flow sequence into
+		// unparseable output. See TestCommentEnd/after_carriage_return and
+		// TestByteFaithfulLoneCRLineStartCommentReparses.
+		switch s[i-1] {
+		case ' ', '\t', '\n', '\r':
+		default:
+			return 0, false // "a#b": not a comment
+		}
+	}
+	if nl := strings.IndexByte(s[i:], '\n'); nl >= 0 {
+		return i + nl, true
+	}
+	return len(s), true
+}
+
+// matchFlow returns the index of the flow delimiter that closes the one at
+// position start, honoring nested delimiters, quoted scalars, and interior YAML
+// comments (a '#' comment can carry a stray ']' or '}' that must not be counted
+// into the depth). ok is false if start is not a '{'/'[' or the delimiters never
+// balance.
+//
+// Quoting follows YAML's two scalar rules exactly, because a mis-detected string
+// end lets a ',', ']'/'}', or '#' INSIDE a scalar be read as structure: a
+// double-quoted string escapes a '"' with a backslash (`"a\"b"`), so a '\' skips
+// the next byte; a single-quoted string has no backslash escape and instead
+// writes a literal quote as a doubled pair, which the toggle (close then
+// immediately reopen) already handles.
+func matchFlow(s string, start int) (int, bool) {
+	if start < 0 || start >= len(s) {
+		return 0, false
+	}
+	switch s[start] {
+	case '{', '[':
+	default:
+		return 0, false
+	}
+	depth := 0
+	var q byte // 0, '\'' or '"' when inside a quoted scalar
+	for i := start; i < len(s); i++ {
+		c := s[i]
+		if q != 0 {
+			if q == '"' && c == '\\' {
+				i++ // '\' escapes the next byte; an escaped '"' is not a close
+				continue
+			}
+			if c == q {
+				q = 0
+			}
+			continue
+		}
+		if c == '#' {
+			if e, ok := commentEnd(s, i); ok {
+				i = e - 1 // skip the comment; the loop's i++ lands on the newline
+				continue
+			}
+		}
+		switch c {
+		case '\'', '"':
+			q = c
+		case '{', '[':
+			depth++
+		case '}', ']':
+			depth--
+			if depth == 0 {
+				return i, true
+			}
+		}
+	}
+	return 0, false
+}
+
+// splitFlowSeqItems splits a flow sequence ("[ … ]") into its top-level item
+// substrings, honoring nested flow delimiters and quoted scalars, and trims the
+// surrounding whitespace of each. Interior YAML comments are dropped: a '#'
+// comment (outside quotes, at line-start or after whitespace) is excluded from
+// item text and its content — including any comma or bracket it carries — never
+// affects the split. Quoting follows YAML exactly (see matchFlow): a '\' inside a
+// double-quoted scalar escapes the next byte, so an escaped '"' is copied
+// verbatim and never mistaken for the string end. It returns ok=false if seq is
+// not a flow sequence. An empty sequence ("[]") yields no items.
+func splitFlowSeqItems(seq string) ([]string, bool) {
+	if len(seq) < 2 || seq[0] != '[' || seq[len(seq)-1] != ']' {
+		return nil, false
+	}
+	inner := seq[1 : len(seq)-1]
+	var items []string
+	var cur strings.Builder
+	depth := 0
+	var q byte
+	flush := func() {
+		if s := strings.TrimSpace(cur.String()); s != "" {
+			items = append(items, s)
+		}
+		cur.Reset()
+	}
+	for i := 0; i < len(inner); i++ {
+		c := inner[i]
+		if q != 0 {
+			cur.WriteByte(c)
+			if q == '"' && c == '\\' && i+1 < len(inner) {
+				i++
+				cur.WriteByte(inner[i]) // copy the escaped byte verbatim
+				continue
+			}
+			if c == q {
+				q = 0
+			}
+			continue
+		}
+		if c == '#' {
+			if e, ok := commentEnd(inner, i); ok {
+				i = e - 1 // skip the comment; the loop's i++ lands on the newline
+				continue
+			}
+		}
+		switch c {
+		case '\'', '"':
+			q = c
+			cur.WriteByte(c)
+		case '{', '[':
+			depth++
+			cur.WriteByte(c)
+		case '}', ']':
+			depth--
+			cur.WriteByte(c)
+		case ',':
+			if depth == 0 {
+				flush()
+			} else {
+				cur.WriteByte(c)
+			}
+		default:
+			cur.WriteByte(c)
+		}
+	}
+	flush()
+	return items, true
+}
+
+// spliceBlockMapToSeq re-emits a changed value whose SOURCE node is a BLOCK
+// (dash-less) mapping — `verified:` followed by indented `by:`/`at:` lines — that
+// convert.applyVerifiedBy normalized to a one-element []any before appending. The
+// pre-existing entry's source lines are copied and re-indented into the first
+// block-sequence item, and only the appended/changed entries are encoded fresh.
+// Unlike the flow and block-sequence paths this is NOT byte-identical — a lone
+// mapping value must acquire a `- ` marker and one further indent level to become
+// a sequence item — but the sub-entry TOKENS, sub-key order, and scalar tags
+// (an `!!timestamp` never becomes an `!!str`) are preserved verbatim; only the
+// block framing changes. It returns ok=false (fall back to a whole-value
+// re-encode) for anything it cannot re-indent safely: a non-[]any desired value,
+// a non-mapping or flow node, a first item that does not match the source entry,
+// or a source line that does not carry the mapping's common indent. It is
+// general: no key is singled out.
+func spliceBlockMapToSeq(key string, valNode *yaml.Node, desired any, lines []string) ([]byte, bool) {
+	if valNode == nil || valNode.Kind != yaml.MappingNode || valNode.Style&yaml.FlowStyle != 0 {
+		return nil, false
+	}
+	want, ok := desired.([]any)
+	if !ok || len(want) == 0 {
+		return nil, false
+	}
+	// The desired list's first element must still be the pre-existing mapping;
+	// otherwise this is not a plain append and re-indenting would be unsafe.
+	if !reflect.DeepEqual(nodeToValue(valNode), want[0]) {
+		return nil, false
+	}
+	start := valNode.Line - 1
+	end := maxNodeLine(valNode) // exclusive: last source line index is end-1
+	if start < 0 || end > len(lines) || end <= start {
+		return nil, false
+	}
+	// Common indent = the leading whitespace of the mapping's first source line.
+	firstLine := lines[start]
+	indentLen := len(firstLine) - len(strings.TrimLeft(firstLine, " "))
+	common := firstLine[:indentLen]
+	if common == "" {
+		return nil, false // a top-level (unindented) mapping value is not this shape
+	}
+
+	const marker = "  " // block-sequence marker indent under a top-level key
+	var b bytes.Buffer
+	b.WriteString(key)
+	b.WriteString(":\n")
+	for li := start; li < end; li++ {
+		line := lines[li]
+		if !strings.HasPrefix(line, common) {
+			return nil, false // ragged indent this simple model cannot re-indent
+		}
+		rest := line[indentLen:] // line with the common indent stripped
+		if li == start {
+			b.WriteString(marker + "- " + rest) // first line gets the "- " marker
+		} else {
+			b.WriteString(marker + "  " + rest) // continuation lines: marker + 2
+		}
+	}
+	// Ensure the pre-existing item ended with a newline before appending more.
+	if bs := b.Bytes(); len(bs) > 0 && bs[len(bs)-1] != '\n' {
+		b.WriteByte('\n')
+	}
+	for _, dv := range want[1:] {
+		fresh, err := encodeSeqItem(dv, marker)
 		if err != nil {
 			return nil, false
 		}

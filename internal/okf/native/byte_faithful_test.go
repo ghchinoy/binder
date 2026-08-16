@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/ghchinoy/binder/internal/okf"
 )
 
 // scalarTags walks a YAML frontmatter block and records "tag|style" for every
@@ -228,29 +230,23 @@ func TestByteFaithfulSiblingInChangedContainer(t *testing.T) {
 	}
 }
 
-// TestCharacterize_FlowSeqAndBareMapVerifiedReencodedOnAppend is a
-// CHARACTERIZATION test: it records CURRENT, KNOWN-INCOMPLETE behaviour, not an
-// intended contract. When a `verified` value is written as a single-line FLOW
-// SEQUENCE (`verified: [{ … }]`) or as a BARE/NESTED MAPPING (`verified: { … }`)
-// and a stamp is appended, spliceSequenceItems bails (flow style / non-sequence
-// value node) and the whole value is re-encoded through yaml.v3: the pre-existing
-// entry's {by,at} keys are reordered and its `at` is retyped !!timestamp -> !!str.
-//
-// Full byte-faithful preservation is the GOAL. The splice extension that closes
-// this residual is a separate, sequenced change; when it lands this test will be
-// updated to assert PRESERVATION (!!timestamp). That change is a DECISION, NOT A
-// REGRESSION — the name is deliberately non-invariant to say so.
-//
-// The BLOCK-sequence container is ALREADY preserved; that promise is a real,
-// permanent invariant pinned separately by TestByteFaithfulSiblingInChangedContainer,
-// which must never flip. The two are intentionally NOT merged: one pins a
-// promise, the other pins a symptom, and they have different lifetimes.
+// TestByteFaithfulFlowSeqAndBareMapSibling is a PERMANENT invariant — the
+// companion to TestByteFaithfulSiblingInChangedContainer (block sequence) for the
+// other two attestation container shapes. When a `verified` value is written as a
+// single-line FLOW SEQUENCE (`verified: [{ … }]`) or as a BARE/nested flow
+// MAPPING (`verified: { … }`) and a stamp is appended, the pre-existing entry
+// stays byte-identical: its flow style, interior spacing, {by,at} sub-key order,
+// and `!!timestamp` tag all survive. spliceFrontmatter re-emits it from its
+// source bytes (spliceFlowContainerToBlock) instead of re-encoding the whole
+// value through yaml.v3. This was previously the KNOWN residual pinned by a
+// characterization test; the splice extension closed it, so the test now pins the
+// promise, not the symptom, and must never flip back.
 //
 // Anti-vacuity: each case first asserts the pre-existing `at` really is a
-// !!timestamp today (so a later !!str reading is a genuine retype, not a value
-// that was already a string) and asserts the appended stamp landed (so the
-// container genuinely changed and the test is not trivially "preserving" a no-op).
-func TestCharacterize_FlowSeqAndBareMapVerifiedReencodedOnAppend(t *testing.T) {
+// !!timestamp today (so the preserved-!!timestamp assertion is not vacuously true
+// of a value that was already a string) and asserts the appended stamp landed (so
+// the container genuinely changed and the test is not "preserving" a no-op).
+func TestByteFaithfulFlowSeqAndBareMapSibling(t *testing.T) {
 	cases := []struct {
 		name, verified, beforePath string
 	}{
@@ -272,7 +268,7 @@ func TestCharacterize_FlowSeqAndBareMapVerifiedReencodedOnAppend(t *testing.T) {
 			before := scalarTags(t, frontmatterOf(t, raw))
 			// Anti-vacuity 1: the authored value really is a !!timestamp today.
 			if got := before[tc.beforePath]; !strings.HasPrefix(got, "!!timestamp") {
-				t.Fatalf("setup: pre-existing %s is not !!timestamp (got %q); the retype "+
+				t.Fatalf("setup: pre-existing %s is not !!timestamp (got %q); the preservation "+
 					"assertion below would be vacuous", tc.beforePath, got)
 			}
 
@@ -302,16 +298,260 @@ func TestCharacterize_FlowSeqAndBareMapVerifiedReencodedOnAppend(t *testing.T) {
 				t.Fatalf("appended stamp missing — container did not change:\n%s", out)
 			}
 
-			// CURRENT behaviour: the pre-existing entry is now [0] of a block
-			// sequence and its `at` has been retyped !!timestamp -> !!str.
+			// INVARIANT: the pre-existing entry is byte-identical — flow style,
+			// interior spacing, and {by,at} sub-key order all intact.
+			if !strings.Contains(out, "  - { by: human:ahormati, at: 2024-02-01T09:30:00Z }\n") {
+				t.Errorf("pre-existing %s entry was reshaped, not preserved verbatim:\n%s", tc.name, out)
+			}
+			// INVARIANT: assert on the YAML TAG, not only bytes — the exact defect
+			// was a !!timestamp -> !!str retype that identical-looking text can hide.
 			after := scalarTags(t, frontmatterOf(t, out))
-			if got := after[".verified[0].at"]; !strings.HasPrefix(got, "!!str") {
-				t.Errorf("CHARACTERIZATION drift: pre-existing verified.at is %q, expected "+
-					"!!str (current known-incomplete behaviour for %s). If a splice extension "+
-					"now PRESERVES it as !!timestamp, that is the intended fix — update this "+
-					"test; it is a DECISION, NOT A REGRESSION.\n%s", got, tc.name, out)
+			if got := after[".verified[0].at"]; !strings.HasPrefix(got, "!!timestamp") {
+				t.Errorf("pre-existing verified[0].at was retyped to %q, want !!timestamp:\n%s", got, out)
 			}
 		})
+	}
+}
+
+// TestByteFaithfulNonTrustSiblingOnAppend is the special-casing detector for the
+// append path (criterion 4): the same sibling preservation must hold for an
+// ORDINARY key of the flow-sequence and bare-mapping shapes, not just for
+// `verified`. The splice never inspects the key name; if this fails while the
+// `verified` cases pass, the fix special-cased the trust key.
+func TestByteFaithfulNonTrustSiblingOnAppend(t *testing.T) {
+	cases := []struct{ name, value string }{
+		{"flow_sequence", "history: [{ by: alice, at: 2024-02-01T09:30:00Z }]\n"},
+		{"bare_mapping", "history: { by: alice, at: 2024-02-01T09:30:00Z }\n"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			raw := "---\ntype: Note\n" + tc.value + "---\n\n# Body\n"
+			c := New()
+			con, err := c.ParseConcept("x.md", []byte(raw))
+			if err != nil {
+				t.Fatalf("ParseConcept: %v", err)
+			}
+			before := scalarTags(t, frontmatterOf(t, raw))
+			bp := ".history[0].at"
+			if _, ok := before[bp]; !ok {
+				bp = ".history.at"
+			}
+			if got := before[bp]; !strings.HasPrefix(got, "!!timestamp") {
+				t.Fatalf("setup: pre-existing %s is not !!timestamp (got %q)", bp, got)
+			}
+			v, _ := con.Frontmatter.Get("history")
+			var list []any
+			switch vv := v.(type) {
+			case []any:
+				list = vv
+			case map[string]any:
+				list = []any{vv}
+			default:
+				t.Fatalf("unexpected history shape %T", v)
+			}
+			con.Frontmatter.Set("history", append(list,
+				map[string]any{"by": "bob", "at": "2023-11-14T22:13:20Z"}))
+			outB, err := c.Serialize(con)
+			if err != nil {
+				t.Fatalf("Serialize: %v", err)
+			}
+			out := string(outB)
+			if !strings.Contains(out, "bob") {
+				t.Fatalf("appended entry missing — container did not change:\n%s", out)
+			}
+			if !strings.Contains(out, "  - { by: alice, at: 2024-02-01T09:30:00Z }\n") {
+				t.Errorf("ordinary-key pre-existing entry was reshaped, not preserved:\n%s", out)
+			}
+			after := scalarTags(t, frontmatterOf(t, out))
+			if got := after[".history[0].at"]; !strings.HasPrefix(got, "!!timestamp") {
+				t.Errorf("ordinary-key history[0].at was retyped to %q, want !!timestamp:\n%s", got, out)
+			}
+		})
+	}
+}
+
+// TestByteFaithfulBlockMapSiblingOnAppend covers the third attestation shape a
+// bare {by,at} can take: a BLOCK (dash-less) nested mapping. Appending here
+// cannot be byte-identical — a lone mapping value must acquire a `- ` marker and
+// one indent level to become a sequence item — but the pre-existing entry's
+// TOKENS, {by,at} sub-key order, and `!!timestamp` tag must be preserved: only
+// the block framing changes, never the attestation's data or type. (CJK content
+// is used to confirm the byte-based re-indent is multi-byte safe.)
+func TestByteFaithfulBlockMapSiblingOnAppend(t *testing.T) {
+	raw := "---\n" +
+		"type: Metric\n" +
+		"verified:\n" +
+		"  by: human:あほまてぃ\n" +
+		"  at: 2024-02-01T09:30:00Z\n" +
+		"---\n\n# Body\n"
+	c := New()
+	con, err := c.ParseConcept("x.md", []byte(raw))
+	if err != nil {
+		t.Fatalf("ParseConcept: %v", err)
+	}
+	before := scalarTags(t, frontmatterOf(t, raw))
+	if got := before[".verified.at"]; !strings.HasPrefix(got, "!!timestamp") {
+		t.Fatalf("setup: pre-existing .verified.at is not !!timestamp (got %q)", got)
+	}
+	v, _ := con.Frontmatter.Get("verified")
+	list := []any{v.(map[string]any)}
+	con.Frontmatter.Set("verified", append(list,
+		map[string]any{"by": "human:ghchinoy", "at": "2023-11-14T22:13:20Z"}))
+	outB, err := c.Serialize(con)
+	if err != nil {
+		t.Fatalf("Serialize: %v", err)
+	}
+	out := string(outB)
+	if !strings.Contains(out, "human:ghchinoy") {
+		t.Fatalf("appended stamp missing — container did not change:\n%s", out)
+	}
+	// Tokens and sub-key order preserved (re-indented into a sequence item).
+	if !strings.Contains(out, "  - by: human:あほまてぃ\n    at: 2024-02-01T09:30:00Z\n") {
+		t.Errorf("pre-existing block-mapping entry was reshaped or retyped:\n%s", out)
+	}
+	// Tag preserved: no !!timestamp -> !!str retype.
+	after := scalarTags(t, frontmatterOf(t, out))
+	if got := after[".verified[0].at"]; !strings.HasPrefix(got, "!!timestamp") {
+		t.Errorf("pre-existing verified[0].at was retyped to %q, want !!timestamp:\n%s", got, out)
+	}
+}
+
+// TestByteFaithfulBodyBoundary pins the frontmatter/body boundary for PARSED
+// concepts. Serialize must reproduce the body exactly as the source had it —
+// crucially, whether or not a blank line separated the closing fence from the
+// first body line. A pre-existing defect (shipped in v0.3.0) inserted a blank
+// line after the fence on EVERY rewrite — a value overwrite, an appended key,
+// even a pure round-trip — whenever the body abutted the fence. It lived in the
+// ENCODER (Serialize), not the splice, so it fired on the pure-overwrite path
+// where only a value changes and nothing is added, and a byte proxy that only
+// inspected the frontmatter region could not see it.
+//
+// The decisive assertion is that the reparsed body equals the original body: an
+// inserted blank shows up as a leading "\n" the source never had. Re-parseability
+// is asserted alongside, since the boundary must never yield an unreadable file.
+func TestByteFaithfulBodyBoundary(t *testing.T) {
+	cases := []struct {
+		name           string
+		raw            string
+		exactRoundTrip bool // pure round-trip is byte-identical (frontmatter round-trips cleanly)
+	}{
+		{"abuts_fence", "---\ntype: Note\n---\n# Body\ntext\n", true},
+		{"one_blank", "---\ntype: Note\n---\n\n# Body\ntext\n", true},
+		{"two_blank", "---\ntype: Note\n---\n\n\n# Body\n", true},
+		{"empty_body", "---\ntype: Note\n---\n", true},
+		// Parsed-but-EMPTY frontmatter: OriginalFrontmatter is non-nil (len 0), so
+		// the body-boundary gate treats it as a round-trip and inserts no blank. The
+		// pure round-trip is NOT byte-identical here for a SEPARATE, out-of-scope
+		// reason — an empty block re-emits as "{}" — so only the body boundary is
+		// asserted for this row.
+		{"empty_frontmatter_abuts", "---\n---\n# Body\ntext\n", false},
+	}
+	c := New()
+	// reparseBody serializes con and returns the body of the reparsed output.
+	reparseBody := func(t *testing.T, con *okf.Concept) string {
+		t.Helper()
+		out, err := c.Serialize(con)
+		if err != nil {
+			t.Fatalf("Serialize: %v", err)
+		}
+		re, err := c.ParseConcept("x.md", out)
+		if err != nil {
+			t.Fatalf("output does not re-parse (%v):\n%s", err, out)
+		}
+		return re.Body
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			orig, err := c.ParseConcept("x.md", []byte(tc.raw))
+			if err != nil {
+				t.Fatalf("ParseConcept: %v", err)
+			}
+			wantBody := orig.Body
+
+			// (1) PURE round-trip — no change at all.
+			if tc.exactRoundTrip {
+				out, err := c.Serialize(orig)
+				if err != nil {
+					t.Fatalf("Serialize: %v", err)
+				}
+				if string(out) != tc.raw {
+					t.Errorf("pure round-trip not byte-identical:\n want %q\n  got %q", tc.raw, string(out))
+				}
+			} else if got := reparseBody(t, orig); got != wantBody {
+				t.Errorf("pure round-trip changed body boundary:\n want %q\n  got %q", wantBody, got)
+			}
+
+			// (2) PURE VALUE OVERWRITE — an EXISTING key's value changes, no key is
+			// added. This is the path that proves the defect is in the encoder, not
+			// the splice.
+			ov, _ := c.ParseConcept("x.md", []byte(tc.raw))
+			if _, ok := ov.Frontmatter.Get("type"); ok {
+				ov.Frontmatter.Set("type", "Metric") // overwrite in place
+			} else {
+				ov.Frontmatter.Set("type", "Metric") // empty-fm row: no existing key
+			}
+			if got := reparseBody(t, ov); got != wantBody {
+				t.Errorf("value-overwrite changed body boundary:\n want %q\n  got %q", wantBody, got)
+			}
+
+			// (3) APPENDED KEY — the additive path enrich/convert take.
+			ad, _ := c.ParseConcept("x.md", []byte(tc.raw))
+			ad.Frontmatter.Set("status", "stable")
+			if got := reparseBody(t, ad); got != wantBody {
+				t.Errorf("key-append changed body boundary:\n want %q\n  got %q", wantBody, got)
+			}
+		})
+	}
+}
+
+// TestCharacterize_SynthesisedConceptGetsSeparatorBlank records CURRENT behaviour,
+// NOT an invariant: a converter-SYNTHESISED concept (OriginalFrontmatter nil — a
+// plain markdown file with no fence, as produced by convert.PlainConcept and used
+// by BOTH `convert` and `enrich` on fence-less files, enrich.go:251) gets a single
+// blank line inserted between the freshly synthesised frontmatter and the body.
+// This is the deliberate synthesis convention the converter goldens rely on; the
+// body-boundary gate keys the insertion on OriginalFrontmatter == nil so it fires
+// ONLY here and never on a parsed round-trip. Every original body byte survives
+// verbatim and in order — the blank is prepended, nothing is altered — and the
+// output re-parses. Named as characterization (not an invariant) because whether
+// enrich-of-a-plain-file should ALSO suppress this blank is a caller-side policy
+// question; a future change that suppresses it should update this test, not read a
+// red here as a regression it caused.
+func TestCharacterize_SynthesisedConceptGetsSeparatorBlank(t *testing.T) {
+	c := New()
+	// Mirrors convert.PlainConcept: empty ordered map, nil OriginalFrontmatter,
+	// Body = the whole user file (no fence).
+	con := &okf.Concept{
+		ID:          "x",
+		RelPath:     "x.md",
+		Frontmatter: okf.NewOrderedMap(),
+		Body:        "# Heading\n\nUser prose.\n",
+	}
+	con.Frontmatter.Set("type", "Note")
+
+	out, err := c.Serialize(con)
+	if err != nil {
+		t.Fatalf("Serialize: %v", err)
+	}
+	got := string(out)
+
+	// CURRENT behaviour: a separator blank sits between the synthesised fence and
+	// the body.
+	if !strings.Contains(got, "---\n\n# Heading\n") {
+		t.Errorf("synthesis separator blank not present (current behaviour):\n%s", got)
+	}
+	// The user's body bytes survive verbatim and in order.
+	if !strings.Contains(got, "# Heading\n\nUser prose.\n") {
+		t.Errorf("user body not preserved verbatim:\n%s", got)
+	}
+	// The output re-parses and the reparsed body is the original plus the one
+	// synthesis blank — pinning that nothing beyond that blank was inserted.
+	re, err := c.ParseConcept("x.md", out)
+	if err != nil {
+		t.Fatalf("synthesised output does not re-parse (%v):\n%s", err, got)
+	}
+	if re.Body != "\n# Heading\n\nUser prose.\n" {
+		t.Errorf("reparsed body not original+one-blank:\n want %q\n  got %q", "\n# Heading\n\nUser prose.\n", re.Body)
 	}
 }
 
