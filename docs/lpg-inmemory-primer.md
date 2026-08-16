@@ -1,44 +1,33 @@
 # The Labeled Property Graph in memory: a pragmatic primer
 
-How to hold a graph in RAM and query it with a handful of small functions — with
-the performance measurements that explain why the structure is shaped the way it
-is.
-
-**Scope.** This page is general background. It is not a description of any one
-program, and the Go below is illustrative — something to copy and adapt, not a
-package to import. The worked example is **people, companies, and who knows /
-works-at / founded whom**; substitute your own labels, because nothing in the model
-depends on that choice.
-
-**About the numbers and figures.** Every performance claim on this page is measured
-rather than estimated: §4 reports the measurements and §7 gives the benchmark
-harness and the machine they were run on. The figures are authored in Graphviz DOT
-and stored next to this page as DOT source plus a lossless WebP render; the render
-command and the font and color notes are in
-[`assets/README.md`](assets/README.md).
+General background on holding a graph in RAM, querying it with a handful of small
+functions, and the measurements that explain why the structure is shaped the way
+it is. It describes the model rather than any one program, and the Go is
+illustrative: something to copy and adapt, not a package to import.
 
 ---
 
 ## Summary
 
 - A **Labeled Property Graph (LPG)** is nodes and directed, typed edges where
-  *both* nodes and edges carry a free-form property map. Edges holding properties
-  of their own — not just nodes — is what distinguishes the model (§1).
+  nodes and edges alike carry a free-form property map. Property maps on the edge
+  distinguish the model (§1).
 - Hold it in memory as **typed structs + a few maps**: `nodes`/`edges` by id, an
   **adjacency index** (`out`/`in`), and a **label index** (`byLabel`). Build the
   indexes at insert time; reads stay cheap (§2).
-- Those indexes are not premature optimization. On a 100k-node / 600k-edge graph,
-  indexed neighbor lookup measured **~21,000× faster** than a flat-slice scan, and
-  a selective label lookup **~1,500× faster** — but a *non-selective* label lookup
-  only **~1.35×**, because materializing 20k results dominates. The index helps in
-  proportion to how much it lets you *skip* (§4).
-- You rarely need a query language to start. A **fixed set of typed, bounded verbs**
-  — lookup, one-hop, k-hop BFS (breadth-first search), pattern+filter, path
-  existence — covers most real questions. Because there is no query text, there is
+- Those indexes earn their cost. On a 100k-node / 600k-edge graph, indexed
+  neighbor lookup measured **~21,000× faster** than a flat-slice scan, and
+  a selective label lookup **~1,500× faster**. A non-selective label lookup, one
+  that matches a large share of the nodes, measured only **~1.35×** faster,
+  because materializing 20k results dominates. The index helps in proportion to
+  how much it lets you skip (§4).
+- You can start without a query language. A **fixed set of typed, bounded verbs**
+  covers most real questions: lookup, one-hop, k-hop BFS (breadth-first search),
+  pattern+filter, and path existence. Because there is no query text, there is
   no parser to maintain and no query string for a caller to smuggle anything into,
   and every traversal takes a depth limit as an argument, so none of them can be
   called unbounded (§3). Move to a real query engine only when open-ended querying
-  is a genuine requirement (§5).
+  is a requirement (§5).
 
 ---
 
@@ -50,36 +39,41 @@ A **Labeled Property Graph** is just two kinds of things:
   `Person`, `Company`) and a **map of properties** (arbitrary key→value, e.g.
   `name: "Alice"`, `founded: 2001`).
 - **Edges** (a.k.a. relationships) — connections. Each edge is **directed**
-  (`from → to`), has exactly one **type** (e.g. `WORKS_AT`, `KNOWS`), and — the
-  defining feature — **also carries its own map of properties** (e.g.
+  (`from → to`), has exactly one **type** (e.g. `WORKS_AT`, `KNOWS`), and, the
+  defining feature, **also carries its own map of properties** (e.g.
   `since: 2021`, `role: "eng"`).
+
+The worked example throughout is people, companies, and who knows / works-at /
+founded whom; substitute your own labels, because nothing in the model depends on
+that choice.
 
 ![The example LPG: Person and Company nodes carry labels and a property map; the directed, typed edges (WORKS_AT, KNOWS, FOUNDED) carry their own properties too.](assets/lpg-model.webp)
 
-That last point is the reason the LPG exists as a distinct model. In **RDF** the
-graph is a set of `subject–predicate–object` **triples** whose parts are named by
-globally unique identifiers (IRIs), and the edge — the predicate — **cannot
-natively hold properties**. To say "Alice worked at Acme *since 2021*" you must
-either use **reification**, which means turning the statement itself into an extra
+Edges carrying their own properties are the reason the LPG exists as a distinct
+model. In **RDF** the graph is a set of `subject–predicate–object` **triples**
+whose parts are named by globally unique identifiers (IRIs), and the edge (the
+predicate) cannot natively hold properties. To say "Alice worked at Acme since
+2021" you must either use **reification**, which means turning the statement
+itself into an extra
 node so that facts about the statement have somewhere to attach, or **named
 graphs**, which means putting the triple in its own separately labeled subgraph
 and attaching the extra facts to that. In an **LPG** the edge is an object in its
-own right, with the same standing as a node — its own identity and its own property
-map: `(:Person)-[:WORKS_AT {since:2021, role:"eng"}]->(:Company)`. The extra detail
-lives *on the relationship itself*. That is why an LPG tends to match how people
+own right, with the same standing as a node. It has its own identity and its own
+property map: `(:Person)-[:WORKS_AT {since:2021, role:"eng"}]->(:Company)`. The extra detail
+lives on the relationship itself. That is why an LPG tends to match how people
 already describe their data, and why information about where a fact came from and
-how much to trust it ("who said this, when, how confident") sits comfortably on
-edges.
+how much to trust it ("who said this, when, how confident") sits on the edge.
 
 ![The same fact, "Alice worked at Acme since 2021", in both models: LPG says it with one edge carrying since=2021, while RDF must reify into a blank Statement node fanning out to subject / predicate / object / since — four nodes and four edges to hold what LPG holds in one.](assets/lpg-vs-rdf.webp)
 
 **Standards grounding:**
 - **GQL — ISO/IEC 39075:2024** — the first standalone ISO graph query language
   ("first new ISO database language since SQL"), declarative, for property graphs.
-- **SQL/PGQ — ISO/IEC 9075-16:2023** — property-graph pattern matching *inside* a
+- **SQL/PGQ — ISO/IEC 9075-16:2023** — property-graph pattern matching inside a
   SQL `SELECT`.
-- **openCypher / Cypher** — the de-facto LPG query language (Neo4j lineage), a key
-  inspiration for GQL; what the examples below map to.
+- **openCypher / Cypher** — the most widely used LPG query language, a standard by
+  adoption rather than by publication (Neo4j lineage), and a key inspiration for
+  GQL; what the examples below map to.
 
 Everything below is how you realize that model **in memory**, and the small set of
 operations you run on it.
@@ -111,16 +105,16 @@ type Edge struct {
 ```
 
 `map[string]any` is the pragmatic choice for the property bag. It mirrors the fact
-that an LPG does not require a schema: two `Person` nodes may carry entirely
-different property keys, and nothing rejects them. (If your properties are known
-and fixed, a typed struct per label is faster and safer — but `map[string]any` is
-what makes it a *general* graph.)
+that an LPG does not require a schema: two `Person` nodes may carry different
+property keys, and nothing rejects them. (If your properties are known and fixed,
+a typed struct per label is faster and safer, but `map[string]any` is what keeps
+the container general.)
 
 ### 2.2 The container — and why it needs indexes
 
-The naive container is `nodes` plus a flat `edges` slice. That is enough to *store*
-a graph but poor for *traversal*: "who does Alice work for?" would scan **every
-edge** — O(E) per hop, meaning the cost grows with the total number of edges in the
+The naive container is `nodes` plus a flat `edges` slice. It holds a graph well
+enough and traverses one badly: "who does Alice work for?" would scan every
+edge: O(E) per hop, meaning the cost grows with the total number of edges in the
 graph. Real in-memory graphs keep a few **indexes** so that the operations you run
 most often stay cheap:
 
@@ -147,7 +141,7 @@ func NewGraph() *Graph {
 }
 ```
 
-Maintain the indexes **at insert time** so reads stay cheap:
+Maintain the indexes at insert time so reads stay cheap:
 
 ```go
 func (g *Graph) AddNode(n *Node) {
@@ -165,16 +159,15 @@ func (g *Graph) AddEdge(e *Edge) {
 ```
 
 **Why these two indexes are worth their cost:**
-- **Adjacency (`out`/`in`)** turns "neighbors of v" from an **O(E)** scan of every
-  edge into **O(deg(v))** — work proportional only to the number of edges attached
-  to `v`, because those are the only ones you look at. Keeping *both* directions
-  lets you traverse forward and backward without re-scanning.
+- **Adjacency (`out`/`in`)** narrows "neighbors of v" to the edges attached to
+  `v`, because those are the only ones you need to look at. Indexing each
+  direction lets you traverse forward and backward without re-scanning.
 - **Label index (`byLabel`)** turns "all `Person` nodes" from an **O(N)** scan of
-  every node into an **O(1)** map hit — one lookup whose cost does not grow with the
-  graph — that returns the ready-made id list.
+  every node into an **O(1)** map hit (one lookup whose cost does not grow with the
+  graph) that returns the ready-made id list.
 
-That is the whole of it: **a couple of maps built at insert time make traversal and
-label scans cheap on read.** §4 shows what that is worth in nanoseconds.
+A couple of maps built at insert time make traversal and label scans cheap on
+read. §4 shows what that is worth in nanoseconds.
 
 ### 2.3 Complexity at a glance
 
@@ -186,8 +179,7 @@ label scans cheap on read.** §4 shows what that is worth in nanoseconds.
 | k-hop bounded BFS | O(k·E) | **O(visited + edges touched)** |
 | Bounded path existence | O(k·E) | **O(visited + edges touched)** |
 
-The indexed column never scans the whole graph to answer a local question — that
-is the entire design goal.
+The indexed column never scans the whole graph to answer a local question.
 
 ### 2.4 Building one (usage)
 
@@ -204,13 +196,11 @@ g.AddEdge(&Edge{ID: "e3", Type: "FOUNDED",  From: "p:bob",   To: "c:acme"})
 
 ---
 
-## 3. Querying the in-memory LPG (the operations you actually run)
+## 3. Querying the in-memory LPG (the operations you run)
 
 Each operation is a small typed function, shown next to the Cypher it corresponds
 to. This is the **fixed-verb** style (option (a) in §5): a closed set of named
-operations instead of a query language. There is no parser and no query string, and
-the traversals take their depth limit as a required argument, so a caller cannot
-ask for an unbounded walk.
+operations instead of a query language.
 
 ### 3.1 Lookup by id / by label
 
@@ -286,16 +276,16 @@ MATCH (a)-[*1..3]->(b) WHERE a.id = $id RETURN DISTINCT b
 ![Bounded BFS from A: the frontier expands one depth at a time (A to {B,C} to {D,E}). The shortest path A to C to E to the target is highlighted; the dashed E-to-A edge is a revisit the visited set rejects, so the walk terminates.](assets/bfs-frontier.webp)
 
 **Why bounding matters:** a graph can contain cycles and can be densely connected,
-so an unbounded walk can revisit nodes forever, fan out across the *entire* graph,
+so an unbounded walk can revisit nodes forever, fan out across the whole graph,
 or both. **Two guards are required:** (1) a **visited set** (here, `dist` itself) so
 that cycles terminate, and (2) a **depth cap** (`maxDepth`) so that cost stays
 predictable. Without both, "expand from a node" is an easy way to hang the process
-or exhaust memory on a graph that looked small. This is also *why* a query surface
-should make callers pass a bound rather than defaulting to one.
+or exhaust memory on a graph that looked small. This is also the reason a query
+surface should make callers pass a bound rather than defaulting to one.
 
 ### 3.4 Pattern match + filter
 
-"Find people who work at a company in a given industry" — a two-element pattern
+"Find people who work at a company in a given industry" is a two-element pattern
 with a property predicate on the far node:
 
 ```go
@@ -323,11 +313,11 @@ MATCH (p:Person)-[:WORKS_AT]->(c:Company)
 WHERE c.industry = $want
 RETURN DISTINCT p
 ```
-Notice the shape mirrors the Cypher exactly: **start from the cheapest anchor**
-(the label index), **walk the typed edge**, **apply the WHERE on properties**.
-Choosing the narrowest starting set (here `Person`, or `Company` if there are
-fewer) is you doing by hand what a database engine's query planner would decide for
-you.
+The shape mirrors the Cypher: start from the cheapest anchor, meaning the smallest
+starting set an index can hand you (here the label index), walk the typed edge,
+then apply the WHERE on properties. A database engine's query planner picks that
+starting set for you; here you pick it yourself, taking `Person`, or `Company` if
+there are fewer of them.
 
 ### 3.5 Bounded path existence between two nodes
 
@@ -372,11 +362,11 @@ guards.
 
 ### 3.6 Going a little further: shortest path and aggregation
 
-Two operations you'll reach for almost immediately after the basics. Both are the
-same primitives (adjacency walk + a bound), just carrying a bit more state.
+Both of the operations below are the same primitives (adjacency walk + a bound),
+carrying a bit more state.
 
 **Shortest path (by hop count), with reconstruction.** BFS already visits nodes in
-increasing distance, so the *first* time you reach `dst` is via a shortest path.
+increasing distance, so the first arrival at `dst` is via a shortest path.
 Carry a predecessor map and walk it backward to rebuild the route:
 
 ```go
@@ -423,8 +413,8 @@ MATCH p = shortestPath((a)-[*..4]->(b))
 WHERE a.id = $src AND b.id = $dst
 RETURN p
 ```
-(For weighted edges — a `cost` property — swap BFS for Dijkstra; the shape is the
-same, a priority queue instead of a FIFO.)
+(For weighted edges, say a `cost` property, swap BFS for Dijkstra; the shape is the
+same, a priority queue instead of a first-in, first-out (FIFO) queue.)
 
 **Aggregation.** Counting/grouping over a node's edges is just a walk into a map:
 
@@ -445,13 +435,14 @@ RETURN type(r) AS type, count(*) AS n
 
 ---
 
-## 4. What the indexes are actually worth (measured)
+## 4. What the indexes are worth (measured)
 
-The complexity claims in §2 are easy to assert; here is what they cost in
+Every performance claim on this page is measured rather than estimated. The
+complexity claims in §2 are easy to assert; here is what they cost in
 nanoseconds. All numbers come from Go benchmarks (`go test -bench . -benchmem`) on a
 synthetic graph built with a fixed-seed pseudo-random number generator, so every run
 builds the same graph and the results are reproducible. The harness is in the
-appendix (§7).
+appendix (§7) and the machine is in the environment block below.
 
 **Benchmark environment.** `goos: linux, goarch: amd64`, Intel Xeon @ 2.80GHz,
 2 CPUs, Go toolchain default settings. Graph: **100,000 nodes, 600,000 edges,
@@ -471,24 +462,23 @@ appendix (§7).
 > selective row needs, but the code that produced it is not shown on this page, so
 > running the printed harness alone will not regenerate this one row.
 
-Two conclusions follow, and the second is the one most often missed:
-
-1. **Adjacency indexing is not optional at scale.** One neighbor lookup over
-   600k edges went from ~8 ms (a full scan) to ~386 ns — about four orders of
+1. **Adjacency indexing is a requirement at scale.** One neighbor lookup over
+   600k edges went from ~8 ms (a full scan) to ~386 ns, about four orders of
    magnitude. Any traversal does this per hop, so the gap compounds fast.
 
-2. **A label index helps in proportion to how much it lets you *skip*.** For a
+2. **A label index helps in proportion to how much it lets you skip.** For a
    selective label (10 matching nodes) it is ~1,500× faster, because the naive
    version still walks all 100k nodes while the index jumps straight to the 10. But
-   for a *non-selective* label (~20k matches) the speedup collapses to ~1.35×: both
-   versions must now touch and materialize ~20k results, and that work — not the
-   lookup — dominates. **An index accelerates the search, never the size of the
+   for a non-selective label (~20k matches) the speedup collapses to ~1.35×: both
+   versions must now touch and materialize ~20k results, and that work, not the
+   lookup, dominates. **An index accelerates the search, never the size of the
    answer.** If your query returns a big fraction of the graph, no index saves you;
-   the honest fix is to return less (filter, paginate, or push the predicate down).
+   the fix is to return less: filter, paginate, or push the predicate down, which
+   means applying the filter at the source instead of over the assembled results.
 
-That second point is why "add an index" is not a universal answer, and why the
-fixed-verb API in §3 makes callers pass bounds: the cheapest result set is the one
-you never materialize.
+An index therefore answers some questions cheaply and leaves others as expensive
+as they were, which is why the fixed-verb API in §3 makes callers pass bounds: the
+cheapest result set is the one you never materialize.
 
 ---
 
@@ -502,19 +492,19 @@ you never materialize.
   traversal takes its bound as a required argument (the caller passes `maxDepth`),
   so an unbounded walk is not expressible; and the set of operations is small enough
   to review in one sitting. This is the lightweight starting point.
-- **(b) Parse a query language** (Cypher / GQL / SQL-PGQ) — accept a query *string*,
-  tokenize → parse → plan → execute over the same in-memory structures. **Far more
-  flexible** (arbitrary patterns, aggregation, projection), but it brings in a
+- **(b) Parse a query language** (Cypher / GQL / SQL-PGQ) — accept a query string,
+  tokenize → parse → plan → execute over the same in-memory structures. Far more
+  flexible (arbitrary patterns, aggregation, projection), but it brings in a
   parser and a planner; it means accepting query text you did not write, which has
-  to be treated as untrusted; and it hands the bounding problem back to you — you
+  to be treated as untrusted; and it hands the bounding problem back to you: you
   must cap traversal depth and result size yourself, or a single query can walk the
-  whole graph (see §4). It is the right move *later*, when ad-hoc querying is
-  genuinely needed.
+  whole graph (see §4). That is the right move once ad-hoc querying becomes a
+  requirement.
 
-**Rule of thumb:** start with (a) — a handful of typed, bounded verbs covering the
-90% of questions actually asked. Graduate to (b) — or better, to an engine that
-already implements a standard language (§6) — only when open-ended querying is a
-real requirement, not a hypothetical.
+**Rule of thumb:** start with (a): a handful of typed, bounded verbs covering the
+90% of questions asked. Graduate to (b), or better to an engine that already
+implements a standard language (§6), only when open-ended querying is a real
+requirement.
 
 ---
 
@@ -526,18 +516,18 @@ graduate when any of those breaks:
 
 - **Doesn't fit / needs persistence / concurrent writers / transactions** → an
   **embedded engine**: e.g. **DuckDB + the DuckPGQ extension**, which gives you
-  **SQL/PGQ (ISO/IEC 9075-16:2023)** over local data — a real standard query
+  **SQL/PGQ (ISO/IEC 9075-16:2023)** over local data, a real standard query
   language in-process.
 - **Needs scale-out, an operational store, or a managed service** → a **server**:
   **Spanner Graph** (ISO-GQL) or **Neo4j** (Cypher/GQL), etc.
 
-The pragmatic progression is therefore **in-memory typed verbs → embedded engine
-(SQL/PGQ / Cypher) → remote managed graph (GQL)** — you add a query language and
-then a server only when the workload demands it, not before.
+The pragmatic progression is therefore in-memory typed verbs → embedded engine
+(SQL/PGQ / Cypher) → remote managed graph (GQL). You add a query language, and
+then a server, when the workload demands it.
 
 Choosing between the engines above is its own exercise, and it is worth doing
-deliberately before you commit: compare the query language each one speaks and
-which standard it belongs to, the license, how actively the project is maintained,
+before you commit: compare the query language each one speaks and which standard
+it belongs to, the license, how actively the project is maintained,
 and whether it runs in your process or as a server you have to operate. Consult
 each project's own documentation for the current answers rather than a snapshot in
 a page like this one.
@@ -546,8 +536,9 @@ a page like this one.
 
 ## 7. Appendix — the benchmark harness (reproduce the §4 numbers)
 
-A deterministic LCG builds the graph so every run is identical; each benchmark
-compares the indexed method against a naive flat-slice equivalent.
+A deterministic linear-congruential generator (LCG) builds the graph so every run
+is identical; each benchmark compares the indexed method against a naive
+flat-slice equivalent.
 
 ```go
 // graph_test.go — run with: go test -bench . -benchmem
@@ -660,7 +651,7 @@ func (g *Graph) NodesByLabelNaive(label string) []*Node {
 
 The selectivity result (§4, row 2 vs row 3) comes from adding a rare label `RARE`
 to just 10 of the 100k nodes and benchmarking `NodesByLabel("RARE")` (10 matches,
-~1,500×) against `NodesByLabel("L0")` (~20k matches, ~1.35×) — same code, different
+~1,500×) against `NodesByLabel("L0")` (~20k matches, ~1.35×): same code, different
 selectivity, opposite conclusion.
 
 ---
@@ -668,7 +659,7 @@ selectivity, opposite conclusion.
 ## Sources
 
 - **GQL** — ISO/IEC 39075:2024 (iso.org/standard/76120.html;
-  en.wikipedia.org/wiki/Graph_Query_Language). **SQL/PGQ** — ISO/IEC 9075-16:2023.
+  en.wikipedia.org/wiki/Graph_Query_Language). **SQL/PGQ**: ISO/IEC 9075-16:2023.
 - **openCypher** — opencypher.org. **Cypher** — neo4j.com/docs/cypher-manual/current.
 - **LPG data model vs RDF triples** (edges carrying their own properties) — RDF 1.1
   Concepts, w3.org/TR/rdf11-concepts/, which defines the triple model and the
@@ -678,7 +669,8 @@ selectivity, opposite conclusion.
   support, license, and maintenance status.
 - **Performance numbers (§4)** — measured by the author with the harness in §7;
   `goos linux, goarch amd64`, Intel Xeon @ 2.80GHz, 2 CPUs; 100k nodes / 600k edges.
-- **Figures** — authored in Graphviz DOT, committed as DOT + lossless WebP
-  (`dot`→PNG→`cwebp`); sources, render command, and the font/theme note live in
-  `assets/README.md`. Font: Google Sans Flex (fonts.google.com). Palette: Material
-  light theme (owner-supplied).
+- **Figures** — authored in Graphviz DOT and stored next to this page as DOT
+  source plus a lossless WebP render (`dot`→PNG→`cwebp`); sources, render command,
+  and the font/theme note live in [`assets/README.md`](assets/README.md). Font:
+  Google Sans Flex (fonts.google.com). Palette: Material light theme
+  (owner-supplied).
