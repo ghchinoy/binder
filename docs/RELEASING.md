@@ -50,14 +50,38 @@ The token needs write access to:
      `checksums.txt` to the GitHub Release;
    - updates the Homebrew formula in `ghchinoy/homebrew-tap`.
 
-> **winget is temporarily unavailable.** The winget publisher was removed until
-> the cross-repo PAT can open a PR to `microsoft/winget-pkgs` (the fine-grained
-> token 403'd on the upstream PR). Tracked in
-> [#40](https://github.com/ghchinoy/binder/issues/40).
+### What a release publishes
+
+Seven assets, from goreleaser's default name template with the version
+**`v`-stripped**. The v0.2.1 release, verified with `gh release view v0.2.1`:
+
+```text
+binder_0.2.1_darwin_amd64.tar.gz  binder_0.2.1_linux_amd64.tar.gz   binder_0.2.1_windows_amd64.zip
+binder_0.2.1_darwin_arm64.tar.gz  binder_0.2.1_linux_arm64.tar.gz   binder_0.2.1_windows_arm64.zip
+checksums.txt
+```
+
+So the predictable pattern for an install script is
+`binder_<version>_<os>_<arch>.tar.gz`, `.zip` on Windows. Each archive also
+carries `LICENSE` and `README.md` (`archives.files` in `.goreleaser.yaml`).
+
+The tap update lands as `Formula/binder.rb` in `ghchinoy/homebrew-tap`, which
+means the user-facing install command is:
+
+```sh
+brew install ghchinoy/tap/binder
+```
+
+That is the one thing worth smoke-testing after a release — `ghchinoy/tap` is
+Homebrew's shorthand for the `ghchinoy/homebrew-tap` repo, and the formula's own
+`test` block runs `binder --version`.
 
 ## Versioning posture (pre-1.0)
 
-- SemVer with `v`-prefixed tags. First release is **`v0.1.0`**.
+- SemVer with `v`-prefixed tags. The series opened at **`v0.1.0`** (seeded by
+  `"initial-version": "0.1.0"` in `release-please-config.json`); the current
+  released version is always whatever `.release-please-manifest.json` holds —
+  never read a version out of this document.
 - While `0.x`: `feat:` → **minor**, `fix:` → **patch**, breaking changes →
   **minor** (not major). Configured via `bump-minor-pre-major: true` and
   `bump-patch-for-minor-pre-major: false` in `release-please-config.json`.
@@ -68,18 +92,45 @@ The token needs write access to:
 
 ## How the version reaches the binary (single-source: the tag)
 
-`cmd/root.go` declares `var Version = "dev"`. goreleaser injects the tag at build
-time:
+`cmd/root.go` declares `var Version = "dev"`, and two different sources can fill
+it in:
 
-```
--ldflags "-X github.com/ghchinoy/binder/cmd.Version={{ .Version }}"
-```
+- **goreleaser** injects the tag at build time —
+  `-ldflags "-X github.com/ghchinoy/binder/cmd.Version={{ .Version }}"`. Note
+  that goreleaser's `.Version` is the tag with its `v` **stripped**.
+- **`go install github.com/ghchinoy/binder@vX.Y.Z`** gets no ldflags, so an
+  `init()` fallback recovers the module version from `debug.ReadBuildInfo()`.
+  That value is `v`-**prefixed**.
 
-For `go install github.com/ghchinoy/binder@vX.Y.Z` builds (no ldflags), an
-`init()` fallback recovers the module version from `debug.ReadBuildInfo()`. This
-matters beyond `--version`: the version is stamped into every converted concept's
-trust provenance as `generated.by: "binder/<version>"`, so a release binary must
-carry the real tag.
+Left alone those two disagree about the leading `v`, and the disagreement is not
+cosmetic: the version is stamped into every converted concept's trust provenance
+as `generated.by: "binder/<version>"`, so two install methods would write two
+different trust stamps for one release.
+
+They are therefore reconciled in code. `init()` routes **both** sources through a
+single funnel, `normalizeVersion`, which strips exactly one leading `v` when what
+follows is a digit and leaves everything else (`dev`, `(devel)`, the empty
+string) untouched. It never fabricates a version — it only removes a prefix from
+a value that is already there.
+
+**The canonical form therefore has no leading `v`:** `binder/0.3.0`, not
+`binder/v0.3.0`. That is what `binder --version` prints, what the `--json`
+envelope's `binder` field contains, and what lands in `generated.by` — identical
+across the goreleaser, `go install`, and `go build` paths. What normalization
+does *not* do is invent a version. A plain `go build` — and `make build`, which
+is `go build -o bin/binder .` — passes **no `-ldflags`**, so nothing sets
+`cmd.Version` and the `init()` fallback reports the Go module pseudo-version
+instead (e.g. `binder/0.2.2-0.20260816074947-7f4ca6b4c816`). This has nothing to
+do with whether the clone is tagged: a clone sitting on `v0.2.1-12-gdd8c35e`
+still reports the pseudo-version, because the tag only reaches the binary
+through `-ldflags`. That is why the release path must inject it.
+
+To rehearse the stamp locally, build the way the release builds:
+
+```sh
+go build -ldflags "-X github.com/ghchinoy/binder/cmd.Version=0.3.0" -o /tmp/binder .
+/tmp/binder --version     # binder/0.3.0
+```
 
 ## Reproducible build invariants
 
@@ -104,3 +155,10 @@ goreleaser release --snapshot --clean   # build all targets, no publish
 
 cosign signatures and SBOMs are intentionally **not** configured yet (no
 `signs:`/`sboms:` blocks). Checksums (`checksums.txt`) are emitted today.
+
+**winget is temporarily unavailable.** The winget publisher was removed in
+[#46](https://github.com/ghchinoy/binder/pull/46) until the cross-repo PAT can
+open a PR to `microsoft/winget-pkgs` (the fine-grained token 403'd on the
+upstream PR). There is no `winget:` block in `.goreleaser.yaml` today. Tracked in
+[#40](https://github.com/ghchinoy/binder/issues/40); Windows users should take
+the release `.zip` in the meantime.

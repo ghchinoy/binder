@@ -11,18 +11,46 @@ guided path between them.
 
 ## Before you start
 
-Build the binary and put it on your `PATH` (requires Go 1.26+):
+Install binder with Homebrew:
+
+```bash
+brew install ghchinoy/tap/binder
+```
+
+…or build it from source (requires Go 1.26.1+, the floor declared in `go.mod`):
 
 ```bash
 git clone https://github.com/ghchinoy/binder.git
 cd binder
 make build          # -> bin/binder
 export PATH="$PWD/bin:$PATH"
-binder --version    # binder/0.1.0
 ```
 
 Dependencies are pinned via `go.mod`/`go.sum` and fetched from the Go module
-proxy at build time (network required).
+proxy at build time (network required). Either way, check the binary:
+
+```bash
+binder --version
+```
+
+```text
+binder/<version>
+```
+
+A Homebrew or direct-download install of v0.3.0 prints exactly `binder/0.3.0`.
+The banner is always `binder/<version>` and **never** carries a leading `v`. This
+is not cosmetic: it is the exact string binder stamps into every concept's
+`generated.by`, so the value you see here is the value that will show up in your
+bundles.
+
+A source build prints something longer, like
+`binder/0.2.2-0.20260816074947-7f4ca6b4c816`. That is the Go module
+pseudo-version, and the reason is the build command, not the clone: `make build`
+runs a plain `go build` with **no `-ldflags`**, so nothing injects the release
+version and binder falls back to what the module graph knows. A fully tagged
+clone behaves identically. Install a release if you want a clean stamp, or pass
+the ldflag yourself — see
+[docs/RELEASING.md](RELEASING.md#how-the-version-reaches-the-binary-single-source-the-tag).
 
 Two habits make every run in this tutorial reproducible:
 
@@ -39,13 +67,23 @@ never invents a source or auto-stamps `verified`.
 
 Brownfield means the knowledge already exists (a docs site, an Obsidian vault, a
 folder of runbooks) and the job is to get it into OKF with its relationships
-intact. binder ships a small sample corpus with three deliberate triage cases (an
-unresolved link, a file with no title, and files with no frontmatter). Use it as
-the corpus for this part:
+intact. The binder **repository** carries a small sample corpus with three
+deliberate triage cases (an unresolved link, a file with no title, and files with
+no frontmatter). Use it as the corpus for this part.
+
+The corpus lives in the git repository, **not** in the release archive — a
+Homebrew or direct-download install gives you the `binder` binary plus `LICENSE`
+and `README.md`, and nothing else. So grab the repo, whichever way you installed:
 
 ```bash
-CORPUS=plugins/okf-convert/skills/okf-convert/assets/sample-corpus
+git clone --depth 1 https://github.com/ghchinoy/binder.git /tmp/binder-src
+CORPUS=/tmp/binder-src/plugins/okf-convert/skills/okf-convert/assets/sample-corpus
 ```
+
+If you built from source above you already have the clone; point `CORPUS` at your
+own checkout instead — every command below uses `"$CORPUS"`, so nothing else
+changes. The pasted output shows the path from the shallow clone; yours will
+differ in that one line.
 
 ### Step 1: triage with a dry run
 
@@ -59,7 +97,7 @@ SOURCE_DATE_EPOCH=1700000000 binder convert "$CORPUS" --dry-run
 
 ```text
 binder convert --dry-run (no files written)
-  source: plugins/okf-convert/skills/okf-convert/assets/sample-corpus
+  source: /tmp/binder-src/plugins/okf-convert/skills/okf-convert/assets/sample-corpus
   output: 
   concepts: 5
   links: 3 (resolved 2, unresolved 1)
@@ -92,7 +130,7 @@ binder lint "$CORPUS"
 
 ```text
 binder lint
-  corpus: plugins/okf-convert/skills/okf-convert/assets/sample-corpus
+  corpus: /tmp/binder-src/plugins/okf-convert/skills/okf-convert/assets/sample-corpus
   concepts: 5
   broken links: 1
     topics/onboarding -> /topics/deploy.md
@@ -101,16 +139,99 @@ binder lint
   schema violations: 2
     README: missing type
     notes/scratch: missing type
-  orphans: 3
+  entrypoints (outbound, no inbound): 1
     README
+  orphans (no inbound or outbound links): 2
     notes/scratch
     topics/glossary
   stale: 0
 ```
 
-An orphan here is a concept with no inbound and no outbound resolved edge: a
-document no reader will reach by following links. Treat the orphan list as a
-to-do list for the corpus.
+An orphan here is a concept with **no inbound and no outbound** resolved edge: a
+document no reader will reach by following links, and one that leads nowhere.
+Treat the orphan list as a to-do list for the corpus.
+
+A concept with nothing pointing *at* it is an **entrypoint** rather than an
+orphan when any of three things holds: it links out to something, it is a root
+`README.md`/`index.md`, or you named it with `--entrypoint` (repeatable, and it
+tolerates a trailing `.md`). `README` here qualifies on the first count. binder
+reports entrypoints separately and does **not** count them as findings, so a
+corpus with a legitimate front door is not penalised for having one, and
+`--strict` never gates on them.
+
+Two edges of that rule are worth knowing. The section label reads
+`entrypoints (outbound, no inbound):`, but a root `README.md` with no links at
+all is listed there too — the label is narrower than the rule. And "root" means
+*root*: a nested `docs/README.md` is **not** recognized automatically and stays a
+true orphan until you pass `--entrypoint docs/README.md`. `binder review` applies
+exactly the same classification to a bundle, so `lint` and `review` never
+disagree about what is an orphan.
+
+### Step 2.5: let binder propose a type map
+
+The dry run typed almost everything `Note`, because that is the fallback when a
+file declares no `type:`. `binder infer` reads the corpus and **proposes** a
+`--type-map` from what it finds — directory names, filename patterns, and the
+types files already declare. It is proposal-only and writes nothing:
+
+```bash
+binder infer "$CORPUS"
+```
+
+```text
+notes=Note,topics=Reference
+```
+
+That single line is the whole prose output, which is what makes it composable.
+Ask `--json` for the reasoning behind each mapping:
+
+```bash
+binder infer "$CORPUS" --json | jq '.result.mappings'
+```
+
+```json
+[
+  {
+    "dir": "notes",
+    "suggested_type": "Note",
+    "source": "folder",
+    "rationale": "inferred from directory name \"notes\"",
+    "sample_files": [
+      "notes/scratch.md"
+    ]
+  },
+  {
+    "dir": "topics",
+    "suggested_type": "Reference",
+    "source": "frontmatter",
+    "rationale": "majority of files carry authored type \"Reference\"",
+    "sample_files": [
+      "topics/architecture.md",
+      "topics/glossary.md",
+      "topics/onboarding.md"
+    ]
+  }
+]
+```
+
+Read the proposal before you use it — `infer` is a suggestion, not an authority.
+When you agree with it, feed it straight into the conversion:
+
+```bash
+SOURCE_DATE_EPOCH=1700000000 binder convert "$CORPUS" -o /tmp/tut-typed \
+  --type-map "$(binder infer "$CORPUS")"
+```
+
+On *this* corpus that produces a bundle byte-identical to the plain conversion in
+Step 3, because the proposal simply reproduces the types the files already
+declare. `infer` earns its keep on a corpus where the types are implied by
+structure rather than written down — a `docs/` tree of guides, an `adr/` tree of
+decisions — where the alternative is hand-writing the map.
+
+By default `infer` uses deterministic offline signals only, so it needs neither a
+network nor an API key. `--gemini` opts into an extra semantic tier that calls a
+Gemini model; that is the one place in binder where a model enters the loop, and
+it is off unless you ask for it.
 
 ### Step 3: convert to a bundle
 
@@ -120,8 +241,9 @@ to-do list for the corpus.
 SOURCE_DATE_EPOCH=1700000000 binder convert "$CORPUS" -o /tmp/tut-bundle
 ```
 
-The report is identical to the dry run, minus the "no files written" banner. The
-bundle now has a root `index.md` declaring `okf_version: "0.2"`, per-directory
+The report is the dry run's, with two differences: the header loses its
+"(no files written)" banner, and `output:` now names the bundle directory. The
+bundle has a root `index.md` declaring `okf_version: "0.2"`, per-directory
 navigation, and one concept per source file.
 
 ### Step 4: review and validate the bundle
@@ -148,8 +270,9 @@ binder review
   stale (as of 2026-08-15): 0
   attested computations: 0
   unparsed frontmatter (recovered as body): 0
-  orphans (no inbound links): 3
+  entrypoints (outbound, no inbound): 1
     README
+  orphans (no inbound or outbound links): 2
     notes/scratch
     topics/glossary
   unresolved links: 1
@@ -185,13 +308,22 @@ prose and `--json` mode:
 |---|---|
 | `0` | Success. Advisories may be present but never gate unless `--strict` is set. |
 | `1` | Gating findings: `validate` §11 non-conformance (always), or any advisory under `--strict`. |
-| `2` | Usage error (unknown flag, missing argument, invalid actor). |
-| `3` | I/O or internal error. |
+| `2` | Usage error — anything wrong with the command line, **or with the `.binder.yaml` that feeds it**: an unknown subcommand or flag, the wrong number of arguments, an invalid actor, a malformed `--today`/`--type-map`/`--status-map`/`--stale-after-map` value, an unknown `graph --format`, and an unreadable corpus for `lint`/`enrich`/`infer`. |
+| `3` | I/O or internal error — an unreadable bundle or source for `convert`/`validate`/`index`/`review`/`graph`, or a write failure. |
+
+Never-reject governs the *corpus*, not the inputs that configure the run: binder
+will not refuse your documents for being imperfect, but it will refuse a value it
+cannot parse rather than quietly computing against something you did not mean.
+That applies to the config file too — a bad `verified_by:` in `.binder.yaml` is
+resolved before the subcommand runs, so *every* command exits `2` until you fix
+it, even one that never uses the value.
 
 `--json` wraps the report in a deterministic envelope (schema
-`binder.report/v1`) with sorted keys and a trailing newline, so two runs on the
-same input are byte-identical. Gate on the source corpus before conversion with
-`lint --strict`, which turns advisories into a non-zero exit:
+`binder.report/v1`) with a stable field order and a trailing newline, so two runs
+on the same input are byte-identical. The order is declaration order, not
+alphabetical — only map-valued objects such as `by_type` have their keys sorted.
+Gate on the source corpus before conversion with `lint --strict`, which turns
+advisories into a non-zero exit:
 
 ```bash
 binder lint "$CORPUS" --strict --json > /tmp/lint.json
@@ -215,13 +347,15 @@ exit=1
 ```
 
 Under `--strict`, binder also prints a one-line summary to stderr
-(`binder: lint found 7 finding(s) (--strict)`); the JSON on stdout is unaffected.
-A clean corpus exits `0` even with `--strict` set, so the flag is safe to leave on
-permanently in CI.
+(`binder: lint found 6 finding(s) (--strict)`); the JSON on stdout is unaffected.
+That is 1 broken link + 1 missing title + 2 schema violations + 2 orphans — the
+lone entrypoint is reported but not counted. A clean corpus exits `0` even with
+`--strict` set, so the flag is safe to leave on permanently in CI.
 
-`--strict` is available on `convert`, `enrich`, `validate`, `review`, and `lint`.
-Use `validate --strict` to gate on trust well-formedness in addition to hard
-conformance, and `convert --strict` to gate on unresolved links or recoveries.
+`--strict` is available on `convert`, `enrich`, `validate`, `review`, `lint`, and
+`infer`. Use `validate --strict` to gate on trust well-formedness in addition to
+hard conformance, and `convert --strict` to gate on unresolved links or
+recoveries.
 
 ### Multi-repo corpora: `--workspace-root`
 
@@ -248,7 +382,13 @@ source, run it on a clean git tree and review the diff.
 
 ### Step 1: create a small corpus
 
+Work somewhere outside any binder checkout — including the shallow clone Part 1
+made — because `enrich` mutates the tree it is pointed at and the advice above is
+to run it on a clean git tree:
+
 ```bash
+cd /tmp        # anywhere outside a binder checkout
+
 mkdir -p kb/drafts
 cd kb
 
@@ -335,7 +475,7 @@ verified:
     by: human:alice
 generated:
   at: "2023-11-14T22:13:20Z"
-  by: binder/0.1.0
+  by: binder/0.3.0
 ---
 
 # Loyalty program idea
@@ -363,17 +503,135 @@ enrich .
 3 file(s): 0 enriched, 3 unchanged, 0 skipped
 ```
 
+### Step 5: stop retyping the actor — `binder config`
+
+You have now typed `--verified-by "human:alice"` twice. `binder config set`
+persists it so every later run picks it up:
+
+```bash
+binder config set verified_by "human:alice"
+```
+
+```text
+Set verified_by = "human:alice" in .binder.yaml
+```
+
+**There is no `--local` flag.** Local is the default: `config set` writes
+`./.binder.yaml` in the current directory, which is the repository-scoped file
+you commit alongside the corpus. `-g`/`--global` is the opt-out, writing
+`$XDG_CONFIG_HOME/binder/config.yaml` (`~/.config/binder/config.yaml` by default)
+instead. `binder config set --local …` fails with `unknown flag: --local` and
+exit `2`.
+
+`binder config` with no arguments lists every resolved value **with the source it
+came from** — the fastest way to explain a surprising run, because the precedence
+is flag > env > config file > built-in default:
+
+```bash
+binder config
+```
+
+```text
+binder config
+  config file: .binder.yaml
+  default_type: "Note" (source: default)
+  verified_by: "human:alice" (source: file)
+  gemini_model: "gemini-3.5-flash-lite" (source: default)
+  gemini_location: "global" (source: default)
+  gemini_project: "" (source: default)
+  gemini_backend: "auto" (source: default)
+```
+
+Now add a new document and enrich **without** passing `--verified-by` at all:
+
+```bash
+cat > pricing.md <<'EOF'
+# Pricing
+
+How we price. See [payments](payments.md).
+EOF
+
+SOURCE_DATE_EPOCH=1700000000 binder enrich .
+```
+
+```text
+enrich .
+4 file(s): 1 enriched, 3 unchanged, 0 skipped
+  enriched pricing.md (added: generated, title, type, verified)
+```
+
+```bash
+cat pricing.md
+```
+
+```text
+---
+type: Note
+title: Pricing
+verified:
+  - at: "2023-11-14T22:13:20Z"
+    by: human:alice
+generated:
+  at: "2023-11-14T22:13:20Z"
+  by: binder/0.3.0
+---
+
+# Pricing
+
+How we price. See [payments](payments.md).
+```
+
+The actor came from the config file, not the command line. This does **not**
+weaken never-fabricate-trust: binder still stamps `verified` only because *you*
+configured an actor. With no flag and no configured `verified_by`, nothing is
+written.
+
+`config get` prints one resolved value (handy in scripts), and `config unset`
+reverts a key to its default:
+
+```bash
+binder config get verified_by
+binder config unset verified_by
+```
+
+```text
+human:alice
+Unset verified_by in .binder.yaml (reverted to default)
+```
+
+The other keys are `default_type`, `gemini_model`, `gemini_location`,
+`gemini_project`, and `gemini_backend`; dotted spellings like `gemini.project`
+are accepted and written back as snake_case. An unknown key is a usage error
+(exit `2`).
+
 ### The status vocabulary and the actor convention
 
 Two conventions keep a greenfield bundle honest.
 
 Keep `status` in the OKF §5.4 vocabulary: `draft`, `stable`, or `deprecated`.
-binder does not reject an unfamiliar value, but it surfaces one as a `validate`
-advisory, and `validate --strict` turns that advisory into a CI gate.
+The `--status-map` you passed above is already conformant, so it ran silently.
+Had you written `--status-map "drafts=wip,default=stable"`, `enrich` would have
+checked the value at **input** time — the check is always on — written it
+unchanged, and told you so:
+
+```text
+  status: status value "wip" (from --status-map key "drafts") is not one of draft|stable|deprecated (OKF §5.4); wrote it unchanged — pass --canonicalize-status to map it to "draft"
+```
+
+(`convert` reports the same messages under a `Status vocabulary (OKF §5.4):`
+heading; `enrich` folds them into its per-file list.)
+
+binder still does not reject the value: bare `enrich` exits `0`. But
+`--strict` turns it into a gate (exit `1`) that fires **before** anything is
+written, and `--canonicalize-status` opts into rewriting the handful of known
+aliases (`active`→`stable`, `wip`/`in-progress`→`draft`,
+`archived`/`legacy`→`deprecated`) so the gate has nothing left to catch. Both
+flags exist on `convert` as well. See
+[Status vocabulary](../README.md#status-vocabulary-and---canonicalize-status).
 
 Attest with a real actor. `--verified-by` requires the actor convention:
 `human:<id>`, `process:<id>`, `team:<id>`, or `<producer>/<version>` such as
-`binder/0.1.0`. There is no `agent:` form. An invalid actor is a usage error and
+`binder/0.3.0`. There is no `agent:` form. An invalid actor is a usage error and
 exits `2`:
 
 ```bash
@@ -382,7 +640,7 @@ echo "exit=$?"
 ```
 
 ```text
-binder: invalid actor "agent:bot"; valid forms: human:<id>, process:<id>, team:<id>, or <producer>/<version> (e.g. binder/0.1.0)
+binder: invalid actor "agent:bot"; valid forms: human:<id>, process:<id>, team:<id>, or <producer>/<version> (e.g. binder/0.3.0)
 exit=2
 ```
 
@@ -403,9 +661,12 @@ The CLI you used above is the deterministic core. Two other surfaces ship today
 and rest on the same `binder.report/v1` payloads; choose by the integration depth
 you want.
 
-- **CLI.** Deterministic, offline, no model in the loop. Reach for it for batch
-  ingestion, pipelines, and any gate that must run without a network or an API
-  key. It is the foundation the other two build on.
+- **CLI.** Deterministic at runtime, with no model in the loop by default: every
+  command runs without a network or an API key, the sole exception being the
+  opt-in `binder infer --gemini` semantic tier. Reach for it for batch ingestion,
+  pipelines, and any gate that must run unattended. It is the foundation the
+  other two build on. (Runtime only — *building* binder still needs network to
+  fetch its pinned modules from the Go module proxy.)
 - **Agent Skill / Plugin (`okf-convert`).** A skill teaches an agent harness you
   already run (Claude Code, Cursor, Zed) how to drive the CLI for judgment-laden
   work: reading a dry-run triage and deciding remediate-versus-accept, choosing
@@ -413,11 +674,14 @@ you want.
   self-hosted marketplace: `/plugin marketplace add ghchinoy/binder`, then
   `/plugin install okf-convert`. It assumes the `binder` binary is on your `PATH`.
   See [Agent Skill / Plugin](../README.md#agent-skill--plugin).
-- **MCP server (`binder mcp`).** Runs binder as a stdio MCP server, exposing the
-  additive verbs (convert, validate, review, lint, graph) as MCP tools that return
-  the same payloads as `binder <cmd> --json`. It is a transport, not a
-  report-producing command, and it stays additive: source-mutating verbs and
-  read/search tools are not exposed. Wire it into a host with
+- **MCP server (`binder mcp`).** Runs binder as a stdio MCP server. It registers
+  **seven** tools: the additive verbs `convert`, `validate`, `review`, `lint` and
+  `graph`, which return the same payloads as `binder <cmd> --json`, plus the two
+  read-only graph tools `list_graphs` (schema introspection) and `query_graph`
+  (traversal). It is a transport, not a report-producing command, and the surface
+  stays deliberately narrow: source-mutating verbs such as `enrich` are not
+  exposed, and neither is `infer`, which is proposal-only and may call out to a
+  model. Wire it into a host with
   `claude mcp add binder -- binder mcp`, or let the `okf-convert` plugin's bundled
   `.mcp.json` register it on install. See
   [MCP server](../README.md#mcp-server-binder-mcp).

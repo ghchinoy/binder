@@ -5,7 +5,7 @@
 
 ### Features
 
-* **config:** binder config set, get, unset with --global/--local scoping ([#47](https://github.com/ghchinoy/binder/issues/47)) ([a5a4eb9](https://github.com/ghchinoy/binder/commit/a5a4eb9cec613ebb8af111715919ce2016f3d1ac))
+* **config:** binder config get, set, unset — persistent settings in ./.binder.yaml, or in the user config with --global ([#47](https://github.com/ghchinoy/binder/issues/47)) ([a5a4eb9](https://github.com/ghchinoy/binder/commit/a5a4eb9cec613ebb8af111715919ce2016f3d1ac))
 
 ## [0.2.0](https://github.com/ghchinoy/binder/compare/v0.1.0...v0.2.0) (2026-08-16)
 
