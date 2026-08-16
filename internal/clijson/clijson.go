@@ -37,8 +37,10 @@ type Envelope struct {
 }
 
 // Encode writes the deterministic JSON envelope for a command's result to w:
-// fixed 2-space indent, HTML escaping OFF, sorted map keys (encoding/json's
-// default), and a trailing newline. binderVersion is the bare version string
+// fixed 2-space indent, HTML escaping OFF, and a trailing newline. Object keys
+// follow Go struct field declaration order (binder, command, schema, result),
+// which is stable and reproducible run-to-run — it is deterministic, not
+// alphabetically sorted. binderVersion is the bare version string
 // (e.g. "0.1.0"); it is prefixed with "binder/" for the envelope.
 func Encode(w io.Writer, binderVersion, command string, result any) error {
 	return EncodeSchema(w, binderVersion, command, SchemaVersion, result)
@@ -47,7 +49,7 @@ func Encode(w io.Writer, binderVersion, command string, result any) error {
 // EncodeSchema is Encode with a caller-supplied schema tag. Commands whose
 // report has its own contract (e.g. `binder config` → "binder.config/v1") use
 // this so their envelope carries the right schema while sharing the identical
-// deterministic encoding (2-space indent, HTML escaping off, sorted keys,
+// deterministic encoding (2-space indent, HTML escaping off, struct-order keys,
 // trailing newline).
 func EncodeSchema(w io.Writer, binderVersion, command, schema string, result any) error {
 	env := Envelope{
