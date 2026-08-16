@@ -33,6 +33,7 @@ bundle and reports on OKF bundles. It is **Phase 2 complete**.
   - [Strict mode](#strict-mode)
 - [Discovery surface (`--version` / `--help`)](#discovery-surface---version----help)
 - [MCP server (`binder mcp`)](#mcp-server-binder-mcp)
+- [The graph surface](#the-graph-surface)
 - [OKF v0.2 output structure](#okf-v02-output-structure)
 - [Relationship extraction](#relationship-extraction)
 - [The trust vocabulary](#the-trust-vocabulary)
@@ -1116,6 +1117,478 @@ transport over the existing internal functions:
 - **Additive only.** Source-mutating verbs (`enrich`, `emit_concept`) and
   read/search tools are deliberately **not** exposed: the read surface belongs to
   the knowledge store, and authoring over MCP is a later concern.
+
+## The graph surface
+
+Every binder command that touches relationships works from the same derived
+structure: a **graph** binder projects from the bundle's resolved links. binder does
+not store a graph — it rebuilds one from the concepts and their links on every call,
+hands you a view, and forgets it. Three surfaces read that projection:
+
+- **`binder graph`** — a CLI command that exports the *whole* graph in one of four
+  formats (see the [`graph`](#graph) flag table).
+- **`list_graphs`** — an MCP tool that describes the graph's *schema* (its labels,
+  counts, and property declarations).
+- **`query_graph`** — an MCP tool that answers *data* questions about the graph:
+  lookup, neighbors, k-hop neighborhood, pattern match, and path existence.
+
+`list_graphs` and `query_graph` are **MCP-only**: there is no `binder list_graphs`
+or `binder query-graph` CLI verb. Running one is an unknown-command usage error:
+
+```console
+$ binder list_graphs ./bundle
+binder: unknown command "list_graphs" for "binder"
+$ echo $?
+2
+```
+
+To call the MCP tools, run binder as an MCP server (see
+[MCP server (`binder mcp`)](#mcp-server-binder-mcp) for wiring it into a harness).
+Over stdio a single `tools/call` looks like this — the report is a JSON string in
+`result.content[0].text`:
+
+```bash
+printf '%s\n' \
+  '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"c","version":"0"}}}' \
+  '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
+  '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"list_graphs","arguments":{"bundle":"./bundle"}}}' \
+  | binder mcp 2>/dev/null | jq -r 'select(.id==2).result.content[0].text'
+```
+
+A runnable sample bundle and its graph views live in
+[`docs/examples/graph-sample/`](examples/graph-sample/); the examples below are
+reproducible against it and against the shipped `testdata/okf-bundles/acme_retail`.
+
+### The graph model
+
+binder projects a **labeled property graph**:
+
+- **Nodes are concepts.** A node's **label** is its concept `type` (`Table`,
+  `Metric`, `Policy`, …). Every node carries the same five queryable **properties**:
+  `id`, `title`, `type`, `tier` (the derived trust tier), and `stale`.
+- **Edges are resolved links.** There is exactly **one edge label, `LINKS`** —
+  binder's links are untyped. Each edge carries three properties: `from`, `to`, and
+  `text` (the link's text, which serves as a relationship label *by convention
+  only*).
+
+`list_graphs` reports that schema directly. For the sample bundle
+(`docs/examples/graph-sample/orders-kb`):
+
+```json
+{
+  "binder": "binder/0.3.0",
+  "command": "list_graphs",
+  "schema": "binder.report/v1",
+  "result": {
+    "graphs": [
+      {
+        "name": "orders-kb",
+        "source": {
+          "kind": "okf-bundle",
+          "root": "docs/examples/graph-sample/orders-kb"
+        },
+        "node_key": {
+          "strategy": "path",
+          "key": ""
+        },
+        "counts": {
+          "nodes": 2,
+          "edges": 1
+        },
+        "node_labels": [
+          {
+            "label": "Concept",
+            "count": 1,
+            "properties": ["id", "title", "type", "tier", "stale"]
+          },
+          {
+            "label": "Table",
+            "count": 1,
+            "properties": ["id", "title", "type", "tier", "stale"]
+          }
+        ],
+        "edge_labels": [
+          {
+            "label": "LINKS",
+            "count": 1,
+            "properties": ["from", "to", "text"]
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+(The real output puts each property on its own line; it is folded here for reading.)
+The node labels are exactly the concept types present, each with its count; the
+single `LINKS` edge label carries the edge count. The `binder` field is the runtime
+version string of the binary that produced the report — **not** a fixed constant;
+yours reads whatever `binder --version` prints. This is read-only introspection
+derived from the same projection `binder graph` exports.
+
+### `binder graph`: exporting the whole graph
+
+`binder graph <bundle>` writes the entire projection in one shot; the
+[`graph` flag table](#graph) is the reference. `--format json` (or its `--json`
+alias) is the raw `{nodes, edges}` export — **not** the `binder.report/v1` envelope
+the other commands wrap their reports in (see
+[graph JSON — a raw export, not the envelope](#graph-json--a-raw-export-not-the-envelope)):
+
+```json
+{
+  "nodes": [
+    { "id": "customer", "title": "Customer", "type": "Concept", "tier": "unverified", "stale": false },
+    { "id": "orders", "title": "Orders", "type": "Table", "tier": "unverified", "stale": false }
+  ],
+  "edges": [
+    { "from": "orders", "to": "customer", "text": "customer" }
+  ]
+}
+```
+
+(Folded for reading; the real output is 2-space-indented, one field per line.) Object
+keys follow Go **struct declaration order** — `id, title, type, tier, stale` for
+nodes; `from, to, text` for edges — deterministic and reproducible run-to-run, but
+**not** alphabetically sorted. Do not build a consumer that assumes sorted keys.
+
+`--format dot` emits Graphviz you can pipe to `dot -Tsvg`:
+
+```console
+$ binder graph docs/examples/graph-sample/orders-kb --format dot
+digraph okf {
+  rankdir=LR;
+  node [shape=box];
+  "customer" [label="Customer"];
+  "orders" [label="Orders"];
+  "orders" -> "customer" [label="customer"];
+}
+```
+
+`--format graphml` is XML with typed node keys and an edge `rel` key (excerpt):
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<graphml xmlns="http://graphml.graphdrawing.org/xmlns">
+  <key id="title" for="node" attr.name="title" attr.type="string"></key>
+  <key id="type" for="node" attr.name="type" attr.type="string"></key>
+  <key id="tier" for="node" attr.name="tier" attr.type="string"></key>
+  <key id="stale" for="node" attr.name="stale" attr.type="boolean"></key>
+  <key id="rel" for="edge" attr.name="rel" attr.type="string"></key>
+  <graph edgedefault="directed">
+    <node id="customer">
+      <data key="title">Customer</data>
+```
+
+`--format html` is a self-contained page — a readable node/edge table plus the same
+JSON embedded as a `<script type="application/json">` island (49 lines for this
+two-node bundle; excerpt):
+
+```html
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>binder graph</title>
+...
+<table>
+<caption>Concepts</caption>
+<tr><th>id</th><th>title</th><th>type</th><th>tier</th><th>stale</th></tr>
+<tr><td>customer</td><td>Customer</td><td>Concept</td><td>unverified</td><td>false</td></tr>
+```
+
+`-o/--output` writes to a file instead of stdout. An empty `--format ""` is accepted
+and means `dot`; an unrecognized value is a usage error:
+
+```console
+$ binder graph docs/examples/graph-sample/orders-kb --format bogus
+binder: unknown graph format "bogus" (want dot|json|graphml|html)
+$ echo $?
+2
+```
+
+`--today YYYY-MM-DD` sets the date used for each node's `stale` flag; a malformed or
+calendar-invalid date is a usage error:
+
+```console
+$ binder graph docs/examples/graph-sample/orders-kb --today 2026-13-45
+binder: --today "2026-13-45" is not a valid date (expected YYYY-MM-DD)
+$ echo $?
+2
+```
+
+`--json` combined with a conflicting explicit `--format` is also a usage error:
+
+```console
+$ binder graph docs/examples/graph-sample/orders-kb --json --format dot
+binder: --json conflicts with --format dot; --json selects --format json
+$ echo $?
+2
+```
+
+### Node identity: path, or a read-honored `id_key`
+
+A node's identity is its **path-derived id** (`orders`, `tables/orders`). This is
+what edges reference and what you pass to `query_graph`. binder **never mints** an
+identity.
+
+`list_graphs` accepts an optional `id_key`: the name of a frontmatter key to
+*prefer* as the node key when a concept carries it. It is a read preference, not a
+rename — nothing is written. The sample bundle's concepts carry a `slug` key:
+
+```console
+# default: path identity
+$ ... "arguments":{"bundle":"docs/examples/graph-sample/orders-kb"} ...
+{"strategy":"path","key":""}
+
+# id_key honored because the frontmatter key resolves
+$ ... "arguments":{"bundle":"docs/examples/graph-sample/orders-kb","id_key":"slug"} ...
+{"strategy":"frontmatter","key":"slug"}
+```
+
+(Filtering the tool payload with `jq '.result.graphs[0].node_key'`.) `strategy` is
+`frontmatter` only when the key resolves on at least one concept; otherwise it stays
+`path` with the key still echoed. The value is never invented — a concept missing the
+key keeps its path id.
+
+### `query_graph`: asking questions of the graph
+
+`query_graph` is a single MCP tool with a required `op` selector. Every call takes a
+`bundle` and an `op`; each `op` adds its own parameters. Every response is a
+`binder.report/v1` envelope whose `result` carries the `op`, the echoed `query`, a
+[`node_key`](#the-node_key-echo) object, and (where a node/edge set applies)
+`nodes[]` and `edges[]`. `nodes` are sorted by `id`; `edges` by `from, to, text`. The
+examples below run against `testdata/okf-bundles/acme_retail`.
+
+#### The five operations
+
+**`lookup`** — fetch a node by exact `id`, or all nodes of a `label`:
+
+```json
+{
+  "binder": "binder/0.3.0",
+  "command": "query_graph",
+  "schema": "binder.report/v1",
+  "result": {
+    "op": "lookup",
+    "query": { "id": "metrics/revenue" },
+    "node_key": { "strategy": "path", "key": "", "honored": false },
+    "nodes": [
+      { "id": "metrics/revenue", "title": "Revenue", "type": "Metric", "tier": "human-reviewed", "stale": false }
+    ],
+    "not_found": false
+  }
+}
+```
+
+**`neighbors`** — one-hop neighbors of `id` in a `direction` (`out`|`in`|`both`,
+default `out`), optionally filtered by `rel`:
+
+```json
+{
+  "result": {
+    "op": "neighbors",
+    "query": { "id": "metrics/gross-margin", "direction": "out", "rel": "" },
+    "node_key": { "strategy": "path", "key": "", "honored": false },
+    "nodes": [
+      { "id": "computations/gross-margin-period", "title": "Gross margin for a period", "type": "Attested Computation", "tier": "human-reviewed", "stale": false },
+      { "id": "metrics/gross-margin-legacy", "title": "Gross Margin (legacy, pre-FY2026)", "type": "Metric", "tier": "human-reviewed", "stale": false },
+      { "id": "metrics/revenue", "title": "Revenue", "type": "Metric", "tier": "human-reviewed", "stale": false }
+    ],
+    "edges": [
+      { "from": "metrics/gross-margin", "to": "computations/gross-margin-period", "text": "computations/gross-margin-period.md" },
+      { "from": "metrics/gross-margin", "to": "metrics/gross-margin-legacy", "text": "gross-margin-legacy" },
+      { "from": "metrics/gross-margin", "to": "metrics/gross-margin-legacy", "text": "metrics/gross-margin-legacy.md" },
+      { "from": "metrics/gross-margin", "to": "metrics/revenue", "text": "Revenue" }
+    ],
+    "truncated": false,
+    "not_found": false
+  }
+}
+```
+
+(Envelope fields `binder`/`command`/`schema` omitted from here on; every response
+carries them.)
+
+**`neighborhood`** — bounded k-hop BFS from `id` up to `depth`, with each node's
+minimum depth in `depths[]` (`nodes` and `edges` omitted here — excerpt):
+
+```json
+{
+  "result": {
+    "op": "neighborhood",
+    "query": { "id": "metrics/gross-margin", "depth": 2, "direction": "out", "rel": "" },
+    "node_key": { "strategy": "path", "key": "", "honored": false },
+    "depths": [
+      { "id": "metrics/gross-margin", "depth": 0 },
+      { "id": "computations/gross-margin-period", "depth": 1 },
+      { "id": "metrics/gross-margin-legacy", "depth": 1 },
+      { "id": "metrics/revenue", "depth": 1 },
+      { "id": "computations/revenue-ytd", "depth": 2 }
+    ],
+    "truncated": false,
+    "not_found": false
+  }
+}
+```
+
+**`pattern`** — source nodes of `label` that link to a node matching `to_label`
+and/or a `where` property filter over `type`/`tier`/`stale`:
+
+```json
+{
+  "result": {
+    "op": "pattern",
+    "query": { "label": "Policy", "to_label": "Metric", "rel": "" },
+    "node_key": { "strategy": "path", "key": "", "honored": false },
+    "nodes": [
+      { "id": "policies/margin-standard", "title": "Acme Retail — Cost Allocation & Margin Standard (FY2026)", "type": "Policy", "tier": "human-reviewed", "stale": false },
+      { "id": "policies/revenue-recognition", "title": "Acme Retail — Revenue Recognition Policy (FY2026)", "type": "Policy", "tier": "human-reviewed", "stale": false }
+    ],
+    "edges": [
+      { "from": "policies/margin-standard", "to": "metrics/gross-margin", "text": "metrics/gross-margin" },
+      { "from": "policies/margin-standard", "to": "metrics/gross-margin-legacy", "text": "metrics/gross-margin-legacy" },
+      { "from": "policies/revenue-recognition", "to": "metrics/gross-margin", "text": "metrics/gross-margin" },
+      { "from": "policies/revenue-recognition", "to": "metrics/revenue", "text": "metrics/revenue" }
+    ],
+    "truncated": false
+  }
+}
+```
+
+`nodes` are the matching **source** nodes; `edges` are the satisfying links. A
+property filter uses `"where": { "prop": "tier", "eq": "human-reviewed" }` in place
+of (or alongside) `to_label`.
+
+**`path`** — bounded existence and shortest hop-path from `from` to `to`:
+
+```json
+{
+  "result": {
+    "op": "path",
+    "query": { "from": "policies/revenue-recognition", "to": "computations/revenue-ytd", "max_depth": 3, "direction": "out" },
+    "node_key": { "strategy": "path", "key": "", "honored": false },
+    "exists": true,
+    "length": 1,
+    "path": ["policies/revenue-recognition", "computations/revenue-ytd"],
+    "not_found": false
+  }
+}
+```
+
+#### Bounds: depth and result caps
+
+Traversal is bounded by construction. Depth is capped at **5**:
+`neighborhood.depth` and `path.max_depth` are required and must be `1..5`. A value
+outside that range is a usage error, surfaced as an MCP tool error (not a payload
+finding):
+
+```json
+{ "content": [ { "type": "text", "text": "depth must be in 1..5" } ], "isError": true }
+```
+
+Node result sets are capped at **1000**. On overflow the results are **sorted, then
+truncated** to the cap and the payload flags `truncated: true` — this is not an
+error. Against a 1200-node corpus, a `lookup` by label returns the first 1000 ids in
+sort order:
+
+```console
+$ ... "op":"lookup","label":"Item" ...   # filtered with jq
+{"count":1000,"truncated":true,"first":"items/item-00000","last":"items/item-00999"}
+```
+
+#### Empty results are answers, not errors
+
+A well-formed query that matches nothing returns a normal result (`isError` unset),
+not a failure. `lookup`/`neighbors`/`neighborhood`/`pattern` return an empty `nodes`
+list; a named-but-absent start id adds `not_found: true`; an unreachable `path`
+returns `exists: false`.
+
+```json
+{
+  "result": {
+    "op": "lookup",
+    "query": { "label": "Nonexistent" },
+    "node_key": { "strategy": "path", "key": "", "honored": false },
+    "nodes": [],
+    "truncated": false
+  }
+}
+```
+
+#### Filtering by relationship: `rel` matches `Edge.Text` exactly
+
+`neighbors`, `neighborhood`, and `pattern` accept an optional `rel` that keeps only
+edges whose `text` **equals** the value. The match is exact — **not**
+case-insensitive, **not** a prefix, **not** a substring. Every reader assumes
+otherwise, so it is worth proving. The edge
+`metrics/gross-margin → metrics/revenue` has `text: "Revenue"`; running
+`op:"neighbors", id:"metrics/gross-margin"` with each `rel`:
+
+```console
+rel = "Revenue"   → nodes: ["metrics/revenue"]   # exact match
+rel = "revenue"   → nodes: []                      # case differs
+rel = "Rev"       → nodes: []                      # a prefix is not a match
+rel = "even"      → nodes: []                      # a substring is not a match
+```
+
+#### The `node_key` echo
+
+Every `query_graph` result echoes the identity basis it actually used:
+
+```json
+"node_key": { "strategy": "path", "key": "<your id_key, or empty>", "honored": false }
+```
+
+In this version `query_graph` **accepts** an `id_key` but does **not** re-key
+traversal identity — traversal is always by path id. Rather than ignore the
+parameter silently, it says so: `strategy` stays `path`, `key` echoes what you sent,
+and `honored` is `false`. Supplying `id_key: "slug"` against the sample bundle:
+
+```json
+{
+  "result": {
+    "op": "lookup",
+    "query": { "id": "orders" },
+    "node_key": { "strategy": "path", "key": "slug", "honored": false },
+    "nodes": [
+      { "id": "orders", "title": "Orders", "type": "Table", "tier": "unverified", "stale": false }
+    ],
+    "not_found": false
+  }
+}
+```
+
+This matters for harnesses. `list_graphs` may report
+`node_key.strategy: "frontmatter"` for the very same `id_key`, but `query_graph`
+still traverses by path and returns `honored: false`. **A harness that passes an
+`id_key` here must read `honored` and know its key was not applied** — the returned
+ids are path ids (`orders`, not `urn:acme:orders`). Joining `query_graph` output on
+your authored id without checking `honored` will silently mis-join results.
+
+#### Errors and exit codes
+
+Over MCP the convention is: a handler error becomes a tool result with
+`isError: true` (its text is the message), while findings ride in the payload with no
+`isError`. Usage problems — an unknown `op`, a missing required parameter, a `depth`
+outside `1..5`, a bad `direction`, or a `lookup` given both `id` and `label` — are
+tool errors. An unreadable `bundle` is an IO tool error. A query that simply matches
+nothing is **not** an error (see above).
+
+On the CLI, `binder graph` follows the standard
+[exit-code contract](#json-output---json-and-the-exit-code-contract): `0` on success;
+`2` for usage (an unknown or invalid `--format`, a malformed `--today`, a conflicting
+`--json`/`--format`, or an unknown subcommand); `3` for an unreadable bundle or a
+write failure.
+
+### A read-only projection
+
+The graph is a **read model**: derived from the bundle on every call, never stored,
+never written back. `binder graph`, `list_graphs`, and `query_graph` cannot change a
+bundle — not its frontmatter, not its links, not an identity. You can run any of them
+against a production bundle, in any order, as often as you like, and the bundle bytes
+are unchanged. If you need the graph again, ask again: it is always recomputed from
+the current bundle, so it never drifts from the source.
 
 ## OKF v0.2 output structure
 

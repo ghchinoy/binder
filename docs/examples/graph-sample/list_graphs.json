@@ -1,0 +1,60 @@
+{
+  "binder": "binder/0.3.0",
+  "command": "list_graphs",
+  "schema": "binder.report/v1",
+  "result": {
+    "graphs": [
+      {
+        "name": "orders-kb",
+        "source": {
+          "kind": "okf-bundle",
+          "root": "docs/examples/graph-sample/orders-kb"
+        },
+        "node_key": {
+          "strategy": "path",
+          "key": ""
+        },
+        "counts": {
+          "nodes": 2,
+          "edges": 1
+        },
+        "node_labels": [
+          {
+            "label": "Concept",
+            "count": 1,
+            "properties": [
+              "id",
+              "title",
+              "type",
+              "tier",
+              "stale"
+            ]
+          },
+          {
+            "label": "Table",
+            "count": 1,
+            "properties": [
+              "id",
+              "title",
+              "type",
+              "tier",
+              "stale"
+            ]
+          }
+        ],
+        "edge_labels": [
+          {
+            "label": "LINKS",
+            "count": 1,
+            "properties": [
+              "from",
+              "to",
+              "text"
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
+
