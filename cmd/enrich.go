@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -20,6 +21,7 @@ func newEnrichCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 		statusMapRaw  string
 		staleAfterRaw string
 		verifiedBy    string
+		overwriteRaw  string
 		dryRun        bool
 		jsonOut       bool
 		strict        bool
@@ -38,6 +40,14 @@ func newEnrichCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 			"an interrupt never corrupts a source file). Files needing no key are not\n" +
 			"written at all. Files whose frontmatter will not parse, and reserved files\n" +
 			"(index.md/log.md), are skipped and never mutated.\n\n" +
+			"Additive/never-clobber is the DEFAULT. --overwrite-keys <k1,k2,...> is an\n" +
+			"opt-in exception that REFRESHES only the named keys in place even when they\n" +
+			"already exist (e.g. --overwrite-keys status,stale_after after a new\n" +
+			"benchmark release). Every other pre-existing key, custom frontmatter, key\n" +
+			"order, and surrounding bytes stay byte-faithful; it respects --dry-run, the\n" +
+			"atomic write, and skip-unchanged. Trust/attestation keys (verified,\n" +
+			"verified_by, sources, generated, and the other provenance keys) are REFUSED\n" +
+			"(exit 2) — overwriting them could destroy a human attestation.\n\n" +
 			"Use --dry-run to preview. Skipped files are advisory: bare enrich exits 0;\n" +
 			"--strict gates (exit 1) when any file is skipped.",
 		Args: exactArgs(1),
@@ -64,6 +74,14 @@ func newEnrichCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 			if err != nil {
 				return clijson.Usage(err)
 			}
+			// --overwrite-keys is the opt-in, scoped exception to additive-only
+			// (issue #22). A malformed list, or naming a trust/attestation-carrying
+			// key, is a usage error (exit 2) that names the offending key and
+			// modifies no file.
+			overwriteKeys, err := enrich.ParseOverwriteKeys(overwriteRaw)
+			if err != nil {
+				return clijson.Usage(err)
+			}
 
 			// Resolve default_type through config precedence (flag > env > file >
 			// default), mirroring convert (#10).
@@ -87,6 +105,7 @@ func newEnrichCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 				StatusDefault: statusDefault,
 				StaleAfterMap: staleAfterMap,
 				VerifiedBy:    verifiedBy,
+				OverwriteKeys: overwriteKeys,
 				Version:       Version,
 				Now:           resolveNow(),
 				DryRun:        dryRun,
@@ -119,6 +138,7 @@ func newEnrichCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 	cmd.Flags().StringVar(&statusMapRaw, "status-map", "", "per-directory status, e.g. \"archive=deprecated,drafts=draft,default=active\" (set only when status absent)")
 	cmd.Flags().StringVar(&staleAfterRaw, "stale-after-map", "", "per-directory stale_after relative to now, e.g. \"07-benchmarks=+6m,legacy=+0d\" (grammar +Nd/+Nm/+Ny; set only when absent)")
 	cmd.Flags().StringVar(&verifiedBy, "verified-by", "", "actor to append as a verified stamp, e.g. \"human:ghchinoy\" or \"binder/0.3.0\" (defaults to config verified_by; "+config.ActorFormsHint+")")
+	cmd.Flags().StringVar(&overwriteRaw, "overwrite-keys", "", "opt-in: comma-separated keys to REFRESH in place even when present, e.g. \"status,stale_after\" (default is additive/never-clobber; trust keys "+strings.Join(okf.ProtectedTrustKeys(), ", ")+" are refused)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "report what would be enriched without writing anything")
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "emit the run report as deterministic JSON (schema "+clijson.SchemaVersion+") instead of prose")
 	cmd.Flags().BoolVar(&strict, "strict", false, "gate (exit 1) when any file is skipped; without it enrich never gates (never-reject)")

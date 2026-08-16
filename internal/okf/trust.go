@@ -2,6 +2,7 @@ package okf
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 )
@@ -47,6 +48,56 @@ func (f Finding) String() string {
 
 // AttestedComputationType is the concept type carrying a sanctioned computation (spec §10).
 const AttestedComputationType = "Attested Computation"
+
+// refreshableLifecycleKeys are the trust-family keys that carry NO human
+// attestation or provenance lineage and MAY be safely refreshed in place: the
+// lifecycle stamps status and stale_after (spec §5.4/§5.5). They are the
+// intended targets of `binder enrich --overwrite-keys` (issue #22). Every OTHER
+// key in the trust vocabulary (spec.go SpecRules.TrustFields) is attestation- or
+// provenance-carrying and is protected by ProtectedTrustKeys below.
+var refreshableLifecycleKeys = map[string]bool{
+	"status":      true,
+	"stale_after": true,
+}
+
+// ProtectedTrustKeys returns the trust/attestation-carrying frontmatter keys
+// that MUST NOT be overwritten by `binder enrich --overwrite-keys` (issue #22).
+// Overwriting them could destroy human attestations or provenance lineage and
+// would violate the never-fabricate-trust invariant (spec §5).
+//
+// The list is DERIVED from the authoritative trust vocabulary
+// (SpecRules.TrustFields for the default spec version) minus the refreshable
+// lifecycle stamps (status, stale_after), plus the "verified_by" alias — the
+// config/flag name (config.KeyVerifiedBy) that writes into the `verified`
+// attestation list. Deriving it from the spec means a new trust key added to the
+// vocabulary is protected automatically. The result is sorted for determinism.
+func ProtectedTrustKeys() []string {
+	rules, _ := Rules(DefaultSpecVersion)
+	set := map[string]bool{"verified_by": true}
+	for _, k := range rules.TrustFields {
+		if refreshableLifecycleKeys[k] {
+			continue
+		}
+		set[k] = true
+	}
+	out := make([]string, 0, len(set))
+	for k := range set {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// IsProtectedTrustKey reports whether key is a trust/attestation-carrying key
+// that --overwrite-keys must refuse (see ProtectedTrustKeys).
+func IsProtectedTrustKey(key string) bool {
+	for _, k := range ProtectedTrustKeys() {
+		if k == key {
+			return true
+		}
+	}
+	return false
+}
 
 // ProjectTrust derives a typed TrustSignals view from frontmatter. It never
 // mutates fm and never fails: malformed families project to whatever can be read

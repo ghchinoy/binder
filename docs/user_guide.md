@@ -293,7 +293,9 @@ A plain-markdown file (no frontmatter fence) gets a fresh, valid block prepended
 #### The safety model (load-bearing — enrich mutates the source)
 
 1. **Additive / never-clobber.** Only keys that are **absent** are added; an
-   authored value (any key) is never overwritten.
+   authored value (any key) is never overwritten. The **one** exception is the
+   explicit, opt-in [`--overwrite-keys`](#opt-in-refresh---overwrite-keys) flag,
+   which refreshes only the keys you name — trust keys are refused.
 2. **Idempotent.** A second run finds every key present → `unchanged` → **no
    write**. `generated.at` is stable across runs (set-when-absent).
 3. **Body + pre-existing keys byte-faithful.** enrich reuses the codec's
@@ -332,6 +334,7 @@ A plain-markdown file (no frontmatter fence) gets a fresh, valid block prepended
 | `--status-map` | — | Per-directory `status`, e.g. `"archive=deprecated,default=active"`; `default=` is the fallback. Set **only when `status` is absent**. |
 | `--stale-after-map` | — | Per-directory `stale_after` relative to the run clock (grammar `+Nd`/`+Nm`/`+Ny`, UTC `YYYY-MM-DD`); set **only when absent**. Malformed → exit 2. |
 | `--verified-by` | config `verified_by` | Actor appended as a `verified` stamp, e.g. `"human:ghchinoy"`. Invalid actor → exit 2. Appends only (dedup by `by,at`). |
+| `--overwrite-keys` | — | **Opt-in** comma-separated keys to **refresh in place even when present**, e.g. `"status,stale_after"`. Default is additive/never-clobber. Scoped strictly to the named keys; trust keys are **refused** (exit 2). See [Opt-in refresh](#opt-in-refresh---overwrite-keys). |
 | `--strict` | `false` | Gate (exit 1) when any file is skipped or a preserve-or-advise finding is present. Without it these never gate (exit 0). |
 | `--json` | `false` | Emit the run report as deterministic JSON (schema `binder.report/v1`, `command:"enrich"`) instead of prose. |
 
@@ -349,9 +352,56 @@ enrich path/to/corpus
 
 The `--json` report carries `src`, `dry_run`, the `num_files`/`num_enriched`/
 `num_unchanged`/`num_skipped` counts, a per-file `files` array (`path`, `status`
-∈ `enriched|unchanged|would-enrich|skipped`, sorted `added` keys, and a `reason`
-for skips), and a `warnings` array (preserve-or-advise notes). Empty arrays
-serialize as `[]`, and two runs on the same input are byte-identical.
+∈ `enriched|unchanged|would-enrich|skipped`, sorted `added` keys, the sorted
+`overwritten` keys when [`--overwrite-keys`](#opt-in-refresh---overwrite-keys)
+refreshed a pre-existing key, and a `reason` for skips), and a `warnings` array
+(preserve-or-advise notes). Empty arrays serialize as `[]`, and two runs on the
+same input are byte-identical.
+
+#### Opt-in refresh: `--overwrite-keys`
+
+`enrich` is additive by default: a key that is already present is left exactly as
+authored. In maintenance workflows you sometimes need to **refresh** a value
+across a whole corpus — bump `stale_after` after a new benchmark release, flip a
+`status`, or correct a taxonomy `type`. `--overwrite-keys <k1,k2,…>` is the
+narrow, explicit exception that does this, and **only** for the keys you name:
+
+```bash
+# Refresh status and stale_after even where already present; everything else stays put.
+binder enrich <src> \
+  --status-map "07-benchmarks=deprecated" \
+  --stale-after-map "07-benchmarks=+6m" \
+  --overwrite-keys status,stale_after
+```
+
+Rules that make it safe to run on a git-tracked tree:
+
+- **Scoped strictly to the named keys.** Every other pre-existing key, custom
+  frontmatter, **key order**, and surrounding bytes are untouched and
+  byte-faithful. A named key is refreshed **in place** (its position is kept).
+- **Only when a value source exists.** A key is refreshed only if the run
+  actually produces a value for it (e.g. `status` needs `--status-map`/
+  `--default-type`; `stale_after` needs `--stale-after-map`). Naming a key with
+  no source leaves the authored value untouched — it is never blanked.
+- **Respects `--dry-run`, skip-unchanged, and the atomic write.** Refreshing a
+  key to the value it already has rewrites nothing and is not counted as
+  modified; two runs are byte-identical (`SOURCE_DATE_EPOCH`-deterministic).
+- **Trust keys are refused (exit 2).** Naming a trust/attestation-carrying key —
+  `verified`, `verified_by`, `sources`, `generated`, `usage_window`, `runtime`,
+  `parameters`, `computation`, `executor`, `attester` — fails loudly with a
+  message naming the offending key and **writes nothing**. These can carry human
+  attestations; overwriting them would violate the **never-fabricate-trust**
+  invariant. The lifecycle keys `status` and `stale_after` are the intended,
+  allowed targets.
+
+The report distinguishes keys that were **added** (were absent) from keys that
+were **overwritten** (named and refreshed in place):
+
+```text
+enrich path/to/corpus
+1 file(s): 1 enriched, 0 unchanged, 0 skipped
+  enriched 07-benchmarks/mmlu.md (overwritten: stale_after, status)
+```
 
 #### `verified` preserve-or-advise
 
