@@ -2,8 +2,9 @@
 
 A hands-on, task-oriented walkthrough. You will ingest an existing corpus into
 an OKF v0.2 bundle, inspect and gate it, then author a fresh corpus and stamp its
-lifecycle and verification metadata. Every command below runs against shipped
-binder, and the output shown is real.
+lifecycle and verification metadata. Every command below runs against a shipped
+binary — binder throughout, and the vendor-neutral okf in the final cross-check —
+and the output shown is real.
 
 For the concise landing page see the [README](../README.md); for the exhaustive
 per-flag reference see the [user guide](user_guide.md). This tutorial is the
@@ -58,7 +59,8 @@ Two habits make every run in this tutorial reproducible:
   (`generated.at`, a resolved `stale_after`, a `verified.at`) is byte-stable.
 - Read the structured `--json` output, not the prose, when you script or gate.
 
-Throughout, keep two invariants in mind. `binder convert` never mutates its
+Throughout, keep two guarantees in mind — two things binder always holds to.
+`binder convert` never mutates its
 source, and binder never fabricates trust: it derives trust tiers from
 frontmatter, stamps an honest `generated` provenance for content it produced, and
 never invents a source or auto-stamps `verified`.
@@ -305,7 +307,7 @@ exit=0
 ```
 
 The bundle is conformant and exits `0` even though it still has broken links and
-orphans. That is the never-reject posture: advisories are reported, not gated,
+orphans. That is the never-reject rule in action: advisories are reported, not gated,
 unless you ask for gating.
 
 ### Step 5: gate CI on JSON and exit codes
@@ -443,7 +445,8 @@ enrich .
 ```
 
 `refunds.md` only needs `generated`: its authored `type` and `title` are already
-present and will be left untouched. This is the additive, never-clobber rule.
+present and will be left untouched. This is the additive rule: binder fills in
+missing fields and never overwrites a value you authored.
 
 ### Step 3: enrich with status and verification
 
@@ -496,7 +499,7 @@ Rough notes, not ready yet.
 The `generated.at` and `verified.at` timestamps come from `SOURCE_DATE_EPOCH`, so
 the run is reproducible.
 
-### Step 4: confirm it is idempotent
+### Step 4: confirm a repeat run changes nothing
 
 A second identical run finds every key present and writes nothing, so there is no
 git churn:
@@ -655,7 +658,9 @@ exit=2
 
 ### Never fabricate trust
 
-This is the load-bearing invariant. binder derives a trust tier from the
+This is the guarantee everything else rests on: if binder ever stamped trust you
+had not asserted, none of the trust tiers it derives could be believed. binder
+derives a trust tier from the
 `verified` signals in the frontmatter (`human:` verification yields
 `human-reviewed`, other verification yields `machine-confirmed`, none yields
 `unverified`); it never stores a credibility score. It stamps an honest
@@ -663,6 +668,98 @@ This is the load-bearing invariant. binder derives a trust tier from the
 `verified`: with no `--verified-by` and no configured `verified_by`, no
 verification is written. When an agent drives binder, the same rule binds the
 agent: do not stamp trust you cannot assert.
+
+## Cross-check your bundle with okf
+
+Everything so far used binder. Once binder has produced or enriched an OKF
+bundle, you can hand that bundle to a second, independent tool for a fresh
+opinion. [okf](https://github.com/okfcli/okf) is a vendor-neutral Go CLI for the
+Open Knowledge Format — a different implementation of the same OKF v0.2 spec
+binder targets. It reads a bundle, validates it, and prints structured JSON on
+stdout, which makes it a good post-enrichment check: two independent tools
+agreeing your bundle is conformant is worth more than either tool agreeing with
+itself.
+
+Install it with Go — one static binary, no runtime dependencies. Pin the version
+so what you see below is what your binary prints: the JSON output in this section
+was generated with okf v0.3.0, so install exactly that version.
+
+```bash
+go install github.com/okfcli/okf/cmd/okf@v0.3.0
+```
+
+Point it at the greenfield bundle you just enriched. Because `okf validate` emits
+JSON on stdout, pipe it through `jq` for a summary:
+
+```bash
+okf validate /tmp/kb | jq '{valid, errors, warnings}'
+```
+
+```json
+{
+  "valid": true,
+  "errors": 0,
+  "warnings": 8
+}
+```
+
+okf agrees the enriched bundle is conformant. The eight warnings are
+recommended-field advisories — each of the four concepts is missing `description`
+and `tags` — the same kind of non-blocking finding binder reports, not errors that
+fail the check.
+
+Now point okf at the brownfield bundle from Part 1, the one with the unresolved
+link:
+
+```bash
+okf validate /tmp/tut-bundle | jq '{valid, errors, warnings}'
+```
+
+```json
+{
+  "valid": false,
+  "errors": 1,
+  "warnings": 5
+}
+```
+
+The single error is the broken `topics/onboarding -> /topics/deploy.md` link that
+binder flagged back in Part 1 — a second, independent implementation reaching the
+same conclusion from the same bundle.
+
+okf also derives trust the way binder does, from the frontmatter alone. `okf
+list` reports a trust tier per concept:
+
+```bash
+okf list /tmp/kb | jq '[.concepts[] | {id, trust_tier}]'
+```
+
+```json
+[
+  {
+    "id": "drafts/idea",
+    "trust_tier": "human-reviewed"
+  },
+  {
+    "id": "payments",
+    "trust_tier": "human-reviewed"
+  },
+  {
+    "id": "pricing",
+    "trust_tier": "human-reviewed"
+  },
+  {
+    "id": "refunds",
+    "trust_tier": "human-reviewed"
+  }
+]
+```
+
+Every concept is `human-reviewed` because you enriched it with
+`--verified-by "human:alice"`. okf reads the `verified` stamp binder wrote and
+derives the same tier binder would — no credibility score, no fabricated trust,
+the same guarantee restated by a different tool. For the full command set, run
+`okf --help` or see the [okf README](https://github.com/okfcli/okf).
 
 ## Which surface: CLI, Agent Skill, or MCP
 
