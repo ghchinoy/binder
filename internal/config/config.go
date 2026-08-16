@@ -258,9 +258,10 @@ func (c *Config) VerifiedByOrigin() VerifiedByOrigin {
 //     git clone somebody else authored, so it cannot evidence a decision by this
 //     user. It is treated the same as no config: no flag, no stamp. Flip THIS
 //     case to change that answer.
-//   - OriginEnv → YES. A deliberate per-session act by whoever runs the command,
-//     like global config and unlike an inherited file. (binder-030-em's call, not
-//     the owner's; flagged for revisit.)
+//   - OriginEnv → NO. The owner ruled that BINDER_VERIFIED_BY does NOT authorize
+//     a stamp without an explicit --verified-by — an inherited environment export
+//     is not a per-invocation decision to attest, and it gets the same treatment
+//     as a repo-local file. Flip THIS case to change that answer.
 //
 // OriginFlag is handled by the caller (an explicit flag always stamps) and is not
 // part of the "without flag" question, so it returns false here.
@@ -268,10 +269,9 @@ func PermitsStampWithoutFlag(o VerifiedByOrigin) bool {
 	switch o {
 	case OriginGlobalConfig:
 		return true
-	case OriginEnv:
-		return true
 	default:
-		// OriginRepoConfig (Option A), OriginFlag, OriginNone.
+		// OriginEnv (owner ruling), OriginRepoConfig (Option A), OriginFlag,
+		// OriginNone.
 		return false
 	}
 }

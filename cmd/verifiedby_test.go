@@ -149,6 +149,74 @@ func TestVerifiedByConfigDefaultSkipsDifferentIdentity(t *testing.T) {
 	}
 }
 
+// TestVerifiedByEnvDoesNotStamp pins the owner ruling on BINDER_VERIFIED_BY: an
+// inherited environment export is NOT a per-invocation decision to attest, so it
+// does NOT authorize a `verified` stamp without an explicit --verified-by. It gets
+// the same treatment as a repo-local .binder.yaml (Option A).
+//
+// This carries a DEMONSTRATED RED: before the OriginEnv arm of
+// config.PermitsStampWithoutFlag was flipped to false, an ambient
+// BINDER_VERIFIED_BY DID stamp, and this assertion failed. It now passes.
+func TestVerifiedByEnvDoesNotStamp(t *testing.T) {
+	t.Setenv("SOURCE_DATE_EPOCH", "1700000000")
+	isolateConfig(t)
+	t.Setenv("BINDER_VERIFIED_BY", "human:envguy")
+	src := mkCorpus(t)
+	out := t.TempDir()
+	_, code := runCLI(t, "convert", src, "-o", out) // env set, NO flag
+	if code != clijson.ExitSuccess {
+		t.Fatalf("exit = %d, want 0", code)
+	}
+	b, _ := os.ReadFile(filepath.Join(out, "a.md"))
+	if contains(string(b), "verified:") {
+		t.Errorf("BINDER_VERIFIED_BY authorized a stamp without --verified-by (owner ruling violated):\n%s", b)
+	}
+}
+
+// TestVerifiedByEnvWithExplicitFlagStamps is the NON-VACUITY control for the env
+// refusal above: an env value present alongside an EXPLICIT --verified-by must
+// still stamp. Without this, the refusal test could pass vacuously (e.g. if env
+// were being dropped entirely rather than refused only as a no-flag authority).
+func TestVerifiedByEnvWithExplicitFlagStamps(t *testing.T) {
+	t.Setenv("SOURCE_DATE_EPOCH", "1700000000")
+	isolateConfig(t)
+	t.Setenv("BINDER_VERIFIED_BY", "human:envguy")
+	src := mkCorpus(t)
+	out := t.TempDir()
+	_, code := runCLI(t, "convert", src, "-o", out, "--verified-by", "human:envguy")
+	if code != clijson.ExitSuccess {
+		t.Fatalf("exit = %d, want 0", code)
+	}
+	b, _ := os.ReadFile(filepath.Join(out, "a.md"))
+	if !contains(string(b), "by: human:envguy") {
+		t.Errorf("env value + explicit --verified-by did not stamp (control would be vacuous):\n%s", b)
+	}
+}
+
+// TestVerifiedByEnvOutranksRepoLocalStillNoStamp pins the precedence edge case:
+// env outranks a repo-local ./.binder.yaml in viper resolution, so with BOTH
+// present and NO flag, the resolved origin is env — which now refuses. The result
+// must be NO stamp; a repo-local value must not sneak a stamp through underneath.
+func TestVerifiedByEnvOutranksRepoLocalStillNoStamp(t *testing.T) {
+	t.Setenv("SOURCE_DATE_EPOCH", "1700000000")
+	dir := isolateConfig(t)
+	if err := os.WriteFile(filepath.Join(dir, ".binder.yaml"),
+		[]byte("verified_by: human:repoguy\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("BINDER_VERIFIED_BY", "human:envguy")
+	src := mkCorpus(t)
+	out := t.TempDir()
+	_, code := runCLI(t, "convert", src, "-o", out) // env + repo-local, NO flag
+	if code != clijson.ExitSuccess {
+		t.Fatalf("exit = %d, want 0", code)
+	}
+	b, _ := os.ReadFile(filepath.Join(out, "a.md"))
+	if contains(string(b), "verified:") {
+		t.Errorf("env outranks repo-local but a stamp still slipped through (must be NO stamp):\n%s", b)
+	}
+}
+
 func TestVerifiedByNoneWritesNoStamp(t *testing.T) {
 	t.Setenv("SOURCE_DATE_EPOCH", "1700000000")
 	isolateConfig(t)

@@ -22,8 +22,8 @@ type verifiedByDecision struct {
 
 // resolveVerifiedBy applies the owner's ruling: a `verified` stamp is written
 // only for an explicit --verified-by, or when config.PermitsStampWithoutFlag says
-// the resolved origin satisfies the user-set exception (global config or env; NOT
-// a repo-local .binder.yaml — Option A). The --verified-by flag must already be
+// the resolved origin satisfies the user-set exception (global home config ONLY;
+// NOT BINDER_VERIFIED_BY and NOT a repo-local .binder.yaml). The --verified-by flag must already be
 // bound to cfg. The resolved actor is validated (invalid ⇒ usage error, exit 2)
 // regardless of whether it will be honored, so a malformed value never passes
 // silently.
@@ -41,7 +41,7 @@ func resolveVerifiedBy(cfg *config.Config) (verifiedByDecision, error) {
 		// Explicit per-invocation act: always stamps, may co-sign.
 		return verifiedByDecision{Actor: actor, Explicit: true, Source: origin.String()}, nil
 	case config.PermitsStampWithoutFlag(origin):
-		// User-set exception (global config / env): stamps, but never co-signs.
+		// User-set exception (global home config only): stamps, but never co-signs.
 		return verifiedByDecision{Actor: actor, Explicit: false, Source: origin.String()}, nil
 	case origin == config.OriginRepoConfig:
 		// Option A: a repo-local config does not evidence THIS user's decision, so it
@@ -53,7 +53,11 @@ func resolveVerifiedBy(cfg *config.Config) (verifiedByDecision, error) {
 				config.LocalConfigName, actor),
 		}, nil
 	default:
-		// OriginNone: no verifier determined → no stamp, nothing to disclose.
+		// OriginNone (no verifier determined) or OriginEnv (owner ruling: an
+		// inherited BINDER_VERIFIED_BY does not authorize a no-flag stamp) → no
+		// stamp. NOTE: unlike the repo-local arm above, a refused env value is
+		// currently NOT disclosed via a Note (env is silently ignored). Whether to
+		// add a parallel env note is an open EM decision, deliberately not made here.
 		return verifiedByDecision{}, nil
 	}
 }
