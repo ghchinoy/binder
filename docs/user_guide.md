@@ -225,10 +225,13 @@ Resolution rules:
   **tolerated**, never fatal: it is recorded as an advisory/unresolved edge and the
   exit code stays `0`.
 
+So for a corpus at `/home/me/notes` whose `intro.md` links to
+`file:///home/me/notes/docs/doc.md`, the target is inside the root: the emitted
+`intro.md` body carries `[doc](/docs/doc.md)` and the run reports
+`links: 1 (resolved 1, unresolved 0)`.
+
 ```bash
-# corpus at /home/me/notes, intro.md links to file:///home/me/notes/docs/doc.md
 binder convert /home/me/notes -o /tmp/bundle
-# → intro.md body now contains [doc](/docs/doc.md); links: 1 (resolved 1)
 ```
 
 ##### Declaring known sibling roots (`--external-root`)
@@ -273,10 +276,12 @@ findings and does not surface `convert`'s `file://` advisories (external
 `file://` targets are not recorded as edges), so there is nothing there for
 `--external-root` to suppress.
 
+Declaring the parent of those sibling workspaces silences their advisories and
+nothing else — `file://` links elsewhere still warn, and the bundle bytes are
+unchanged:
+
 ```bash
 binder convert ./speech -o ./bundle --external-root /Users/me/projects
-# → links under /Users/me/projects stay external but no longer advise;
-#   any file:// link elsewhere still warns. Bundle bytes are unchanged.
 ```
 
 ### `enrich`
@@ -829,7 +834,17 @@ onto three different exit codes:
 |---|---|
 | `binder infer <src> --gemini` | **Degrades** to the deterministic tiers, still prints the proposal, exits **0**. In prose mode the degradation is **silent** — the reason is recorded only in the `--json` `warnings` array. |
 | `binder infer <src> --gemini --strict` | Degrades and still prints the proposal on stdout, then gates: `binder: infer encountered 1 warning(s) (--strict)` on stderr, exit **1**. |
-| `binder infer <src> --gemini --gemini-required` | Does **not** degrade. Nothing on stdout; `binder: gemini semantic inference: <error>` on stderr; exit **3** — the io/external-failure code, not `1` or `2`. |
+| `binder infer <src> --gemini --gemini-required` | Does **not** degrade. Nothing on stdout; the error on stderr; exit **3** — the io/external-failure code, not `1` or `2`. |
+
+The Gemini tier has **two** distinct failure points and the message names which
+one you hit. Building the client fails first (no credentials, no project, an
+unusable backend) — that is the common case on a fresh machine and in CI, and it
+is reported as `binder: gemini client initialization: <error>`. If the client is
+built and the model call itself fails (a bad model name, a quota or network
+error), it is reported as `binder: gemini semantic inference: <error>`. Both exit
+**3** under `--gemini-required`; when degrading, they surface in the `--json`
+`warnings` array as `gemini tier disabled: <error>` and `gemini inference
+warning: <error>` respectively. Grep for the pair, not for one string.
 
 So a prose `--gemini` run that quietly returns a deterministic-looking proposal
 may in fact be a degraded one. If it matters whether the model was actually
@@ -1324,7 +1339,9 @@ finding is present. See the [exit-code contract](#exit-code-contract).
 
 Like every other `--json` command except `graph`, `infer` wraps its payload in the
 standard [`binder.report/v1` envelope](#the-envelope-schema-binderreportv1) with
-`"command": "infer"`; the object below is the `result` value, shown on its own:
+`"command": "infer"`; the object below is the `result` value, shown on its own.
+*Field shape only, with `path/to/corpus` and the `subsystems/` directory standing
+in for a real corpus — not a capture of any particular run:*
 
 ```json
 {
@@ -1347,12 +1364,21 @@ standard [`binder.report/v1` envelope](#the-envelope-schema-binderreportv1) with
 - **`type_map`** (`string`) — comma-separated `dir=Type` string formatted for `--type-map`.
 - **`mappings`** (`[]object`) — list of per-directory proposals with `dir`, `suggested_type`, `source` (`folder` | `pattern` | `frontmatter` | `gemini`), `rationale`, and optional `sample_files`, `model`, `backend`.
 - **`warnings`** (`[]string`) — always present, `[]` on a clean run. A degraded
-  Gemini tier lands here as `gemini inference warning: <error>`; in prose mode
-  this is the **only** place the degradation is visible.
+  Gemini tier lands here as `gemini tier disabled: <error>` (the client could not
+  be built — the common no-credentials case) or `gemini inference warning:
+  <error>` (the client was built but the model call failed); in prose mode this
+  is the **only** place the degradation is visible.
 
 `model` and `backend` appear **only** on entries the Gemini tier produced
 (`"source": "gemini"`) — they name the model actually called and the auth
-backend that was resolved for the call. A tier-4 entry looks like:
+backend that was resolved for the call.
+
+*A single `mappings[]` entry captured from a live tier-4 run of `binder infer
+testdata/corpus-rich --gemini --json` against a Vertex-enabled Google Cloud
+project. Unlike every other transcript in this guide it needs working Gemini
+credentials (ADC or an API key) to reproduce at all — without them the tier
+degrades and no `"source": "gemini"` entry is emitted. The `suggested_type` is
+model output, so a repeat run need not return `Reference`:*
 
 ```json
 {
@@ -1617,12 +1643,15 @@ transport over the existing internal functions:
   path).
 - **A zero-match query is a result, not an error.** `query_graph` extends the
   never-reject rule to the query surface: a `lookup` for an id that does not
-  exist returns `isError: false` with the normal envelope and
-  `result.not_found: true`. What *is* a tool error is malformed usage — an
-  unknown `op` (`unknown op "bogus" (want lookup|neighbors|neighborhood|pattern|path)`)
+  exist comes back as an ordinary result: the normal envelope with
+  `result.not_found: true`, and **no** `isError` field on the wire at all (MCP
+  treats an absent `isError` as false, so do not wait for a literal
+  `"isError": false` — it is never sent). What *is* a tool error is malformed
+  usage — an unknown `op`
+  (`unknown op "bogus" (want lookup|neighbors|neighborhood|pattern|path)`)
   or an out-of-range `depth` (`depth must be in 1..5`) come back as
   `isError: true` with **plain text**, not the envelope. So a consumer must
-  check `isError` before attempting to parse the content as JSON.
+  check for `isError: true` before attempting to parse the content as JSON.
 - **Never-fabricate-trust.** `verified_by` is applied **only** when explicitly
   passed; the server never auto-stamps `verified` and never invents `sources`.
   An invalid actor is a usage-class tool error.
@@ -2734,7 +2763,8 @@ binder graph bundle --format dot | dot -Tsvg -o graph.svg
 ## Roadmap & planned features
 
 Each tracked feature below is marked **✅ shipped** or *Planned*, and links to its
-tracking issue. As of v0.3.0 everything here has shipped except the
+tracking issue where one has been filed — the community-core codec adapter has
+none yet. As of v0.3.0 everything here has shipped except the
 community-core codec adapter. This guide grows a full section for each as it lands.
 
 ### Phase 2.x — `convert`/CLI enhancements
