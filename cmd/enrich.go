@@ -16,15 +16,16 @@ import (
 
 func newEnrichCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 	var (
-		defaultType   string
-		typeMapRaw    string
-		statusMapRaw  string
-		staleAfterRaw string
-		verifiedBy    string
-		overwriteRaw  string
-		dryRun        bool
-		jsonOut       bool
-		strict        bool
+		defaultType      string
+		typeMapRaw       string
+		statusMapRaw     string
+		staleAfterRaw    string
+		verifiedBy       string
+		overwriteRaw     string
+		canonicalizeStat bool
+		dryRun           bool
+		jsonOut          bool
+		strict           bool
 	)
 
 	cmd := &cobra.Command{
@@ -65,10 +66,13 @@ func newEnrichCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 			if err != nil {
 				return clijson.Usage(err)
 			}
-			// Malformed map shapes/values are usage errors (exit 2).
-			statusMap, statusDefault, err := convert.ParseStatusMap(statusMapRaw)
+			// Malformed map shapes/values are usage errors (exit 2). Non-conformant
+			// §5.4 status values warn on the default path and gate under --strict,
+			// BEFORE any file is written (issue #23); --canonicalize-status opts into
+			// the fixed alias rewrite.
+			statusMap, statusDefault, statusNotes, err := resolveStatusMap(statusMapRaw, canonicalizeStat, strict)
 			if err != nil {
-				return clijson.Usage(err)
+				return err
 			}
 			staleAfterMap, err := convert.ParseStaleAfterMap(staleAfterRaw)
 			if err != nil {
@@ -103,6 +107,7 @@ func newEnrichCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 				TypeMap:       typeMap,
 				StatusMap:     statusMap,
 				StatusDefault: statusDefault,
+				StatusNotes:   statusNotes,
 				StaleAfterMap: staleAfterMap,
 				VerifiedBy:    verifiedBy,
 				OverwriteKeys: overwriteKeys,
@@ -139,6 +144,7 @@ func newEnrichCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 	cmd.Flags().StringVar(&staleAfterRaw, "stale-after-map", "", "per-directory stale_after relative to now, e.g. \"07-benchmarks=+6m,legacy=+0d\" (grammar +Nd/+Nm/+Ny; set only when absent)")
 	cmd.Flags().StringVar(&verifiedBy, "verified-by", "", "actor to append as a verified stamp, e.g. \"human:ghchinoy\" or \"binder/0.3.0\" (defaults to config verified_by; "+config.ActorFormsHint+")")
 	cmd.Flags().StringVar(&overwriteRaw, "overwrite-keys", "", "opt-in: comma-separated keys to REFRESH in place even when present, e.g. \"status,stale_after\" (default is additive/never-clobber; trust keys "+strings.Join(okf.ProtectedTrustKeys(), ", ")+" are refused)")
+	cmd.Flags().BoolVar(&canonicalizeStat, "canonicalize-status", false, "opt-in: rewrite known --status-map aliases to the OKF §5.4 vocabulary (active->stable, wip/in-progress->draft, archived/legacy->deprecated); off by default, each rewrite is reported")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "report what would be enriched without writing anything")
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "emit the run report as deterministic JSON (schema "+clijson.SchemaVersion+") instead of prose")
 	cmd.Flags().BoolVar(&strict, "strict", false, "gate (exit 1) when any file is skipped; without it enrich never gates (never-reject)")

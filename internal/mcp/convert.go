@@ -14,23 +14,24 @@ import (
 // map/list params use the same "k=v,k=v" / "a,b" grammar as the CLI flags and
 // are parsed with the same convert.Parse* helpers.
 type convertInput struct {
-	Src              string `json:"src" jsonschema:"source markdown corpus directory to convert"`
-	Out              string `json:"out,omitempty" jsonschema:"output bundle directory (required unless dry_run)"`
-	DryRun           bool   `json:"dry_run,omitempty" jsonschema:"report what would be written without writing anything (the ingestion-analysis preview)"`
-	DefaultType      string `json:"default_type,omitempty" jsonschema:"type applied when none is present or mapped (default \"Note\")"`
-	TypeMap          string `json:"type_map,omitempty" jsonschema:"per-directory type overrides, e.g. \"docs=Guide,adr=Decision\""`
-	FMRefKeys        string `json:"fm_ref_keys,omitempty" jsonschema:"frontmatter keys treated as relationship edges, e.g. \"related,parent\""`
-	SourceKeys       string `json:"source_keys,omitempty" jsonschema:"frontmatter keys to map into sources entries, e.g. \"source,author\""`
-	MapCitations     bool   `json:"map_citations,omitempty" jsonschema:"map a body \"# Citations\" list into sources entries"`
-	MapDraft         bool   `json:"map_draft,omitempty" jsonschema:"map a draft:true marker to status:draft when status is absent"`
-	StatusMap        string `json:"status_map,omitempty" jsonschema:"per-directory status, e.g. \"archive=deprecated,drafts=draft,default=active\" (set only when status absent)"`
-	StaleAfterMap    string `json:"stale_after_map,omitempty" jsonschema:"per-directory stale_after relative to now, e.g. \"07-benchmarks=+6m,legacy=+0d\" (grammar +Nd/+Nm/+Ny)"`
-	VerifiedBy       string `json:"verified_by,omitempty" jsonschema:"actor to append as a verified stamp, e.g. \"human:ghchinoy\" (applied ONLY when set; never auto-stamped)"`
-	WorkspaceRoot    string `json:"workspace_root,omitempty" jsonschema:"boundary within which file:// links resolve to internal edges (default: the src root)"`
-	GroupByType      bool   `json:"group_by_type,omitempty" jsonschema:"append an additive \"# Catalog\" of all concepts grouped by type to the root index.md"`
-	IncludeBacklinks bool   `json:"include_backlinks,omitempty" jsonschema:"annotate catalog entries with inbound resolved edges (requires group_by_type)"`
-	IncludeGraph     bool   `json:"include_graph,omitempty" jsonschema:"annotate catalog entries with outbound resolved edges (requires group_by_type)"`
-	Strict           bool   `json:"strict,omitempty" jsonschema:"gate semantics only; does not change the payload (parity with the CLI flag)"`
+	Src                string `json:"src" jsonschema:"source markdown corpus directory to convert"`
+	Out                string `json:"out,omitempty" jsonschema:"output bundle directory (required unless dry_run)"`
+	DryRun             bool   `json:"dry_run,omitempty" jsonschema:"report what would be written without writing anything (the ingestion-analysis preview)"`
+	DefaultType        string `json:"default_type,omitempty" jsonschema:"type applied when none is present or mapped (default \"Note\")"`
+	TypeMap            string `json:"type_map,omitempty" jsonschema:"per-directory type overrides, e.g. \"docs=Guide,adr=Decision\""`
+	FMRefKeys          string `json:"fm_ref_keys,omitempty" jsonschema:"frontmatter keys treated as relationship edges, e.g. \"related,parent\""`
+	SourceKeys         string `json:"source_keys,omitempty" jsonschema:"frontmatter keys to map into sources entries, e.g. \"source,author\""`
+	MapCitations       bool   `json:"map_citations,omitempty" jsonschema:"map a body \"# Citations\" list into sources entries"`
+	MapDraft           bool   `json:"map_draft,omitempty" jsonschema:"map a draft:true marker to status:draft when status is absent"`
+	StatusMap          string `json:"status_map,omitempty" jsonschema:"per-directory status, e.g. \"archive=deprecated,drafts=draft,default=active\" (set only when status absent)"`
+	CanonicalizeStatus bool   `json:"canonicalize_status,omitempty" jsonschema:"opt-in: rewrite known status_map aliases to the OKF §5.4 vocabulary (active->stable, wip/in-progress->draft, archived/legacy->deprecated); off by default, each rewrite is reported in status_notes"`
+	StaleAfterMap      string `json:"stale_after_map,omitempty" jsonschema:"per-directory stale_after relative to now, e.g. \"07-benchmarks=+6m,legacy=+0d\" (grammar +Nd/+Nm/+Ny)"`
+	VerifiedBy         string `json:"verified_by,omitempty" jsonschema:"actor to append as a verified stamp, e.g. \"human:ghchinoy\" (applied ONLY when set; never auto-stamped)"`
+	WorkspaceRoot      string `json:"workspace_root,omitempty" jsonschema:"boundary within which file:// links resolve to internal edges (default: the src root)"`
+	GroupByType        bool   `json:"group_by_type,omitempty" jsonschema:"append an additive \"# Catalog\" of all concepts grouped by type to the root index.md"`
+	IncludeBacklinks   bool   `json:"include_backlinks,omitempty" jsonschema:"annotate catalog entries with inbound resolved edges (requires group_by_type)"`
+	IncludeGraph       bool   `json:"include_graph,omitempty" jsonschema:"annotate catalog entries with outbound resolved edges (requires group_by_type)"`
+	Strict             bool   `json:"strict,omitempty" jsonschema:"gate semantics only; does not change the payload (parity with the CLI flag)"`
 }
 
 // registerConvert wires the convert tool. dry_run:true → convert.Analyze (the
@@ -58,6 +59,13 @@ func registerConvert(s *mcp.Server, d *deps) {
 		if err != nil {
 			return nil, nil, err
 		}
+		// Mirror the CLI's OKF §5.4 status-vocabulary handling (issue #23) so the
+		// two surfaces do not diverge: non-conformant values are surfaced in the
+		// report's status_notes, and canonicalize_status opts into the same fixed
+		// alias rewrite. Non-conformant values are reported, never rejected, keeping
+		// parity with this tool's never-reject payload posture (strict here is
+		// gate-semantics only and does not change the payload).
+		statusMap, statusDefault, statusVocab := convert.ResolveStatusVocabulary(statusMap, statusDefault, in.CanonicalizeStatus)
 		staleAfterMap, err := convert.ParseStaleAfterMap(in.StaleAfterMap)
 		if err != nil {
 			return nil, nil, err
@@ -83,6 +91,7 @@ func registerConvert(s *mcp.Server, d *deps) {
 			TypeMap:          typeMap,
 			StatusMap:        statusMap,
 			StatusDefault:    statusDefault,
+			StatusNotes:      statusVocab.Notes,
 			StaleAfterMap:    staleAfterMap,
 			VerifiedBy:       in.VerifiedBy,
 			FMRefKeys:        convert.ParseFMRefKeys(in.FMRefKeys),

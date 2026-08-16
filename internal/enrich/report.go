@@ -37,6 +37,9 @@ func (r *Report) String() string {
 	for _, w := range r.Warnings {
 		fmt.Fprintf(&b, "  advisory: %s\n", w)
 	}
+	for _, n := range r.StatusNotes {
+		fmt.Fprintf(&b, "  status: %s\n", n)
+	}
 	return b.String()
 }
 
