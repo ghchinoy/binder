@@ -2,9 +2,10 @@ name: release
 
 # Build & publish (design §4-§6). Triggered ONLY by a vX.Y.Z tag, which
 # release-please creates when its release PR is merged (see release-please.yml).
-# goreleaser builds reproducible, offline (-mod=vendor) cross-platform binaries,
-# stamps the version from the tag, and publishes to the GitHub Release, the
-# Homebrew tap, and winget.
+# goreleaser builds reproducible cross-platform binaries (pinned via
+# go.mod/go.sum + SOURCE_DATE_EPOCH; deps fetched from the module proxy at build
+# time), stamps the version from the tag, and publishes to the GitHub Release,
+# the Homebrew tap, and winget.
 on:
   push:
     tags:

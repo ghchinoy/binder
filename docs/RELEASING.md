@@ -82,16 +82,18 @@ matters beyond `--version`: the version is stamped into every converted concept'
 trust provenance as `generated.by: "binder/<version>"`, so a release binary must
 carry the real tag.
 
-## Reproducible / offline build invariants
+## Reproducible build invariants
 
 The release build preserves binder's core invariants (design §7):
 
-- **Offline:** `-mod=vendor` consumes the committed `vendor/`; there is **no**
-  `go mod tidy`/`download` hook. The build never hits the module proxy.
+- **Pinned deps:** modules are fetched from the Go module proxy at build time,
+  pinned via `go.mod`/`go.sum` and verified against the `go.sum` hashes. There is
+  **no** `go mod tidy`/`download` hook; the compile-sanity before-hook is a plain
+  `go build -o /dev/null .`. The build needs network access to the proxy.
 - **Reproducible:** `-trimpath`, `-s -w`, `mod_timestamp={{.CommitTimestamp}}`,
   and `release.yml` exports `SOURCE_DATE_EPOCH` = commit time so timestamps agree.
 
-You can rehearse the release build locally, offline and without publishing:
+You can rehearse the release build locally without publishing:
 
 ```sh
 goreleaser check                     # validate .goreleaser.yaml

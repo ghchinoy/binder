@@ -21,7 +21,8 @@ export PATH="$PWD/bin:$PATH"
 binder --version    # binder/0.1.0
 ```
 
-Dependencies are vendored, so the build needs no network access.
+Dependencies are pinned via `go.mod`/`go.sum` and fetched from the Go module
+proxy at build time (network required).
 
 Two habits make every run in this tutorial reproducible:
 

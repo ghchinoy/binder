@@ -1,7 +1,7 @@
 # binder — Phase 1 (corpus → OKF v0.2 bundle)
 #
-# Offline gates (no network/tools beyond the Go toolchain):  make check
-# Full exit gate incl. external differential validation:      make gate
+# Local gates (Go toolchain; deps fetched from the module proxy):  make check
+# Full exit gate incl. external differential validation:          make gate
 
 GO      ?= go
 BIN     := bin/binder
@@ -21,14 +21,15 @@ test:
 vet:
 	$(GO) vet ./...
 
-# gofmt over binder's own sources (never vendor/).
+# gofmt over binder's own sources.
 fmt-check:
-	@unformatted=$$(gofmt -l cmd internal . 2>/dev/null | grep -v '^vendor/' || true); \
+	@unformatted=$$(gofmt -l cmd internal . 2>/dev/null || true); \
 	if [ -n "$$unformatted" ]; then \
 		echo "gofmt needed on:"; echo "$$unformatted"; exit 1; \
 	else echo "gofmt: clean"; fi
 
-# Offline verification gate: everything that needs only the Go toolchain.
+# Verification gate: everything that needs only the Go toolchain (deps pinned
+# via go.mod/go.sum, fetched from the module proxy).
 check: fmt-check vet test
 
 # Regenerate the byte-stable golden fixture after an intentional change.
@@ -43,7 +44,7 @@ okf-install:
 interop: build
 	bash scripts/interop.sh
 
-# Full Phase-1 exit gate: offline checks + external interop.
+# Full Phase-1 exit gate: local checks + external interop.
 gate: check interop
 
 clean:
