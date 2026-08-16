@@ -1006,8 +1006,9 @@ The following is **planned, not yet shipped**:
 [Agent Skill and Agent-Plugin bundle](#agent-skill--plugin) (`okf-convert`, #14),
 then the [MCP server mode](#mcp-server-binder-mcp) (`binder mcp`, #15) — the
 additive convert/validate/review/lint/graph tools over the same OKF core, since
-joined by the read-only `list_graphs` and `query_graph` graph tools
-([#33](https://github.com/ghchinoy/binder/pull/33)). (These were sequenced
+joined by the read-only graph tools `list_graphs`
+([#32](https://github.com/ghchinoy/binder/pull/32)) and `query_graph`
+([#33](https://github.com/ghchinoy/binder/issues/33)). (These were sequenced
 Skill/Plugin **before** MCP, so MCP builds on already-settled `--json` payloads.)
 Declarative trust/lifecycle flags (`--status-map`, `--stale-after-map`,
 `--verified-by`; #7), `binder config` (#10), the standalone `binder lint` (#8),
