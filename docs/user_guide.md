@@ -649,7 +649,11 @@ is classified by whether it links outward:
 
 Both classifications are **advisory only** — entrypoints never gate, and the
 reclassification never changes an exit code that did not change before. `review`
-and `lint` apply the **same rule**, so the two surfaces agree.
+and `lint` apply the **same rule**, so with each used on its intended input —
+`review` on a bundle, `lint` on the source corpus that bundle was converted from
+— the two report the same entrypoints and the same orphans. Handing `lint` a
+bundle instead changes the graph rather than the rule, and the two then disagree;
+see [`lint`](#lint).
 
 ### `lint`
 
@@ -686,7 +690,14 @@ It reports these checks:
    truly disconnected node. A concept with no inbound but **outbound** edges (or a
    recognized root `README.md`/`index.md`, or one named via `--entrypoint`) is an
    **entrypoint** instead, reported separately and never as an orphan (issue #24).
-   `review` applies the identical rule, so the two surfaces agree.
+   `review` applies the identical rule, so with each used on its intended input —
+   `lint` on a source corpus, `review` on the bundle converted from it — the two
+   report the same orphans and the same entrypoints. `lint`'s input is a **source
+   corpus**, and given a bundle it misleads rather than refuses (binder never
+   rejects): it re-converts the bundle's files including the generated `index.md`,
+   which links to every concept, so every concept gains an inbound edge, the
+   orphan list collapses to empty, and the reserved `index.md` re-derives as an
+   ordinary concept reported as an entrypoint.
 4. **Entrypoints** — no inbound resolved edge but not a true orphan: an outward
    index into the corpus (advisory only; entrypoints never gate).
 5. **Stale** — `stale_after` reached as of `--today` (honours `SOURCE_DATE_EPOCH`).
