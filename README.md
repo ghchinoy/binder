@@ -501,11 +501,25 @@ reported for context and never counted:
 4. **Entrypoints** — reported separately, *never* counted as a finding, and
    never a reason to gate. A concept with no inbound edge is an entrypoint
    rather than an orphan when **any** of three things is true: it has at least
-   one outbound edge; it is a root `README.md` or `index.md` (matched
-   case-insensitively, and only at the corpus root — a nested `docs/README.md`
-   is **not** recognized and stays a true orphan); or it was named with
-   `--entrypoint`. `review` applies the identical rule, so `lint` and `review`
-   never disagree.
+   one outbound edge; it is a root `README.md` (matched case-insensitively, and
+   only at the corpus root — a nested `docs/README.md` is **not** recognized and
+   stays a true orphan); or it was named with `--entrypoint`. An authored root
+   `index.md` is **not** recognized by name — `convert` renames it to
+   `index-note.md` before classification, so it is classified on its edges like
+   any other concept: an entrypoint when it links out (as a corpus index usually
+   does), a true orphan when it does not. `review` applies the identical rule,
+   but the two take different inputs — `lint` a **source corpus**, `review` a
+   **bundle** — and
+   only on those matched inputs do they agree. Aim `lint` at a bundle and it
+   will mislead rather than refuse: it re-converts the already-converted files,
+   including the bundle's generated per-directory `index.md` tree, which gives
+   every ordinary concept an inbound link from its own directory's index, each
+   directory index one from its **parent's** index, and the **root** index
+   none. So orphans collapse to `[]` on every corpus shape (flat or nested), and
+   the previously-generated root index — renamed to `index-note`, or
+   `index-note-2` when the source carried its own `index.md`, which takes
+   `index-note` first — has outbound edges and no inbound edge, which is why it,
+   and only it, is reported as an entrypoint.
 5. **Stale** — `stale_after` reached as of `--today` (or `SOURCE_DATE_EPOCH`).
 6. **Schema violations** — a missing `type:` (`Detail: "missing type"`), or
    invalid frontmatter recovered under never-reject (`Detail: "invalid
@@ -536,7 +550,7 @@ binder lint path/to/corpus --json     # deterministic envelope, command:"lint"
 
 | Flag | Default | Purpose |
 |---|---|---|
-| `--entrypoint` | — | Concept id or path to treat as an entrypoint rather than an orphan (repeatable). A trailing `.md` is tolerated, in any case (`x`, `x.md`, `x.MD` all match concept `x`) — but the id itself is matched **case-sensitively**, so `X` and `X.md` do not. Root `README.md`/`index.md` are recognized without it. |
+| `--entrypoint` | — | Concept id or path to treat as an entrypoint rather than an orphan (repeatable). A trailing `.md` is tolerated, in any case (`x`, `x.md`, `x.MD` all match concept `x`) — but the id itself is matched **case-sensitively**, so `X` and `X.md` do not. Root `README.md` is recognized without it. |
 | `--strict` | `false` | Gate (exit 1) when any finding is present; otherwise lint never gates. Entrypoints are never findings. |
 | `--today` | now (or `SOURCE_DATE_EPOCH`) | Date (`YYYY-MM-DD`) used for staleness. |
 | `--json` | `false` | Emit the report as deterministic JSON (schema `binder.report/v1`, `command:"lint"`). Adds `result.entrypoints` (array of string, always present, `[]` when empty). |
