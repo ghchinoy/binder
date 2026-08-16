@@ -1,0 +1,25 @@
+{
+  "nodes": [
+    {
+      "id": "customer",
+      "title": "Customer",
+      "type": "Concept",
+      "tier": "unverified",
+      "stale": false
+    },
+    {
+      "id": "orders",
+      "title": "Orders",
+      "type": "Table",
+      "tier": "unverified",
+      "stale": false
+    }
+  ],
+  "edges": [
+    {
+      "from": "orders",
+      "to": "customer",
+      "text": "customer"
+    }
+  ]
+}
