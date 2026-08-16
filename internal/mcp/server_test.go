@@ -101,7 +101,7 @@ func cliJSON(t *testing.T, args ...string) string {
 	return string(out)
 }
 
-// TestListTools asserts the server advertises exactly the six additive tools,
+// TestListTools asserts the server advertises exactly the seven additive tools,
 // each with a non-empty input schema — and NOT the deferred Non-Goals
 // (enrich/emit_concept/read/search).
 func TestListTools(t *testing.T) {
@@ -129,7 +129,7 @@ func TestListTools(t *testing.T) {
 			t.Errorf("tool %q has no input schema", tool.Name)
 		}
 	}
-	want := []string{"convert", "validate", "review", "lint", "graph", "list_graphs"}
+	want := []string{"convert", "validate", "review", "lint", "graph", "list_graphs", "query_graph"}
 	for _, name := range want {
 		if !got[name] {
 			t.Errorf("tool %q not advertised", name)

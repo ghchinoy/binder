@@ -1,0 +1,65 @@
+{
+  "binder": "binder/{{VERSION}}",
+  "command": "query_graph",
+  "schema": "binder.report/v1",
+  "result": {
+    "op": "neighbors",
+    "query": {
+      "id": "metrics/gross-margin",
+      "direction": "out",
+      "rel": ""
+    },
+    "node_key": {
+      "strategy": "path",
+      "key": "",
+      "honored": false
+    },
+    "nodes": [
+      {
+        "id": "computations/gross-margin-period",
+        "title": "Gross margin for a period",
+        "type": "Attested Computation",
+        "tier": "human-reviewed",
+        "stale": false
+      },
+      {
+        "id": "metrics/gross-margin-legacy",
+        "title": "Gross Margin (legacy, pre-FY2026)",
+        "type": "Metric",
+        "tier": "human-reviewed",
+        "stale": false
+      },
+      {
+        "id": "metrics/revenue",
+        "title": "Revenue",
+        "type": "Metric",
+        "tier": "human-reviewed",
+        "stale": false
+      }
+    ],
+    "edges": [
+      {
+        "from": "metrics/gross-margin",
+        "to": "computations/gross-margin-period",
+        "text": "computations/gross-margin-period.md"
+      },
+      {
+        "from": "metrics/gross-margin",
+        "to": "metrics/gross-margin-legacy",
+        "text": "gross-margin-legacy"
+      },
+      {
+        "from": "metrics/gross-margin",
+        "to": "metrics/gross-margin-legacy",
+        "text": "metrics/gross-margin-legacy.md"
+      },
+      {
+        "from": "metrics/gross-margin",
+        "to": "metrics/revenue",
+        "text": "Revenue"
+      }
+    ],
+    "truncated": false,
+    "not_found": false
+  }
+}

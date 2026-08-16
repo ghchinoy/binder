@@ -1,0 +1,26 @@
+{
+  "binder": "binder/{{VERSION}}",
+  "command": "query_graph",
+  "schema": "binder.report/v1",
+  "result": {
+    "op": "lookup",
+    "query": {
+      "id": "tables/orders"
+    },
+    "node_key": {
+      "strategy": "path",
+      "key": "",
+      "honored": false
+    },
+    "nodes": [
+      {
+        "id": "tables/orders",
+        "title": "Customer Orders",
+        "type": "BigQuery Table",
+        "tier": "human-reviewed",
+        "stale": false
+      }
+    ],
+    "not_found": false
+  }
+}
