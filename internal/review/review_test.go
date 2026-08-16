@@ -36,7 +36,7 @@ func TestReviewCountsTypesTiersOrphansUnresolved(t *testing.T) {
 	calc.Trust = okf.TrustSignals{Attested: true}
 
 	b := &okf.Bundle{Root: "/b", Concepts: []*okf.Concept{intro, guide, table, calc}}
-	r := Review(b, "2026-08-15")
+	r := Review(b, "2026-08-15", nil)
 
 	if r.NumConcepts != 4 {
 		t.Fatalf("NumConcepts = %d, want 4", r.NumConcepts)
@@ -54,14 +54,25 @@ func TestReviewCountsTypesTiersOrphansUnresolved(t *testing.T) {
 		t.Errorf("unverified = %d, want 2 (intro, calc)", r.Tiers[okf.TierUnverified])
 	}
 
-	// guide has an inbound edge from intro; everything else is an orphan.
+	// guide has an inbound edge from intro, so it is neither orphan nor entrypoint.
+	// intro has outbound (to guide) but no inbound → ENTRYPOINT, not an orphan
+	// (issue #24). orders and calc have no edges at all → true ORPHANS.
 	orphans := strings.Join(r.Orphans, ",")
 	if strings.Contains(orphans, "guide") {
 		t.Errorf("guide should not be an orphan (intro links to it): %q", orphans)
 	}
-	for _, id := range []string{"intro", "orders", "calc"} {
+	if contains(r.Orphans, "intro") {
+		t.Errorf("intro links out (to guide) so it is an entrypoint, not an orphan: %v", r.Orphans)
+	}
+	if !contains(r.Entrypoints, "intro") {
+		t.Errorf("expected intro among entrypoints (outbound, no inbound): %v", r.Entrypoints)
+	}
+	for _, id := range []string{"orders", "calc"} {
 		if !contains(r.Orphans, id) {
 			t.Errorf("expected %q among orphans %v", id, r.Orphans)
+		}
+		if contains(r.Entrypoints, id) {
+			t.Errorf("%q has no edges; it is a true orphan, not an entrypoint: %v", id, r.Entrypoints)
 		}
 	}
 
@@ -81,8 +92,8 @@ func TestReviewStringIsDeterministic(t *testing.T) {
 		concept("b", "Note", "B"),
 		concept("a", "Note", "A", edge("b")),
 	}}
-	s1 := Review(b, "2026-08-15").String()
-	s2 := Review(b, "2026-08-15").String()
+	s1 := Review(b, "2026-08-15", nil).String()
+	s2 := Review(b, "2026-08-15", nil).String()
 	if s1 != s2 {
 		t.Fatal("review output is not deterministic")
 	}
@@ -104,7 +115,7 @@ func TestReviewOnlyReportsBrokenConceptRefs(t *testing.T) {
 		okf.Link{RawTarget: "gone.md#h", Resolved: false},             // broken concept ref w/ fragment
 	)
 	b := &okf.Bundle{Root: "/b", Concepts: []*okf.Concept{c}}
-	r := Review(b, "2026-08-15")
+	r := Review(b, "2026-08-15", nil)
 	if len(r.Unresolved) != 2 {
 		t.Fatalf("Unresolved = %+v, want 2 (missing.md, gone.md#h)", r.Unresolved)
 	}
@@ -118,7 +129,7 @@ func TestReviewReportsResolvedButNonexistentTarget(t *testing.T) {
 	// target concept does not exist; review must catch it via existence check.
 	c := concept("a", "Note", "A", okf.Link{TargetID: "ghost", RawTarget: "ghost.md", Resolved: true})
 	b := &okf.Bundle{Root: "/b", Concepts: []*okf.Concept{c}}
-	r := Review(b, "2026-08-15")
+	r := Review(b, "2026-08-15", nil)
 	if len(r.Unresolved) != 1 || r.Unresolved[0].RawTarget != "ghost.md" {
 		t.Errorf("Unresolved = %+v, want ghost.md (resolved shape, no such concept)", r.Unresolved)
 	}
@@ -147,7 +158,7 @@ func TestReviewDetectsRecoveredFrontmatterBody(t *testing.T) {
 	callout.Body = "---\n\nWarning: this API is deprecated.\n"
 
 	b := &okf.Bundle{Root: "/b", Concepts: []*okf.Concept{recovered, unterm, clean, callout}}
-	r := Review(b, "2026-08-15")
+	r := Review(b, "2026-08-15", nil)
 	// Concepts are visited sorted by ID: "bad" then "unterm"; "callout"/"ok" excluded.
 	if len(r.UnparsedFrontmatter) != 2 ||
 		r.UnparsedFrontmatter[0] != "bad" || r.UnparsedFrontmatter[1] != "unterm" {
@@ -162,7 +173,7 @@ func TestReviewReportsResidualWikilinkAsUnresolved(t *testing.T) {
 	c.Body = "# A\n\nSee [[Nonexistent Topic]] and [[Other|alias]].\n\n" +
 		"In code it is ignored: `[[Not A Link]]`.\n"
 	b := &okf.Bundle{Root: "/b", Concepts: []*okf.Concept{c}}
-	r := Review(b, "2026-08-15")
+	r := Review(b, "2026-08-15", nil)
 	if len(r.Unresolved) != 2 {
 		t.Fatalf("Unresolved = %+v, want 2 residual wikilinks", r.Unresolved)
 	}

@@ -26,7 +26,7 @@ func lintCorpus(t *testing.T, src string) *lint.Report {
 	if err != nil {
 		t.Fatalf("Analyze(%s): %v", src, err)
 	}
-	rep := lint.Lint(concepts, facts, fixedToday)
+	rep := lint.Lint(concepts, facts, fixedToday, nil)
 	rep.Src = src
 	return rep
 }
@@ -88,7 +88,7 @@ func TestBrokenLinkParity(t *testing.T) {
 	}
 
 	// Lint's broken concept refs.
-	lintRep := lint.Lint(concepts, facts, fixedToday)
+	lintRep := lint.Lint(concepts, facts, fixedToday, nil)
 	lintSet := map[string]bool{}
 	for _, f := range lintRep.BrokenLinks {
 		if linkcheck.IsBrokenConceptRef(f.Detail) {
@@ -164,7 +164,7 @@ func TestLintOrphansAndStale(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	rep := lint.Lint(concepts, facts, "2023-11-14")
+	rep := lint.Lint(concepts, facts, "2023-11-14", nil)
 	if want := []string{"island"}; !equalStrings(rep.Orphans, want) {
 		t.Errorf("orphans = %v, want %v", rep.Orphans, want)
 	}
@@ -179,7 +179,7 @@ func TestLintOrphansAndStale(t *testing.T) {
 	}
 
 	// Determinism: before stale_after, the same corpus reports no stale concepts.
-	early := lint.Lint(concepts, facts, "2019-01-01")
+	early := lint.Lint(concepts, facts, "2019-01-01", nil)
 	if len(early.Stale) != 0 {
 		t.Errorf("stale as of 2019-01-01 = %v, want none", early.Stale)
 	}
@@ -233,7 +233,7 @@ func TestLintAnchors(t *testing.T) {
 func TestReportSlicesInitialized(t *testing.T) {
 	rep := lintCorpus(t, "../../testdata/corpus-lint-clean")
 	if rep.BrokenLinks == nil || rep.MissingTitles == nil || rep.Orphans == nil ||
-		rep.Stale == nil || rep.SchemaViolations == nil {
+		rep.Entrypoints == nil || rep.Stale == nil || rep.SchemaViolations == nil {
 		t.Error("a report bucket is nil; empty buckets must be initialized to []")
 	}
 }

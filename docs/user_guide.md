@@ -478,14 +478,15 @@ binder review <bundle> [flags]
 
 Summarizes a loaded bundle: concept counts by type, **derived** trust tiers,
 stale concepts, Attested Computations, files recovered from unparseable
-frontmatter, orphans (concepts nothing links to), and unresolved links. Trust
-tiers and staleness are derived on demand, never stored.
+frontmatter, entrypoints, orphans, and unresolved links. Trust tiers and
+staleness are derived on demand, never stored.
 
 | Flag | Default | Purpose |
 |---|---|---|
 | `--today` | now | Date (`YYYY-MM-DD`) used for the staleness check; honours `SOURCE_DATE_EPOCH`. |
 | `--json` | `false` | Emit the review report as deterministic JSON (schema `binder.report/v1`) instead of prose. See [JSON output](#json-output---json-and-the-exit-code-contract). |
-| `--strict` | `false` | Gate (exit 1) when any review finding is present (orphans, stale, unresolved, or unparsed-frontmatter recoveries). Without it `review` never gates (exit 0). See [Strict mode](#strict-mode). |
+| `--strict` | `false` | Gate (exit 1) when any review finding is present (orphans, stale, unresolved, or unparsed-frontmatter recoveries). Entrypoints are advisory and never gate. Without it `review` never gates (exit 0). See [Strict mode](#strict-mode). |
+| `--entrypoint` | — | Concept id or path (repeatable) to treat as an **entrypoint**, not an orphan, in addition to the general rule and the recognized roots. |
 
 ```text
 binder review
@@ -501,7 +502,9 @@ binder review
   stale (as of 2026-08-15): 0
   attested computations: 0
   unparsed frontmatter (recovered as body): 0
-  orphans (no inbound links): 0
+  entrypoints (outbound, no inbound): 1
+    README
+  orphans (no inbound or outbound links): 0
   unresolved links: 0
 ```
 
@@ -509,8 +512,23 @@ An **unresolved link** in `review` is a concept reference (a bundle-relative
 `.md` target, or a residual `[[wikilink]]`) that names no concept in the bundle.
 External URLs, `mailto:`/`tel:`/`ftp:` targets, same-document `#anchors`, and
 links to non-concept files (assets, scripts) are **not** concept references and
-are never reported. An **orphan** is a concept with no inbound resolved edge — it
-is reported for you to wire up or accept, never removed.
+are never reported.
+
+**Entrypoints vs. orphans (node roles).** A concept with no inbound resolved edge
+is classified by whether it links outward:
+
+- **Entrypoint** — no inbound but **has outbound** resolved edges (it indexes into
+  the corpus rather than being linked into), *or* it is a recognized root
+  entrypoint (`README.md` / `index.md` at the corpus root), *or* it was named via
+  `--entrypoint`. A root `README.md` that links out is an entrypoint, **not** an
+  orphan — reporting it as an orphan was a false positive (issue #24).
+- **Orphan** — a **true** orphan has **no inbound AND no outbound** resolved edges:
+  a genuinely disconnected node, reported for you to wire up or accept, never
+  removed.
+
+Both classifications are **advisory only** — entrypoints never gate, and the
+reclassification never changes an exit code that did not change before. `review`
+and `lint` apply the **same rule**, so the two surfaces agree.
 
 ### `lint`
 
@@ -535,7 +553,7 @@ and the **same single resolved-edge definition** — its "broken link" is by
 construction the converter's "unresolved link". There is no second resolver and
 the codec is untouched.
 
-It reports five checks:
+It reports these checks:
 
 1. **Broken links** — an unresolved internal `.md` reference, a resolved link
    whose target concept is absent, a residual `[[wikilink]]`, or a broken
@@ -544,10 +562,14 @@ It reports five checks:
 2. **Missing titles** — no authored `title:` **and** no first-level (`# `)
    heading (`convert` would humanize the filename; `lint` flags the gap).
 3. **Orphans** — a concept with **0 inbound AND 0 outbound** resolved edges: a
-   truly disconnected node. This is stricter than `review`'s inbound-only orphan,
-   intentionally — a source corpus is where you catch a note wired to nothing.
-4. **Stale** — `stale_after` reached as of `--today` (honours `SOURCE_DATE_EPOCH`).
-5. **Schema violations** — a missing `type:` (`Detail: "missing type"`), or
+   truly disconnected node. A concept with no inbound but **outbound** edges (or a
+   recognized root `README.md`/`index.md`, or one named via `--entrypoint`) is an
+   **entrypoint** instead, reported separately and never as an orphan (issue #24).
+   `review` applies the identical rule, so the two surfaces agree.
+4. **Entrypoints** — no inbound resolved edge but not a true orphan: an outward
+   index into the corpus (advisory only; entrypoints never gate).
+5. **Stale** — `stale_after` reached as of `--today` (honours `SOURCE_DATE_EPOCH`).
+6. **Schema violations** — a missing `type:` (`Detail: "missing type"`), or
    invalid frontmatter recovered under never-reject
    (`Detail: "invalid frontmatter: <err>"`). A recovered file is reported once as
    invalid frontmatter, never also as "missing type".
@@ -556,7 +578,8 @@ It reports five checks:
 |---|---|---|
 | `--today` | now | Date (`YYYY-MM-DD`) used for the staleness check; honours `SOURCE_DATE_EPOCH`. |
 | `--json` | `false` | Emit the report as deterministic JSON (schema `binder.report/v1`, `command:"lint"`). See [JSON output](#json-output---json-and-the-exit-code-contract). |
-| `--strict` | `false` | Gate (exit 1) when any finding is present. Without it `lint` never gates (exit 0). See [Strict mode](#strict-mode). |
+| `--strict` | `false` | Gate (exit 1) when any finding is present. Entrypoints are advisory and never gate. Without it `lint` never gates (exit 0). See [Strict mode](#strict-mode). |
+| `--entrypoint` | — | Concept id or path (repeatable) to treat as an **entrypoint**, not an orphan, in addition to the general rule and the recognized roots. |
 
 All findings are **spec-tolerated advisories**: bare `binder lint` always exits
 `0` even with findings (§11 hard conformance stays `validate`'s job over a
@@ -828,12 +851,13 @@ Empty arrays serialize as `[]`.
 | `num_concepts` | int | Concept count. |
 | `by_type` | object | `{ "<type>": count }` (types with no value show as `(none)`). |
 | `tiers` | object | `{ "<tier>": count }` over `unverified` / `machine-confirmed` / `human-reviewed`. |
-| `orphans` | array of string | Concept IDs with no inbound resolved edge. |
+| `orphans` | array of string | Concept IDs with **no inbound AND no outbound** resolved edges (true orphans). |
+| `entrypoints` | array of string | Concept IDs with no inbound edge that are not orphans: outbound edges, a recognized root (`README.md`/`index.md`), or designated via `--entrypoint` (issue #24). Advisory; never gates. |
 | `stale` | array of string | Concept IDs stale as of `today`. |
 | `attested` | array of string | Attested-Computation concept IDs. |
 | `unresolved` | array | Broken concept references, each `{ from, raw_target, text }`. |
 | `unparsed_frontmatter` | array of string | Concept IDs recovered from unparseable frontmatter. |
-| `concepts` | array | Per-concept view: `{ id, type, tier, stale, attested, orphan }`. |
+| `concepts` | array | Per-concept view: `{ id, type, tier, stale, attested, orphan, entrypoint }`. |
 
 `by_type` and `tiers` are JSON objects with sorted keys; all list fields are
 `[]` when empty.
@@ -846,7 +870,8 @@ Empty arrays serialize as `[]`.
 | `num_concepts` | int | Concepts analysed. |
 | `broken_links` | array | Each `{ concept, detail }`; `detail` is the raw target. |
 | `missing_titles` | array of string | Concept IDs with no authored title and no `# H1`. |
-| `orphans` | array of string | Concept IDs with 0 inbound **and** 0 outbound resolved edges. |
+| `orphans` | array of string | Concept IDs with 0 inbound **and** 0 outbound resolved edges (true orphans). |
+| `entrypoints` | array of string | Concept IDs with 0 inbound edge that are not orphans: outbound edges, a recognized root (`README.md`/`index.md`), or designated via `--entrypoint` (issue #24). Advisory; never gates. |
 | `stale` | array of string | Concept IDs stale as of `today`. |
 | `schema_violations` | array | Each `{ concept, detail }` — `"missing type"` or `"invalid frontmatter: <err>"`. |
 

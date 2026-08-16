@@ -54,7 +54,7 @@ func TestLintTodayFlag(t *testing.T) {
 	if !strings.Contains(out, "stale: 0") {
 		t.Errorf("expected no stale concepts as of 2019:\n%s", out)
 	}
-	if !strings.Contains(out, "orphans: 1") {
+	if !strings.Contains(out, "orphans (no inbound or outbound links): 1") {
 		t.Errorf("expected the orphan regardless of date:\n%s", out)
 	}
 }
@@ -104,7 +104,7 @@ func TestLintJSONEnvelope(t *testing.T) {
 	}
 	for _, key := range []string{
 		"src", "num_concepts", "broken_links", "missing_titles",
-		"orphans", "stale", "schema_violations",
+		"orphans", "entrypoints", "stale", "schema_violations",
 	} {
 		if _, present := result[key]; !present {
 			t.Errorf("result missing key %q", key)

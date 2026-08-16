@@ -62,7 +62,7 @@ func TestFMRefEdgeSurvivesReload(t *testing.T) {
 		t.Errorf("graph edges must include a->b (fm-ref materialized as body link): %+v", m.Edges)
 	}
 
-	r := review.Review(b, "2026-08-15")
+	r := review.Review(b, "2026-08-15", nil)
 	for _, o := range r.Orphans {
 		if o == "b" {
 			t.Errorf("Beta must not be an orphan; a declares it as parent: %v", r.Orphans)
@@ -98,7 +98,7 @@ func TestRecoveryReportAndReviewAgree(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	r := review.Review(b, "2026-08-15")
+	r := review.Review(b, "2026-08-15", nil)
 
 	// --report count == review count (same authoritative marker).
 	if len(r.UnparsedFrontmatter) != rep.NumRecovered {
