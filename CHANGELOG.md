@@ -1,5 +1,39 @@
 # Changelog
 
+## [0.3.0](https://github.com/ghchinoy/binder/compare/v0.2.1...v0.3.0) (2026-08-16)
+
+
+### Features
+
+* **convert:** --external-root suppresses advisories for known sibling workspaces ([#25](https://github.com/ghchinoy/binder/issues/25)) ([7c3174f](https://github.com/ghchinoy/binder/commit/7c3174f4709dd89dda2c7e82d2d025d7d2567b74))
+* **enrich:** --overwrite-keys refreshes named keys in place, refusing trust keys ([#22](https://github.com/ghchinoy/binder/issues/22)) ([8fcf727](https://github.com/ghchinoy/binder/commit/8fcf727d44d16627b8342a4ecf05ebfa8939ef65))
+* **graph:** read-only query_graph MCP tool with five traversal operations ([#33](https://github.com/ghchinoy/binder/issues/33)) ([bb383ae](https://github.com/ghchinoy/binder/commit/bb383ae62792ed9ad73bd3bc06199a1e9e89e822))
+* **mcp:** expose external_root on convert and name all seven tools in help ([#62](https://github.com/ghchinoy/binder/issues/62)) ([8ea12b0](https://github.com/ghchinoy/binder/commit/8ea12b0e224d07c9cbfd287e416ff04c9f2ddad5))
+* **review:** reclassify entrypoints vs orphans in review and lint ([#24](https://github.com/ghchinoy/binder/issues/24)) ([3546fda](https://github.com/ghchinoy/binder/commit/3546fdab22a69c59e96792b6aa7e6af943753d4c))
+* **status:** validate --status-map vocabulary; opt-in canonicalization ([#23](https://github.com/ghchinoy/binder/issues/23)) ([7f4ca6b](https://github.com/ghchinoy/binder/commit/7f4ca6b4c8161b5abf90d61db1a6a20fd8e3f4ea))
+
+
+### Bug Fixes
+
+* **build:** canonicalize the version stamp to a single no-v form across all install paths ([e9df155](https://github.com/ghchinoy/binder/commit/e9df155f10243e89ff55d76ff4df4df0c887342c))
+* **cli:** stop claiming root index.md is a recognized entrypoint ([b98f502](https://github.com/ghchinoy/binder/commit/b98f502fe554ade38bb7c83d718e96a56d346e7d)), closes [#73](https://github.com/ghchinoy/binder/issues/73)
+* **cli:** usage errors exit 2 and infer emits stable empty arrays ([8b2083a](https://github.com/ghchinoy/binder/commit/8b2083afc8ca6c160408f4ec9c9384d41a83316c))
+* **infer:** write the zero-mapping diagnostic to stderr so stdout stays machine-consumable ([#67](https://github.com/ghchinoy/binder/issues/67)) ([bcba1fd](https://github.com/ghchinoy/binder/commit/bcba1fd2f654e1e1c81a9d5e71d309b8bb50c386))
+* keep underscores and hyphen runs in okf heading slugs ([#84](https://github.com/ghchinoy/binder/issues/84)) ([9b34a0f](https://github.com/ghchinoy/binder/commit/9b34a0ffe85f53e7c0e9dc00bd423db137a676c8))
+* **lint:** stop electing a root index.md as an entrypoint ([#75](https://github.com/ghchinoy/binder/issues/75)) ([34c9483](https://github.com/ghchinoy/binder/commit/34c9483aa0ee5bc9ef17625c750e3633e8773adf)), closes [#71](https://github.com/ghchinoy/binder/issues/71) [#72](https://github.com/ghchinoy/binder/issues/72)
+* make validate disclose unchecked reserved-file scope ([#83](https://github.com/ghchinoy/binder/issues/83)) ([6208383](https://github.com/ghchinoy/binder/commit/62083831b8cc18491561c800ac20d5fa912762c7))
+
+
+### Documentation
+
+* **clijson:** envelope keys are struct-order, not sorted ([948260e](https://github.com/ghchinoy/binder/commit/948260ef4d8cf215f713d92c572bf6bac5c308eb))
+* correct entrypoints label, tutorial claims, MCP parity ([#78](https://github.com/ghchinoy/binder/issues/78)) ([69cd81f](https://github.com/ghchinoy/binder/commit/69cd81fc5664fc686f3164be9a0f66daade17039))
+* correct README, tutorial and RELEASING against the shipped v0.3.0 binary ([#65](https://github.com/ghchinoy/binder/issues/65)) ([9df8eaf](https://github.com/ghchinoy/binder/commit/9df8eafe8ff615fd059b085cc1632c17372c57f4))
+* **graph:** document the graph surface and ship a graph-format sample ([#36](https://github.com/ghchinoy/binder/issues/36)) ([1fb9284](https://github.com/ghchinoy/binder/commit/1fb928420fd59524b139d998e01a84d1fd946d55))
+* **lint:** correct the divergence example in a doc comment ([#81](https://github.com/ghchinoy/binder/issues/81)) ([5bdc3e1](https://github.com/ghchinoy/binder/commit/5bdc3e117dd548dbd62225e1b6a2587f6088c15b))
+* **readme:** correct lint/review agreement and root entrypoint claims ([#69](https://github.com/ghchinoy/binder/issues/69)) ([7bad872](https://github.com/ghchinoy/binder/commit/7bad87209ec2ea88e0b384a2d4841675d4834e7d))
+* **user-guide:** correct and complete user guide for v0.3.0 ([#70](https://github.com/ghchinoy/binder/issues/70)) ([2293734](https://github.com/ghchinoy/binder/commit/2293734f2c353dfdbbf3d62a08e0931186281315))
+
 ## [0.2.1](https://github.com/ghchinoy/binder/compare/v0.2.0...v0.2.1) (2026-08-16)
 
 
