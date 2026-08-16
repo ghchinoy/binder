@@ -29,7 +29,10 @@ type Report struct {
 	TypeMap     string    `json:"type_map"`
 	DefaultType string    `json:"default_type"`
 	Mappings    []Mapping `json:"mappings"`
-	Warnings    []string  `json:"warnings,omitempty"`
+	// Warnings is always present in the JSON envelope: no warnings marshals as
+	// [] (not null and not an omitted key), so consumers see a stable output
+	// shape. infer.Infer initializes it to a non-nil slice to guarantee this.
+	Warnings []string `json:"warnings"`
 }
 
 // String formats the report for human-readable CLI output.

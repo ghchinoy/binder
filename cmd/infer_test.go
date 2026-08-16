@@ -80,6 +80,37 @@ func TestInferCmdJSONEnvelope(t *testing.T) {
 	}
 }
 
+// TestInferCmdJSONWarningsStable locks the stable-envelope guarantee: a
+// warning-free run must still emit "warnings" as an empty array, never as null
+// and never as an omitted key. Every sibling command emits [] and the docs
+// promise a stable output shape.
+func TestInferCmdJSONWarningsStable(t *testing.T) {
+	dir := setupInferCorpus(t)
+	out, code := runCLI(t, "infer", dir, "--json")
+	if code != clijson.ExitSuccess {
+		t.Fatalf("exit = %d, want 0; out:\n%s", code, out)
+	}
+	if !strings.Contains(out, `"warnings": []`) {
+		t.Errorf("warnings not emitted as []; output:\n%s", out)
+	}
+
+	// Distinguish "present and empty" from "null" and "absent": decode into a
+	// map that only carries a key when it was present in the JSON.
+	var env struct {
+		Result map[string]json.RawMessage `json:"result"`
+	}
+	if err := json.Unmarshal([]byte(out), &env); err != nil {
+		t.Fatalf("invalid json: %v\n%s", err, out)
+	}
+	raw, present := env.Result["warnings"]
+	if !present {
+		t.Fatalf("warnings key omitted; output:\n%s", out)
+	}
+	if string(raw) != "[]" {
+		t.Errorf("warnings = %s, want []", raw)
+	}
+}
+
 func TestInferCmdJSONDeterministic(t *testing.T) {
 	dir := setupInferCorpus(t)
 	out1, c1 := runCLI(t, "infer", dir, "--json")

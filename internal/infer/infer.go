@@ -145,7 +145,9 @@ func Infer(ctx context.Context, src string, codec okf.Codec, opts Options) (*Rep
 		}
 	}
 
-	var warnings []string
+	// Non-nil so an empty run marshals warnings as [] rather than null, keeping
+	// the JSON envelope's shape stable (docs/user_guide.md).
+	warnings := []string{}
 
 	// 2. Optional Tier 4: Gemini semantic inference
 	if opts.UseGemini {
