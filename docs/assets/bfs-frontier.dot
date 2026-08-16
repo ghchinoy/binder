@@ -1,0 +1,37 @@
+// §3 — bounded BFS: frontier expands by depth; shortest path A→C→E highlighted;
+// a revisit edge is skipped by the visited set. Material light + Google Sans Flex.
+// NOTE: requires the "Google Sans Flex" font installed (fonts.google.com).
+digraph bfs {
+  rankdir=LR;
+  bgcolor="#F9FAEF";
+  nodesep=0.5; ranksep=0.9; margin="0.3,0.2";
+  node [shape=circle, style="filled", fontname="Google Sans Flex", fontsize=12, width=0.6, fixedsize=true, penwidth=1.5, fontcolor="#1A1C16"];
+  edge [fontname="Google Sans Flex", fontsize=9, color="#44483D", fontcolor="#44483D", penwidth=1.3, arrowsize=0.8];
+
+  // depth labels (plaintext column headers)
+  { node [shape=plaintext, style="", fontcolor="#586249", fontsize=11, fixedsize=false, margin="0.05,0.02"];
+    d0 [label="depth 0\n(start)"]; d1 [label="depth 1"]; d2 [label="depth 2\n(target found)"]; }
+  d0 -> d1 -> d2 [style=invis];
+
+  // start (depth 0)
+  A [label="A", fillcolor="#4C662B", fontcolor="#FFFFFF", color="#354E16", penwidth=2.2];
+  // depth 1 frontier
+  B [label="B", fillcolor="#CDEDA3", color="#4C662B", fontcolor="#354E16"];
+  C [label="C", fillcolor="#CDEDA3", color="#4C662B", fontcolor="#354E16"];
+  // depth 2 frontier
+  D [label="D", fillcolor="#DCE7C8", color="#586249", fontcolor="#404A33"];
+  E [label="E", fillcolor="#BCECE7", color="#386663", fontcolor="#1F4E4B", penwidth=2.6]; // target
+
+  { rank=same; d0; A; }
+  { rank=same; d1; B; C; }
+  { rank=same; d2; D; E; }
+
+  // tree edges
+  A -> B;
+  A -> C [color="#4C662B", penwidth=2.6];   // on shortest path
+  B -> D;
+  C -> D;
+  C -> E [color="#4C662B", penwidth=2.6];    // on shortest path -> target
+  // revisit skipped by the visited set
+  E -> A [style=dashed, color="#BA1A1A", fontcolor="#93000A", constraint=false, label="revisit → skipped"];
+}
