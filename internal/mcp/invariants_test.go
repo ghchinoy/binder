@@ -47,15 +47,150 @@ func TestNeverFabricateTrust_InvalidActor(t *testing.T) {
 	}
 }
 
-// TestNeverFabricateTrust_NoAutoStamp: the server never auto-applies verified_by.
-// Convert WITHOUT verified_by is byte-identical to the CLI without --verified-by;
-// no stamp is invented. (A stamp only ever appears when explicitly passed.)
+// TestNeverFabricateTrust_NoAutoStamp is the never-fabricate-trust gate for the
+// MCP convert tool: a verified actorstamp appears on a written concept ONLY when
+// verified_by is explicitly passed in the tool input; the server never invents
+// one. It observes the field the invariant is named for by running REAL converts
+// and reading the written concept files.
+//
+// It deliberately does NOT use --dry-run. The dry-run report carries no trust
+// fields at all — the byte-parity of that report is pinned separately by
+// TestConvertDryRunParity — so a dry-run comparison can never observe stamping
+// and would be structurally incapable of catching a fabricated stamp. That is
+// the exact defect this test was rewritten to remove.
+//
+// The positive control lives INSIDE the assertion (anti-vacuity): an explicit
+// verified_by MUST raise the verified-stamp count above the source baseline, or
+// the test errors rather than passing. So it cannot silently decay into asserting
+// nothing if the write path ever stops stamping.
 func TestNeverFabricateTrust_NoAutoStamp(t *testing.T) {
-	got := toolText(t, callTool(t, "convert", map[string]any{"src": richCorpus, "dry_run": true}))
-	want := cliJSON(t, "convert", richCorpus, "--dry-run", "--json")
-	if got != want {
-		t.Fatalf("convert without verified_by diverged from CLI (possible fabricated trust)\n--- MCP ---\n%s\n--- CLI ---\n%s", got, want)
+	// The corpus already carries some verified stamps in its source frontmatter;
+	// those are legitimately carried forward and are the baseline against which a
+	// fabricated stamp shows up as an increase.
+	base := countVerifiedFiles(t, richCorpus)
+
+	// Positive control / anti-vacuity: an explicit actor DOES stamp, proving the
+	// instrument can observe the field it asserts on.
+	stampedOut := t.TempDir()
+	if res := callTool(t, "convert", map[string]any{
+		"src":         richCorpus,
+		"out":         stampedOut,
+		"verified_by": "human:alice",
+	}); res.IsError {
+		t.Fatalf("convert with an explicit verified_by must succeed: %s", toolText(t, res))
 	}
+	if got := countVerifiedFiles(t, stampedOut); got <= base {
+		t.Fatalf("anti-vacuity: explicit verified_by did not raise the verified-stamp count "+
+			"above the source baseline (%d <= %d); the test can no longer observe stamping", got, base)
+	}
+
+	// The invariant: with NO verified_by the server invents nothing — the written
+	// bundle carries exactly the stamps the source already had, no more.
+	plainOut := t.TempDir()
+	if res := callTool(t, "convert", map[string]any{
+		"src": richCorpus,
+		"out": plainOut,
+	}); res.IsError {
+		t.Fatalf("convert without verified_by must succeed: %s", toolText(t, res))
+	}
+	if got := countVerifiedFiles(t, plainOut); got != base {
+		t.Fatalf("MCP convert changed the verified-stamp count from %d (source) to %d without an "+
+			"explicit verified_by (never-fabricate-trust violated: the server auto-stamped)", base, got)
+	}
+}
+
+// countVerifiedFiles counts concept files under root whose frontmatter carries a
+// verified actorstamp (the "verified:" key). It is format-agnostic — it matches
+// both the block form ("verified:\n  - by: ...") and the flow form
+// ("verified: { by: ... }") — and never matches "generated:" or "verified_by:".
+func countVerifiedFiles(t *testing.T, root string) int {
+	t.Helper()
+	return countMatchingFiles(t, root, "verified:")
+}
+
+// countActorFiles counts concept files under root that stamp the given actor
+// (i.e. carry a "by: <actor>" line). It matches the unquoted stamp binder writes;
+// a re-serialized flow-mapping value such as "by: 'human:alice'" is intentionally
+// NOT matched.
+func countActorFiles(t *testing.T, root, actor string) int {
+	t.Helper()
+	return countMatchingFiles(t, root, "by: "+actor)
+}
+
+// countMatchingFiles counts .md files under root whose bytes contain needle.
+func countMatchingFiles(t *testing.T, root, needle string) int {
+	t.Helper()
+	n := 0
+	err := filepath.Walk(root, func(p string, fi os.FileInfo, err error) error {
+		if err != nil || fi.IsDir() || !strings.HasSuffix(p, ".md") {
+			return err
+		}
+		b, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		if strings.Contains(string(b), needle) {
+			n++
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walking %s: %v", root, err)
+	}
+	return n
+}
+
+// TestCharacterize_MCPDoesNotResolveConfig is a CHARACTERIZATION test: it records
+// what the two surfaces currently DO, not what they must do. With a global user
+// config supplying verified_by and no explicit actor on either surface, the CLI
+// resolves the actor from config and stamps every concept, while the MCP server
+// does not load config at all and stamps nothing.
+//
+// This behaviour is UNDER ACTIVE REVIEW BY THE OWNER and is not settled. A future
+// change to it — making MCP resolve config, or making the CLI stop — is a
+// DECISION, NOT A REGRESSION; whoever makes it should update this test to match
+// rather than read a red here as a bug they caused. The name is deliberately NOT
+// invariant-shaped so it cannot launder disputed behaviour into a guarantee.
+//
+// It uses XDG_CONFIG_HOME to arm a GLOBAL config with no cwd manipulation, so it
+// is hermetic. It uses REAL converts, not --dry-run (the dry-run report carries
+// no trust fields). The anti-vacuity control lives inside the assertion: if the
+// CLI side stamps nothing the config no longer arms the stamp, so the test errors
+// rather than silently pinning "0 == 0".
+func TestCharacterize_MCPDoesNotResolveConfig(t *testing.T) {
+	xdg := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(xdg, "binder"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := filepath.Join(xdg, "binder", "config.yaml")
+	if err := os.WriteFile(cfg, []byte("verified_by: human:alice\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("XDG_CONFIG_HOME", xdg)
+
+	out := t.TempDir()
+	cliOut := filepath.Join(out, "cli")
+	mcpOut := filepath.Join(out, "mcp")
+
+	// Real converts, not --dry-run: the stamp only ever exists on disk.
+	cliJSON(t, "convert", richCorpus, "-o", cliOut, "--json")
+	if res := callTool(t, "convert", map[string]any{"src": richCorpus, "out": mcpOut}); res.IsError {
+		t.Fatalf("MCP convert must succeed: %s", toolText(t, res))
+	}
+
+	cliStamped := countActorFiles(t, cliOut, "human:alice")
+	mcpStamped := countActorFiles(t, mcpOut, "human:alice")
+
+	if cliStamped == 0 {
+		t.Fatalf("anti-vacuity: CLI produced 0 config-sourced verified stamps (config %s no longer "+
+			"arms the stamp?); the test can no longer observe the divergence", cfg)
+	}
+	if mcpStamped != 0 {
+		t.Fatalf("characterization changed: MCP stamped %d concept(s) from config — the server now "+
+			"loads config. If that change is intentional, update this test: it is a decision, not a "+
+			"regression", mcpStamped)
+	}
+	t.Logf("current behaviour: cli stamped=%d  mcp stamped=%d", cliStamped, mcpStamped)
 }
 
 // TestDeterminism_SourceDateEpoch: with SOURCE_DATE_EPOCH set, the default
