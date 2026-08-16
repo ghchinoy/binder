@@ -509,11 +509,14 @@ reported for context and never counted:
    only on those matched inputs do they agree. Aim `lint` at a bundle and it
    will mislead rather than refuse: it re-converts the already-converted files,
    including the bundle's generated per-directory `index.md` tree, which gives
-   every concept an inbound link from its own directory's index, so orphans
-   collapse to `[]` on every corpus shape (flat or nested). The reserved source
-   `index.md` also re-derives as an ordinary concept reported as an entrypoint
-   (`index-note`, or `index-note-2` when the source corpus already carried its
-   own `index.md`).
+   every ordinary concept an inbound link from its own directory's index, each
+   directory index one from its **parent's** index, and the **root** index
+   none. So orphans collapse to `[]` on every corpus shape (flat or nested), and
+   the root index is the one reported as an entrypoint: because `index.md` is a
+   reserved name, that previously-generated root index is renamed on the
+   re-convert and surfaces as the concept `index-note` — or `index-note-2` when
+   the source corpus carried its own `index.md`, which takes the `index-note` id
+   first.
 5. **Stale** — `stale_after` reached as of `--today` (or `SOURCE_DATE_EPOCH`).
 6. **Schema violations** — a missing `type:` (`Detail: "missing type"`), or
    invalid frontmatter recovered under never-reject (`Detail: "invalid
