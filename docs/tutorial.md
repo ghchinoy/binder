@@ -650,7 +650,7 @@ written, and `--canonicalize-status` opts into rewriting the handful of known
 aliases (`active`→`stable`, `wip`/`in-progress`→`draft`,
 `archived`/`legacy`→`deprecated`) so the gate has nothing left to catch. Both
 flags exist on `convert` as well. See
-[Status vocabulary](../README.md#status-vocabulary-and---canonicalize-status).
+[Status vocabulary](user_guide.md#status-vocabulary-and---canonicalize-status).
 
 Attest with a real actor. `--verified-by` requires the actor convention:
 `human:<id>`, `process:<id>`, `team:<id>`, or `<producer>/<version>` such as
