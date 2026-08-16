@@ -1,7 +1,8 @@
 // Package mcp is binder's stdio MCP server surface (issue #15). It exposes
-// binder's additive verbs (convert/validate/review/lint/graph) plus the
-// read-only list_graphs introspection tool as MCP tools that return the SAME
-// binder.report/v1 payloads as `--json`.
+// binder's additive verbs as MCP tools that return the SAME binder.report/v1
+// payloads as `--json`. The tools registered are convert, validate, review,
+// lint, graph, list_graphs, and query_graph — newServer is the authoritative
+// set; list_graphs and query_graph are the read-only graph introspection tools.
 //
 // The server adds NO business logic and NO second serialization path: each tool
 // handler decodes typed params, calls the existing internal/* entry point, and
