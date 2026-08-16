@@ -116,3 +116,22 @@ func TestTodayValidationLint(t *testing.T) {
 		t.Fatalf("malformed --today error = %v, want it to name YYYY-MM-DD", err)
 	}
 }
+
+// TestTodayValidationGraph proves the same --today validation for `binder graph`
+// (previously the outlier that silently accepted a malformed date and emitted
+// wrong staleness at exit 0). The message must be indistinguishable from
+// lint/review so the three commands validate identically.
+func TestTodayValidationGraph(t *testing.T) {
+	t.Setenv("SOURCE_DATE_EPOCH", "1700000000")
+	if _, code := runCLI(t, "graph", "../testdata/expected-rich", "--today", "2024-01-01"); code != clijson.ExitSuccess {
+		t.Fatalf("valid --today: exit = %d, want 0", code)
+	}
+	if _, code := runCLI(t, "graph", "../testdata/expected-rich", "--today", "not-a-date"); code != clijson.ExitUsage {
+		t.Fatalf("malformed --today: exit = %d, want %d", code, clijson.ExitUsage)
+	}
+	err := runCLIErr(t, "graph", "../testdata/expected-rich", "--today", "not-a-date")
+	want := `--today "not-a-date" is not a valid date (expected YYYY-MM-DD)`
+	if err == nil || err.Error() != want {
+		t.Fatalf("malformed --today error = %v, want exactly %q", err, want)
+	}
+}

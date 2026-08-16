@@ -80,6 +80,69 @@ func TestInferCmdJSONEnvelope(t *testing.T) {
 	}
 }
 
+// TestInferCmdJSONWarningsStable locks the stable-envelope guarantee: a
+// warning-free run must still emit "warnings" as an empty array, never as null
+// and never as an omitted key. Every sibling command emits [] and the docs
+// promise a stable output shape.
+func TestInferCmdJSONWarningsStable(t *testing.T) {
+	dir := setupInferCorpus(t)
+	out, code := runCLI(t, "infer", dir, "--json")
+	if code != clijson.ExitSuccess {
+		t.Fatalf("exit = %d, want 0; out:\n%s", code, out)
+	}
+	if !strings.Contains(out, `"warnings": []`) {
+		t.Errorf("warnings not emitted as []; output:\n%s", out)
+	}
+
+	// Distinguish "present and empty" from "null" and "absent": decode into a
+	// map that only carries a key when it was present in the JSON.
+	var env struct {
+		Result map[string]json.RawMessage `json:"result"`
+	}
+	if err := json.Unmarshal([]byte(out), &env); err != nil {
+		t.Fatalf("invalid json: %v\n%s", err, out)
+	}
+	raw, present := env.Result["warnings"]
+	if !present {
+		t.Fatalf("warnings key omitted; output:\n%s", out)
+	}
+	if string(raw) != "[]" {
+		t.Errorf("warnings = %s, want []", raw)
+	}
+}
+
+// TestInferCmdJSONMappingsStable locks the same stable-envelope guarantee for
+// mappings: an empty corpus (no directory type mappings) must emit "mappings"
+// as an empty array, never null and never an omitted key — the identical defect
+// class as warnings (U8), in the same envelope.
+func TestInferCmdJSONMappingsStable(t *testing.T) {
+	// An empty (but readable) corpus yields no mappings and no warnings.
+	dir := t.TempDir()
+	out, code := runCLI(t, "infer", dir, "--json")
+	if code != clijson.ExitSuccess {
+		t.Fatalf("exit = %d, want 0; out:\n%s", code, out)
+	}
+	if !strings.Contains(out, `"mappings": []`) {
+		t.Errorf("mappings not emitted as []; output:\n%s", out)
+	}
+
+	var env struct {
+		Result map[string]json.RawMessage `json:"result"`
+	}
+	if err := json.Unmarshal([]byte(out), &env); err != nil {
+		t.Fatalf("invalid json: %v\n%s", err, out)
+	}
+	for _, key := range []string{"mappings", "warnings"} {
+		raw, present := env.Result[key]
+		if !present {
+			t.Fatalf("%s key omitted; output:\n%s", key, out)
+		}
+		if string(raw) != "[]" {
+			t.Errorf("%s = %s, want []", key, raw)
+		}
+	}
+}
+
 func TestInferCmdJSONDeterministic(t *testing.T) {
 	dir := setupInferCorpus(t)
 	out1, c1 := runCLI(t, "infer", dir, "--json")

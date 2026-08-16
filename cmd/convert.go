@@ -55,11 +55,11 @@ func newConvertCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 			// --include-backlinks/--include-graph only annotate the --group-by-type
 			// catalog; warn (stderr only) if passed without it. Never gates.
 			hintCatalogFlags(cmd, groupByType, includeBacklinks, includeGraph)
+			// Malformed map shapes/values are usage errors (exit 2).
 			typeMap, err := convert.ParseTypeMap(typeMapRaw)
 			if err != nil {
-				return err
+				return clijson.Usage(err)
 			}
-			// Malformed map shapes/values are usage errors (exit 2).
 			statusMap, statusDefault, err := convert.ParseStatusMap(statusMapRaw)
 			if err != nil {
 				return clijson.Usage(err)

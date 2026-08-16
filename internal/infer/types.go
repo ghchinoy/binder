@@ -25,11 +25,15 @@ type Mapping struct {
 
 // Report holds the full inference proposal.
 type Report struct {
-	Src         string    `json:"src"`
-	TypeMap     string    `json:"type_map"`
-	DefaultType string    `json:"default_type"`
-	Mappings    []Mapping `json:"mappings"`
-	Warnings    []string  `json:"warnings,omitempty"`
+	Src         string `json:"src"`
+	TypeMap     string `json:"type_map"`
+	DefaultType string `json:"default_type"`
+	// Mappings and Warnings are always present in the JSON envelope: an empty run
+	// marshals each as [] (not null and not an omitted key), so consumers see a
+	// stable output shape. infer.Infer initializes both to non-nil slices to
+	// guarantee this.
+	Mappings []Mapping `json:"mappings"`
+	Warnings []string  `json:"warnings"`
 }
 
 // String formats the report for human-readable CLI output.
