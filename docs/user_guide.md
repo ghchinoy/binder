@@ -1144,15 +1144,21 @@ $ echo $?
 
 To call the MCP tools, run binder as an MCP server (see
 [MCP server (`binder mcp`)](#mcp-server-binder-mcp) for wiring it into a harness).
+`binder mcp` reads newline-delimited JSON-RPC on stdin and exits as soon as stdin
+closes, so **stdin must stay open until the response has been read** — a real harness
+holds the connection open, and in a shell the trailing `sleep` below stands in for
+that. A bare `printf ... | binder mcp` closes the pipe immediately and the server
+exits before it flushes the reply, so you get nothing back.
+
 Over stdio a single `tools/call` looks like this — the report is a JSON string in
 `result.content[0].text`:
 
 ```bash
-printf '%s\n' \
+{ printf '%s\n' \
   '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"c","version":"0"}}}' \
   '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
-  '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"list_graphs","arguments":{"bundle":"./bundle"}}}' \
-  | binder mcp 2>/dev/null | jq -r 'select(.id==2).result.content[0].text'
+  '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"list_graphs","arguments":{"bundle":"docs/examples/graph-sample/orders-kb"}}}' ; \
+  sleep 2; } | binder mcp | jq -r 'select(.id==2).result.content[0].text'
 ```
 
 A runnable sample bundle and its graph views live in
@@ -1535,7 +1541,7 @@ otherwise, so it is worth proving. The edge
 `metrics/gross-margin → metrics/revenue` has `text: "Revenue"`; running
 `op:"neighbors", id:"metrics/gross-margin"` with each `rel`:
 
-```console
+```text
 rel = "Revenue"   → nodes: ["metrics/revenue"]   # exact match
 rel = "revenue"   → nodes: []                      # case differs
 rel = "Rev"       → nodes: []                      # a prefix is not a match
