@@ -2,16 +2,16 @@
 
 Load this when you need the exact shape of what a binder command emits, so you
 **parse structured output with `jq`** and never scrape prose. Every shape below
-was taken from real `binder/0.1.0` output.
+was taken from real `binder/0.3.0` output.
 
 ## The report envelope (`binder.report/v1`)
 
-`convert`, `enrich`, `validate`, `review`, and `lint` all wrap their result in the
-same envelope:
+`convert`, `enrich`, `validate`, `review`, `lint`, and `infer` all wrap their
+result in the same envelope:
 
 ```json
 {
-  "binder":  "binder/0.1.0",
+  "binder":  "binder/0.3.0",
   "command": "convert",
   "schema":  "binder.report/v1",
   "result":  { }
@@ -19,8 +19,8 @@ same envelope:
 ```
 
 - `binder` — the producing version.
-- `command` — one of `convert | enrich | validate | review | lint`.
-- `schema` — `binder.report/v1` for all five.
+- `command` — one of `convert | enrich | validate | review | lint | infer`.
+- `schema` — `binder.report/v1` for all six.
 - `result` — the per-command payload (below).
 
 **Two commands do NOT use this envelope — do not expect it:**
@@ -60,7 +60,8 @@ by default.
   "unresolved": [ { "from": "docs/guide.md",
                     "raw_target": "/docs/nope.md", "text": "missing" } ],
   "num_concepts": 3, "num_links": 2, "num_resolved": 1,
-  "num_unresolved": 1, "num_recovered": 0, "dry_run": true
+  "num_unresolved": 1, "num_recovered": 0, "dry_run": true,
+  "status_notes": []                           // advisory notes about the run
 }
 ```
 
@@ -76,14 +77,20 @@ binder convert <corpus> --dry-run --json | jq '.result.unresolved'
 {
   "root": "bundle", "num_concepts": 3, "num_reserved": 2,
   "findings": [ { "concept_id": "x", "severity": "error",
-                  "message": "missing non-empty 'type' (spec §11.2)" } ]
+                  "message": "missing non-empty 'type' (spec §11.2)" } ],
+  "reserved_structure_checked": false          // §11.3 NOT verified — see below
 }
 ```
 
-`findings: []` ⇒ conformant ⇒ exit `0`. Any error finding ⇒ exit `1`.
+`findings: []` ⇒ exit `0`. Any error finding ⇒ exit `1`.
+
+**`reserved_structure_checked` is currently `false`.** validate enforces §11.1
+(parseable frontmatter) and §11.2 (non-empty `type`) only; the §11.3 reserved-file
+structure rules are not checked. Read `findings: []` as *"no §11.1/§11.2
+violations"*, not *"fully §11-conformant"*.
 
 ```bash
-binder validate <bundle> --json | jq '.result.findings'
+binder validate <bundle> --json | jq -c '.result | {findings, reserved_structure_checked}'
 ```
 
 ### `review --json`
@@ -94,6 +101,7 @@ binder validate <bundle> --json | jq '.result.findings'
   "by_type": { "Guide": 2, "Note": 1 },
   "tiers":   { "unverified": 3 },              // DERIVED, never stored
   "orphans": [ "docs/guide" ],
+  "entrypoints": [ "README" ],                 // roots the graph is reachable from
   "stale":   [],
   "attested": [],
   "unresolved": [ { "from": "docs/guide", "raw_target": "/docs/nope.md", "text": "missing" } ],
@@ -115,6 +123,7 @@ binder review <bundle> --json | jq '.result | {by_type, tiers, orphans, stale}'
   "broken_links":      [ { "concept": "docs/guide", "detail": "/docs/nope.md" } ],
   "missing_titles":    [ "docs/notitle" ],
   "orphans":           [ "docs/notitle" ],
+  "entrypoints":       [ "README" ],
   "stale":             [],
   "schema_violations": [ { "concept": "adr/one", "detail": "missing type" } ]
 }
@@ -135,17 +144,25 @@ binder lint <corpus> --json | jq '.result | {broken_links, missing_titles, schem
   "num_files": 3, "num_enriched": 3, "num_unchanged": 0, "num_skipped": 0,
   "files": [ { "path": "adr/one.md", "status": "would-enrich",
                "added": [ "generated", "title", "type" ] } ],
-  "warnings": []
+  "warnings": [], "status_notes": []
 }
 ```
 
 `status` ∈ `enriched | unchanged | would-enrich | skipped`. `added` is the sorted
-list of injected keys. Only ever adds **absent** keys (`type`/`title`/`generated`);
-byte-faithful and idempotent.
+list of injected keys; byte-faithful.
+
+**`added` is the trust disclosure.** If a `verified_by` is configured (env or
+config file), `added` will contain `verified` and enrich will write an attestation
+into your source. Filter for it before applying, and pass `--verified-by ""` to
+suppress:
 
 ```bash
-binder enrich <corpus> --dry-run --json | jq '.result.files'
+binder enrich <corpus> --dry-run --json | jq -c '.result.files[] | select(.added|length>0)'
 ```
+
+Idempotent **only within one clock second** — `verified` stamps dedupe on
+`(by, at)`, so reruns seconds apart append another stamp for the same actor. Pin
+`SOURCE_DATE_EPOCH` for a repeatable run.
 
 ### `graph --json` (raw export, NOT the envelope)
 
@@ -165,10 +182,28 @@ binder graph <bundle> --json | jq '{n: (.nodes|length), e: (.edges|length)}'
 
 ```jsonc
 {
-  "binder": "binder/0.1.0", "command": "config", "schema": "binder.config/v1",
-  "result": { "config_file": "", "values": { "default_type": "…", "verified_by": "…" } }
+  "binder": "binder/0.3.0", "command": "config", "schema": "binder.config/v1",
+  "result": {
+    "config_file": "/home/u/.config/binder/config.yaml",   // "" when none
+    "values": {
+      "default_type": { "value": "Note",        "source": "default" },
+      "verified_by":  { "value": "human:alice", "source": "file" }
+    }
+  }
 }
 ```
 
-Each value carries its resolved source (flag > env > file > default). Use it to
-confirm what `--default-type`/`--verified-by` will be before a run.
+Every value is an object with `value` and `source`, where `source` is one of
+`default | env | file` (a `flag` source never appears — `config` takes no such
+flags). Use this to confirm what `--default-type`/`--verified-by` will be
+**before** a run.
+
+`config_file` is the single file actually in effect. binder loads **exactly one**
+config file: a repo-local `./.binder.yaml` suppresses the global
+`$XDG_CONFIG_HOME/binder/config.yaml` entirely rather than merging with it. This
+matters for trust — `source: "file"` alone cannot tell a deliberate per-corpus
+`verified_by` from a machine-wide default, so read `config_file` alongside it:
+
+```bash
+binder config --json | jq -c '.result | {config_file, verified_by: .values.verified_by}'
+```
