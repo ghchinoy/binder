@@ -55,8 +55,8 @@ func listGraphsEnvelope(t *testing.T, bundlePath, today, idKey string) string {
 }
 
 // TestListGraphsEnvelopeParity: the tool payload is byte-identical to encoding
-// graph.Describe through the existing clijson encoder — the same discipline the
-// other five tools follow.
+// graph.Describe through the existing clijson encoder — the same discipline
+// every other tool follows.
 func TestListGraphsEnvelopeParity(t *testing.T) {
 	got := toolText(t, callTool(t, "list_graphs", map[string]any{
 		"bundle": goldenBundle,
