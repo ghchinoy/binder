@@ -7,8 +7,8 @@
   "separate-pull-requests": false,
   "packages": {
     ".": {
-      "package-name": "binder",
-      "changelog-path": "CHANGELOG.md"
+      "changelog-path": "CHANGELOG.md",
+      "initial-version": "0.1.0"
     }
   },
   "changelog-sections": [
