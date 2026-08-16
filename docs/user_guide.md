@@ -617,13 +617,11 @@ binder enrich path/to/corpus --type-map "$(binder infer path/to/corpus)"
 ### `config`
 
 ```text
-binder config [flags]
+binder config [subcommand] [flags]
 ```
 
-Prints the **resolved effective configuration** — the value binder would use for
-each key and where that value came from. It reads nothing from a bundle and
-mutates nothing; it is the way to answer "what will convert actually use here?"
-before running it.
+Manages persistent configuration and prints the **resolved effective configuration** —
+the value binder uses for each key and where that value came from.
 
 Configuration is resolved once, at startup, with a strict precedence:
 
@@ -631,45 +629,48 @@ Configuration is resolved once, at startup, with a strict precedence:
 flag  >  environment variable  >  config file  >  built-in default
 ```
 
-- **Config file** (first found): `./.binder.yaml`, then
-  `$XDG_CONFIG_HOME/binder/config.yaml` (falling back to
-  `$HOME/.config/binder/config.yaml`).
-- **Environment variables** use the `BINDER_` prefix, e.g. `BINDER_VERIFIED_BY`,
-  `BINDER_DEFAULT_TYPE`.
-- **Keys:**
+- **Config files:**
+  - Local repository config: `./.binder.yaml`
+  - Global user config: `$XDG_CONFIG_HOME/binder/config.yaml` (fallback `$HOME/.config/binder/config.yaml`)
+- **Environment variables** use the `BINDER_` prefix, e.g. `BINDER_VERIFIED_BY`, `BINDER_DEFAULT_TYPE`, `BINDER_GEMINI_PROJECT`.
 
-  | Key | Env | Default | Purpose |
-  |---|---|---|---|
-  | `default_type` | `BINDER_DEFAULT_TYPE` | `Note` | Type applied by `convert` when none is present or mapped (overridable per-run by `--default-type`). |
-  | `verified_by` | `BINDER_VERIFIED_BY` | — | Default actor appended as a `verified` stamp by `convert` (overridable per-run by `--verified-by`). Validated with the actor grammar **at config-load** — an invalid configured value fails fast. |
-  | `gemini_model` | `BINDER_GEMINI_MODEL` | `gemini-3.5-flash-lite` | Default Gemini model for `binder infer --gemini`. |
-  | `gemini_location` | `BINDER_GEMINI_LOCATION` | `global` | Default Google Cloud location for Vertex AI in `binder infer --gemini`. |
-  | `gemini_project` | `BINDER_GEMINI_PROJECT` | — | Default Google Cloud project for Vertex AI in `binder infer --gemini`. |
-  | `gemini_backend` | `BINDER_GEMINI_BACKEND` | `auto` | Default Gemini backend (`auto`, `api`, or `vertex`) in `binder infer --gemini`. |
+#### Configuration Keys
 
-A configured `verified_by` is validated the moment the config loads, so a typo in
-the file surfaces immediately on any command rather than silently producing an
-unstamped bundle.
+| Key (snake or dotted) | Env | Default | Purpose |
+|---|---|---|---|
+| `default_type` | `BINDER_DEFAULT_TYPE` | `Note` | Concept type applied when none is present or mapped. |
+| `verified_by` | `BINDER_VERIFIED_BY` | — | Default actor appended as a `verified` stamp by `convert` / `enrich`. Validated against actor grammar. |
+| `gemini_model` (`gemini.model`) | `BINDER_GEMINI_MODEL` | `gemini-3.5-flash-lite` | Default Gemini model for `binder infer --gemini`. |
+| `gemini_location` (`gemini.location`) | `BINDER_GEMINI_LOCATION` | `global` | Default Google Cloud location for Vertex AI in `binder infer --gemini`. |
+| `gemini_project` (`gemini.project`) | `BINDER_GEMINI_PROJECT` | — | Default Google Cloud project for Vertex AI in `binder infer --gemini`. |
+| `gemini_backend` (`gemini.backend`) | `BINDER_GEMINI_BACKEND` | `auto` | Default Gemini backend (`auto`, `api`, or `vertex`) in `binder infer --gemini`. |
+
+#### Subcommands
+
+- **`binder config`** (or **`binder config list`**) — prints all resolved settings and their attribution source (`flag`, `env`, `file`, or `default`).
+- **`binder config get <key>`** — outputs the single resolved value for `<key>`.
+- **`binder config set <key> <value> [--global]`** — sets a persistent value. By default writes to `./.binder.yaml`; pass `--global` / `-g` to write to user config. Uses isolated file mutation to touch only the specified key.
+- **`binder config unset <key> [--global]`** — removes a key from the configuration file so it reverts to its environment variable or built-in default.
+
+```bash
+# Set GCP project locally in ./.binder.yaml:
+binder config set gemini.project my-gcp-project
+
+# Set default model globally in ~/.config/binder/config.yaml:
+binder config set --global gemini.model gemini-3.5-flash-lite
+
+# Inspect a single resolved value:
+binder config get gemini.project
+# Output: my-gcp-project
+
+# Revert setting:
+binder config unset gemini.project
+```
 
 | Flag | Default | Purpose |
 |---|---|---|
-| `--json` | `false` | Emit the resolved config as deterministic JSON (schema `binder.config/v1`) instead of prose. |
-
-```text
-binder config
-  config file: .binder.yaml
-  default_type: "Guide" (source: file)
-  verified_by: "human:ghchinoy" (source: file)
-```
-
-When no config file is found the first line reads
-`config file: (none; using defaults)` and each value's source is `default`
-(a missing config file is normal, never an error). Every value is quoted and
-tagged with its resolved `(source: flag|env|file|default)`.
-
-The `--json` form is stable for tooling (schema `binder.config/v1`): it reports
-the resolved config file and, per key, the effective value and its source (`flag`
-/ `env` / `file` / `default`).
+| `--json` | `false` | Emit the configuration report as deterministic JSON (schema `binder.config/v1`). |
+| `-g`, `--global` | `false` | (`set`/`unset` only) Target global user config (`~/.config/binder/config.yaml`) instead of `./.binder.yaml`. |
 
 ## JSON output (`--json`) and the exit-code contract
 
