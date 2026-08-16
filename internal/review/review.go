@@ -224,7 +224,7 @@ func (r *Report) String() string {
 	for _, id := range r.UnparsedFrontmatter {
 		fmt.Fprintf(&b, "    %s\n", id)
 	}
-	fmt.Fprintf(&b, "  entrypoints (outbound, no inbound): %d\n", len(r.Entrypoints))
+	fmt.Fprintf(&b, "  entrypoints (no inbound links): %d\n", len(r.Entrypoints))
 	for _, id := range r.Entrypoints {
 		fmt.Fprintf(&b, "    %s\n", id)
 	}

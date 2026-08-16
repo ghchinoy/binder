@@ -65,7 +65,7 @@ func TestReviewCountsTypesTiersOrphansUnresolved(t *testing.T) {
 		t.Errorf("intro links out (to guide) so it is an entrypoint, not an orphan: %v", r.Orphans)
 	}
 	if !contains(r.Entrypoints, "intro") {
-		t.Errorf("expected intro among entrypoints (outbound, no inbound): %v", r.Entrypoints)
+		t.Errorf("expected intro among entrypoints (no inbound links): %v", r.Entrypoints)
 	}
 	for _, id := range []string{"orders", "calc"} {
 		if !contains(r.Orphans, id) {

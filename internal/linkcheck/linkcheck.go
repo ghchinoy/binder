@@ -53,13 +53,13 @@ func IsBrokenConceptRef(raw string) bool {
 // in the review/lint-shared package, so the two surfaces can never drift on what
 // counts as a root entrypoint — the same anti-drift rationale as the predicates
 // above.
-var rootEntrypointNames = map[string]bool{"readme.md": true, "index.md": true}
+var rootEntrypointNames = map[string]bool{"readme.md": true}
 
 // IsRootEntrypoint reports whether relPath is a conventional corpus-root
-// entrypoint document (README.md or index.md at the corpus root). Matching is
+// entrypoint document (README.md at the corpus root). Matching is
 // case-insensitive on the file name and requires the file to sit at the root (no
 // directory component), so a nested docs/README.md is NOT auto-recognized — only
-// the corpus root README/index serve as the primary index (issue #24).
+// the corpus root README serves as the primary index (issue #24).
 func IsRootEntrypoint(relPath string) bool {
 	rel := strings.TrimSpace(relPath)
 	if rel == "" || strings.ContainsAny(rel, "/\\") {
