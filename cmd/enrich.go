@@ -35,8 +35,13 @@ func newEnrichCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 			"to the markdown files under <src>, IN PLACE. It touches FRONTMATTER ONLY:\n" +
 			"unlike `binder convert`, it does no link rewriting, no index generation, no\n" +
 			"\"## Related\" section, and no tag merge — bodies are otherwise untouched.\n\n" +
-			"It is safe on a git-tracked tree: additive/never-clobber (only ABSENT keys\n" +
-			"are added), idempotent (a second run writes nothing), byte-faithful (body and\n" +
+			"It is safe on a git-tracked tree: additive/never-clobber (it adds only ABSENT\n" +
+			"keys and never overwrites an existing value; the sole exception is an authorized\n" +
+			"`verified` stamp, which is APPENDED to any existing `verified` list, never\n" +
+			"replacing a prior attestation), idempotent unless a `verified` stamp advances\n" +
+			"(a rerun writes nothing when no verifier is set or the clock is pinned via\n" +
+			"SOURCE_DATE_EPOCH; with a live verifier under a moving clock a rerun appends a\n" +
+			"fresh stamp, since stamps dedup on (by, at)), byte-faithful (body and\n" +
 			"unchanged pre-existing keys are preserved exactly), and atomic (temp file + rename, so\n" +
 			"an interrupt never corrupts a source file). Files needing no key are not\n" +
 			"written at all. Files whose frontmatter will not parse, and reserved files\n" +

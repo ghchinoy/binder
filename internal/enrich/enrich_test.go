@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -647,5 +648,141 @@ func TestNoTempFilesLeftBehind(t *testing.T) {
 	})
 	if len(leftover) != 0 {
 		t.Errorf("temp files left behind: %v", leftover)
+	}
+}
+
+// TestIdempotent_BreaksWhenStampAdvances measures the BOUNDARY of the help claim
+// "idempotent (a second run writes nothing)". It holds with no verifier
+// (TestIdempotent) and with a verifier under a pinned clock (the second run in
+// TestVerifiedByAppendsDetectedAndWritten). It does NOT hold with a live verifier
+// and an advancing clock: a `verified` stamp dedups on (by,at), so a later run
+// appends a NEW stamp and the second run DOES write. The corrected help states the
+// idempotence guarantee conditionally (pin SOURCE_DATE_EPOCH / no stamp advancing).
+//
+// DEMONSTRATED RED (observed on this head): asserting the old blanket claim — that
+// the second run is StatusUnchanged and rewrites nothing — FAILS here; the file
+// gains a second stamp. This test pins the measured reality instead.
+func TestIdempotent_BreaksWhenStampAdvances(t *testing.T) {
+	src := t.TempDir()
+	p := writeFile(t, src, "a.md", "---\ntype: Note\ntitle: A\n---\n\n# A\n\nBody.\n")
+
+	o1 := opts(src)
+	o1.VerifiedBy = "human:alice"
+	o1.VerifiedByExplicit = true
+	o1.VerifiedBySource = "flag"
+	if _, err := enrich.Enrich(src, o1); err != nil {
+		t.Fatal(err)
+	}
+	first := read(t, p)
+	if n := strings.Count(first, "human:alice"); n != 1 {
+		t.Fatalf("precondition: first run wrote %d stamps, want 1:\n%s", n, first)
+	}
+
+	o2 := o1
+	o2.Now = fixedNow.Add(time.Hour) // clock advanced → (by,at) differs → appends
+	rep, err := enrich.Enrich(src, o2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res := find(t, rep, "a.md"); res.Status != enrich.StatusEnriched {
+		t.Errorf("advancing clock: 2nd run status = %q, want enriched (a new stamp is written)", res.Status)
+	}
+	second := read(t, p)
+	if second == first {
+		t.Errorf("advancing clock: 2nd run wrote nothing; expected an appended stamp:\n%s", second)
+	}
+	if n := strings.Count(second, "human:alice"); n != 2 {
+		t.Errorf("expected 2 verified stamps after advancing-clock rerun, got %d:\n%s", n, second)
+	}
+}
+
+// TestAdditive_AuthorizedStampModifiesPresentVerifiedKey pins the corrected
+// "additive/never-clobber" claim. The old wording "only ABSENT keys are added" is
+// false: an authorized `verified` stamp is APPENDED to an already-PRESENT `verified`
+// list, so a present key IS modified. never-clobber still holds — the prior
+// attestation is preserved, never overwritten.
+//
+// DEMONSTRATED RED (observed on this head): asserting the old claim — that a present
+// `verified` key is left unchanged and never appears in Added — FAILS; the key gains
+// a second entry and Added lists "verified".
+func TestAdditive_AuthorizedStampModifiesPresentVerifiedKey(t *testing.T) {
+	src := t.TempDir()
+	doc := "---\ntype: Note\ntitle: A\n" +
+		"verified:\n  - by: human:alice\n    at: '2020-01-01T00:00:00Z'\n---\n\n# A\n\nBody.\n"
+	p := writeFile(t, src, "a.md", doc)
+
+	o := opts(src)
+	o.VerifiedBy = "human:alice"
+	o.VerifiedByExplicit = true // same actor, later time → appends (not a Residual-A skip)
+	o.VerifiedBySource = "flag"
+	rep, err := enrich.Enrich(src, o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res := find(t, rep, "a.md")
+	// A PRESENT key was modified: the file was WRITTEN (enriched), not left unchanged.
+	if res.Status != enrich.StatusEnriched {
+		t.Fatalf("status = %q, want enriched (a PRESENT key was modified)", res.Status)
+	}
+	got := read(t, p)
+	if n := strings.Count(got, "human:alice"); n != 2 {
+		t.Errorf("present verified key did not gain a 2nd entry, got %d:\n%s", n, got)
+	}
+	// never-clobber: the prior attestation survives untouched.
+	if !strings.Contains(got, "2020-01-01T00:00:00Z") {
+		t.Errorf("prior attestation clobbered:\n%s", got)
+	}
+	// NOTE: res.Added currently lists "verified" here even though the `verified`
+	// key was already PRESENT — the report-envelope symptom of this same behaviour.
+	// That is a SEPARATE tracked defect (added: for a modified-not-added key);
+	// deliberately NOT asserted here so this test does not cement it as correct.
+}
+
+// TestAtomic_ExecutedControls backs the "atomic (temp file + rename)" claim with
+// EXECUTION rather than a code read: on a successful enrich the source file's mode
+// is preserved, the file is REPLACED by rename (a different underlying file) rather
+// than truncated in place, and no temp file is left behind. Replace-by-rename is the
+// property that makes an interrupt leave either the old or the new file, never a
+// partial one.
+func TestAtomic_ExecutedControls(t *testing.T) {
+	src := t.TempDir()
+	p := writeFile(t, src, "a.md", "---\ntype: Note\n---\n\n# A\n\nBody.\n") // missing title → enriched
+	if err := os.Chmod(p, 0o640); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.Stat(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rep, err := enrich.Enrich(src, opts(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res := find(t, rep, "a.md"); res.Status != enrich.StatusEnriched {
+		t.Fatalf("precondition: file not enriched (status %q) — control would be vacuous", res.Status)
+	}
+
+	after, err := os.Stat(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// (1) mode preserved across the rewrite.
+	if after.Mode().Perm() != 0o640 {
+		t.Errorf("mode not preserved across atomic rewrite: got %o, want 640", after.Mode().Perm())
+	}
+	// (2) replaced by rename, not truncated in place (different underlying file).
+	if os.SameFile(before, after) {
+		t.Errorf("file written in place (same inode); expected replace-by-rename")
+	}
+	// (3) no temp litter after a successful write.
+	ents, err := os.ReadDir(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range ents {
+		if strings.HasPrefix(e.Name(), ".binder-enrich-") {
+			t.Errorf("temp file left behind after a successful write: %s", e.Name())
+		}
 	}
 }

@@ -47,7 +47,10 @@ func newConvertCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 		Long: "Convert walks a plain-markdown corpus and writes a conformant OKF v0.2\n" +
 			"bundle: one concept per non-reserved .md, standard markdown links rewritten\n" +
 			"to bundle-relative form, a root index.md declaring okf_version, and a\n" +
-			"generated provenance stamp. It never mutates the source and is deterministic.",
+			"generated provenance stamp. It never mutates the source. Output is\n" +
+			"deterministic for identical inputs, with a single time-varying field: the\n" +
+			"generated provenance timestamp (generated.at), which records when the run\n" +
+			"actually happened. Pin SOURCE_DATE_EPOCH to make output byte-identical across runs.",
 		Args: exactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if output == "" && !dryRun {
