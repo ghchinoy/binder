@@ -71,7 +71,7 @@ silently default is **masked** in convert output but visible to lint):
 
 ```bash
 binder lint <corpus> --json \
-  | jq '.result | {broken_links, missing_titles, orphans, schema_violations}'
+  | jq '.result | {broken_links, missing_titles, orphans, entrypoints, schema_violations}'
 ```
 
 Decision table:
@@ -83,6 +83,7 @@ Decision table:
 | **`schema_violations` (missing type)** | enrich or set `--default-type`/`--type-map` | — (every concept needs a type; do not accept none) |
 | **`missing_titles`** | enrich adds a `title` from the filename/first heading | acceptable if the concept is intentionally untitled |
 | **`orphans`** | add a link from an index or related concept if it should be reachable | a legitimately standalone concept |
+| **`entrypoints`** | empty, or missing the root you expect — the corpus has no reachable starting point; add or link a root document | the listed roots are the ones you intended |
 
 **Never fabricate to make a number go to zero.** Broken links and missing
 optional fields are legal in OKF; only fix what is genuinely wrong.
@@ -91,17 +92,27 @@ optional fields are legal in OKF; only fix what is genuinely wrong.
 
 - **Missing required frontmatter** (`type`/`title`/`generated`): prefer
   `binder enrich`. It is frontmatter-only, additive (adds only *absent* keys),
-  idempotent, byte-faithful, and atomic — safe on a git-tracked tree. Preview
-  first:
+  byte-faithful, and atomic. It rewrites the **source tree in place**, so commit
+  or stash before running it on a git-tracked corpus. Preview first:
 
   ```bash
-  binder enrich <corpus> --dry-run --json | jq '.result.files'
-  binder enrich <corpus> --json           # apply
+  binder enrich <corpus> --dry-run --json | jq -c '.result.files[] | select(.added|length>0)'
+  binder enrich <corpus> --verified-by "" --json      # apply
   ```
 
-  `enrich` never invents `verified`; if a required key needs a real value you can
-  assert (e.g. a specific `type`), pass `--type-map`/`--default-type` rather than
-  letting it default blindly.
+  `enrich` never *invents* a verifier, but it **will** stamp `verified` from a
+  configured actor (`BINDER_VERIFIED_BY`, or `verified_by:` in a `.binder.yaml`) —
+  writing an attestation into your source that nobody typed. The dry-run discloses
+  it: `added` will contain `verified`. `--verified-by ""` suppresses it and is the
+  only mitigation, since nothing removes a stamp afterwards. See
+  [`trust-discipline.md`](trust-discipline.md).
+
+  Enrich is idempotent **only within a single clock second** — stamps dedupe on
+  `(by, at)`, so runs seconds apart append a new stamp for the same actor. Pin
+  `SOURCE_DATE_EPOCH` for a repeatable run.
+
+  If a required key needs a real value you can assert (e.g. a specific `type`),
+  pass `--type-map`/`--default-type` rather than letting it default blindly.
 
 - **Structural / link issues**: edit the source markdown. Do not invent a target
   file just to satisfy a link.
@@ -115,11 +126,18 @@ Iterate until the bundle is conformant and the residual advisories are
 understood, not hidden:
 
 ```bash
-binder convert <corpus> -o <bundle> --json | jq '.result | {num_concepts, num_unresolved}'
+binder convert <corpus> -o <bundle> --verified-by "" --json | jq '.result | {num_concepts, num_unresolved}'
 binder validate <bundle> --json | jq '.result.findings'   # [] ⇒ conformant, exit 0
 binder review   <bundle> --json | jq '.result | {by_type, tiers, orphans, stale, unresolved}'
 ```
 
+- `--verified-by ""` on `convert` is not optional boilerplate. `convert` resolves
+  `--verified-by` through the same flag > env > config file > default chain as
+  `enrich`, so a configured actor stamps **every concept in the bundle** and
+  `review` reports them `human-reviewed` instead of `unverified`. Run all of this
+  from the directory you checked in step 1 — binder resolves `./.binder.yaml`
+  against the current directory, so a pre-flight run elsewhere protects nothing.
+  See [`trust-discipline.md`](trust-discipline.md).
 - `validate` must reach `findings: []` (exit 0). That is the hard gate.
 - `review` advisories (orphans, stale, unresolved, tiers) are for *understanding*,
   not zeroing — decide per the table in §B whether each is expected.
