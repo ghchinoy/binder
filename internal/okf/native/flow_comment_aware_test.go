@@ -42,6 +42,11 @@ func TestCommentEnd(t *testing.T) {
 		{"after_space", "a #c\nx", 2, true, 4},
 		{"after_tab", "a\t#c\nx", 2, true, 4},
 		{"after_newline", "a\n#c\nx", 2, true, 4},
+		// A LONE '\r' survives ParseConcept's "\r\n"→"\n" collapse and reaches this
+		// scanner (yaml.v3 treats it as a break), so a '#' right after it is a
+		// comment. Removing this case re-breaks lone-CR flow input (see
+		// TestByteFaithfulLoneCRLineStartCommentReparses).
+		{"after_carriage_return", "a\r#c\nx", 2, true, 4},
 		{"runs_to_end_of_string", "a #c", 2, true, 4},
 		{"no_preceding_whitespace_is_ordinary", "a#b", 1, false, 0},
 		{"not_a_hash", "abc", 1, false, 0},
@@ -315,6 +320,47 @@ func TestByteFaithfulMultiLineFlowSequenceWithCommentReparses(t *testing.T) {
 				if at := after[p]; !strings.HasPrefix(at, "!!timestamp") {
 					t.Errorf("%s retyped to %q, want !!timestamp:\n%s", p, at, out)
 				}
+			}
+		})
+	}
+}
+
+// TestByteFaithfulLoneCRLineStartCommentReparses is the permanent guard for the
+// carriage-return case in commentEnd. A LONE '\r' (classic-Mac break, or a stray
+// CR) is NOT collapsed by ParseConcept's "\r\n"→"\n" normalization, and yaml.v3
+// accepts it as a line break, so a multi-line flow sequence written with lone-CR
+// breaks reaches the scanner with a '#' directly after a '\r'. If commentEnd does
+// not treat that '#' as a comment start, the line-start comment is scanned as
+// item text and the changed container re-emits UNPARSEABLE output. This pins the
+// '\r' branch as load-bearing rather than dead — the negative claim "a bare '\r'
+// never precedes a scanned '#'" is false, and this test is the counterexample.
+func TestByteFaithfulLoneCRLineStartCommentReparses(t *testing.T) {
+	cases := []struct {
+		name string
+		fm   string
+	}{
+		{
+			"lonecr_linestart_comment",
+			"type: Metric\nverified: [\r#header\r  { by: human:x, at: 2024-02-01T09:30:00Z },\r  { by: human:y, at: 2024-03-01T09:30:00Z },\r]\n",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			out, reparseErr := appendStamp(t, tc.fm)
+			if !strings.Contains(out, "human:ghchinoy") {
+				t.Fatalf("appended stamp missing — container did not change:\n%s", out)
+			}
+			if reparseErr != nil {
+				t.Fatalf("lone-CR line-start comment produced UNPARSEABLE output (%v):\n%q", reparseErr, out)
+			}
+			for _, line := range strings.Split(out, "\n") {
+				if s := strings.TrimSpace(line); s == "]" || s == "}" {
+					t.Errorf("orphan flow closer leaked as a standalone line:\n%s", out)
+				}
+			}
+			// the interior comment must be dropped, not folded into an entry
+			if strings.Contains(out, "#header") || strings.Contains(out, "#note") {
+				t.Errorf("interior comment leaked into output instead of being dropped:\n%q", out)
 			}
 		})
 	}

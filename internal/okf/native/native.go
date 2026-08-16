@@ -489,12 +489,16 @@ func commentEnd(s string, i int) (int, bool) {
 		return 0, false
 	}
 	if i > 0 {
-		// CRLF is normalized to LF before any scanning (see the ReplaceAll near
-		// the top of Decode) and frontmatter is line-split on '\n' only, so a
-		// bare '\r' never precedes a scanned '#'; '\r' is deliberately absent
-		// here rather than an untestable branch.
+		// '\r' is load-bearing, not dead. ParseConcept only collapses "\r\n"→"\n";
+		// a LONE '\r' (a classic-Mac break, or a stray CR) survives into
+		// OriginalFrontmatter, and yaml.v3 accepts it as a line break, so such
+		// input reaches this scanner with a '#' directly after a '\r'. Dropping
+		// this case makes a line-start comment after a lone CR read as ordinary
+		// text, which re-breaks a changed multi-line flow sequence into
+		// unparseable output. See TestCommentEnd/after_carriage_return and
+		// TestByteFaithfulLoneCRLineStartCommentReparses.
 		switch s[i-1] {
-		case ' ', '\t', '\n':
+		case ' ', '\t', '\n', '\r':
 		default:
 			return 0, false // "a#b": not a comment
 		}
