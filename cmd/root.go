@@ -27,23 +27,48 @@ import (
 // The trust-provenance stamp is load-bearing (design-v2 §2.3): every converted
 // concept records generated.by = "binder/<Version>", so a release binary must
 // carry the real tag or it corrupts trust metadata forever.
+//
+// The canonical form is NO leading "v": "binder/<X.Y.Z>". That form matches the
+// shipped release artifacts (the majority install path), the baked exemplars,
+// and common semver-string usage. Two different sources feed this var and they
+// disagree on the "v": goreleaser's -X injects the v-STRIPPED tag, while the
+// debug.ReadBuildInfo() fallback below returns the v-PREFIXED module version.
+// Left unchecked they write two different trust stamps for one release. init()
+// therefore routes BOTH sources through normalizeVersion — the single funnel —
+// so the stamped and fallback paths can never diverge again.
 var Version = "dev"
 
 // init recovers the version from Go's build metadata for builds that were not
 // stamped by goreleaser's ldflags — most importantly `go install
-// github.com/ghchinoy/binder@vX.Y.Z`, which embeds the module version. It only
-// runs when Version is still the "dev" default, so it never clobbers an
-// ldflags-injected value (nor does it alter test builds, whose module version
-// is "(devel)").
+// github.com/ghchinoy/binder@vX.Y.Z`, which embeds the module version. The
+// build-info recovery only runs when Version is still the "dev" default, so it
+// never clobbers an ldflags-injected value (nor does it alter test builds, whose
+// module version is "(devel)"). Whichever source wins, the final assignment
+// passes it through normalizeVersion so both paths converge on the canonical
+// no-leading-v form.
 func init() {
-	if Version != "dev" {
-		return
-	}
-	if bi, ok := debug.ReadBuildInfo(); ok {
-		if v := bi.Main.Version; v != "" && v != "(devel)" {
-			Version = v
+	if Version == "dev" {
+		if bi, ok := debug.ReadBuildInfo(); ok {
+			if v := bi.Main.Version; v != "" && v != "(devel)" {
+				Version = v
+			}
 		}
 	}
+	Version = normalizeVersion(Version)
+}
+
+// normalizeVersion canonicalizes a binder version string to the no-leading-v
+// form. It strips exactly one leading "v" when the remainder looks like a
+// version (i.e. "v" immediately followed by a digit, which is the shape of every
+// v-prefixed semver: v0.3.0, v1.2.3-rc1, …) and leaves everything else exactly
+// as it is: the "dev" default, "(devel)", the empty string, and any value that
+// merely starts with "v" but is not a semver (e.g. "version-x"). It never
+// fabricates a version — it only removes a prefix from a value already present.
+func normalizeVersion(v string) string {
+	if len(v) >= 2 && v[0] == 'v' && v[1] >= '0' && v[1] <= '9' {
+		return v[1:]
+	}
+	return v
 }
 
 // NewRootCmd builds the root command with the default (native) codec.

@@ -68,7 +68,7 @@ func registerConvert(s *mcp.Server, d *deps) {
 		// the CLI). The server never auto-stamps verified/sources.
 		if in.VerifiedBy != "" && !okf.IsValidActor(in.VerifiedBy) {
 			return nil, nil, fmt.Errorf("invalid actor %q; valid forms: human:<id>, process:<id>, "+
-				"team:<id>, or <producer>/<version> (e.g. binder/0.1.0)", in.VerifiedBy)
+				"team:<id>, or <producer>/<version> (e.g. binder/0.3.0)", in.VerifiedBy)
 		}
 
 		// default_type mirrors the CLI flag default ("Note") when unset.
