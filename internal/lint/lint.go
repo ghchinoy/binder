@@ -157,9 +157,10 @@ func Lint(concepts []*okf.Concept, facts []convert.SourceFacts, today string, en
 	// definition graph.EdgesFromConcepts — the same edges `binder graph` and the #9
 	// catalog see — so lint never forks resolution. A concept with no inbound edge
 	// is either a true ORPHAN (also no outbound) or an ENTRYPOINT (has outbound, or
-	// is a recognized root README.md/index.md, or was designated via --entrypoint).
-	// review now applies the identical rule, so the two surfaces agree — the earlier
-	// inbound-only/both-direction divergence is retired. Both are advisory.
+	// is a recognized root README.md, or was designated via --entrypoint).
+	// review applies the same rule over different inputs: lint reads the corpus as
+	// authored, review the emitted bundle, with conversion (renames, defaulting) in
+	// between — so the two usually agree but are not guaranteed to. Both are advisory.
 	edges := graph.EdgesFromConcepts(concepts)
 	inbound := make(map[string]int, len(concepts))
 	outbound := make(map[string]int, len(concepts))

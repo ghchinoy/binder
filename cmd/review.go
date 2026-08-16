@@ -24,7 +24,7 @@ func newReviewCmd(codec okf.Codec) *cobra.Command {
 		Long: "Review reports the bundle's concepts by type, derived trust tiers, stale\n" +
 			"concepts, Attested Computations, entrypoints, orphans, and unresolved\n" +
 			"links. A concept with no inbound links is an ENTRYPOINT when it links out\n" +
-			"(or is a recognized root README.md/index.md, or is named via --entrypoint)\n" +
+			"(or is a recognized root README.md, or is named via --entrypoint)\n" +
 			"and a true ORPHAN only when it has no inbound AND no outbound links. Trust\n" +
 			"tiers and staleness are derived on demand, never stored (spec §5.1/§5.3).",
 		Args: exactArgs(1),
@@ -64,6 +64,6 @@ func newReviewCmd(codec okf.Codec) *cobra.Command {
 	cmd.Flags().StringVar(&today, "today", "", "date (YYYY-MM-DD) used for staleness; defaults to now")
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "emit the review report as deterministic JSON (schema "+clijson.SchemaVersion+") instead of prose")
 	cmd.Flags().BoolVar(&strict, "strict", false, "gate (exit 1) when any review finding is present (orphans, stale, unresolved, unparsed)")
-	cmd.Flags().StringSliceVar(&entrypoints, "entrypoint", nil, "concept id or path to treat as an entrypoint, not an orphan (repeatable); root README.md and index.md are recognized automatically")
+	cmd.Flags().StringSliceVar(&entrypoints, "entrypoint", nil, "concept id or path to treat as an entrypoint, not an orphan (repeatable); root README.md is recognized automatically")
 	return cmd
 }
