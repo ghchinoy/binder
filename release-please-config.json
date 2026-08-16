@@ -19,7 +19,7 @@
     { "type": "refactor", "section": "Code Refactoring" },
     { "type": "build", "section": "Build System" },
     { "type": "ci", "section": "Continuous Integration" },
-    { "type": "docs", "section": "Documentation", "hidden": true },
+    { "type": "docs", "section": "Documentation", "hidden": false },
     { "type": "test", "section": "Tests", "hidden": true },
     { "type": "chore", "section": "Miscellaneous", "hidden": true },
     { "type": "style", "section": "Styles", "hidden": true }
