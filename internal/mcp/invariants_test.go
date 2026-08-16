@@ -129,6 +129,49 @@ func TestListGraphsReadOnly(t *testing.T) {
 	}
 }
 
+// TestQueryGraphReadOnly is the read-only invariant gate for the query tool
+// (design §10/§12.2): a call of EVERY op — including one that passes an id_key,
+// the only authoring-adjacent surface — leaves the bundle bytes byte-for-byte
+// unchanged. It never writes to the bundle, never mutates frontmatter, and never
+// mints an id.
+//
+// This test has teeth: fingerprintDir hashes every file's relative path AND its
+// full bytes under the bundle, so ANY write — a new frontmatter key, a stamped
+// id, a rewritten file, a created/removed file — changes the digest and fails the
+// assertion. I convinced myself of this by construction (the same helper already
+// guards list_graphs) and by confirming the query path only ever reads: the verbs
+// operate on the in-memory *Model from graph.Build and return copies of its
+// Node/Edge values; no code path in internal/graph/query.go or querygraph.go
+// opens the bundle for writing. The id_key subcase specifically drives the
+// never-mint invariant: "concept-id" is absent from the fixture's frontmatter, so
+// if the tool ever tried to persist a minted key the digest would change.
+func TestQueryGraphReadOnly(t *testing.T) {
+	before := fingerprintDir(t, goldenBundle)
+
+	calls := []map[string]any{
+		{"op": "lookup", "id": "tables/orders"},
+		{"op": "lookup", "label": "Metric"},
+		{"op": "neighbors", "id": "metrics/gross-margin", "direction": "both"},
+		{"op": "neighborhood", "id": "metrics/gross-margin", "depth": 3, "direction": "out"},
+		{"op": "pattern", "label": "Policy", "to_label": "Metric"},
+		{"op": "path", "from": "metrics/gross-margin", "to": "computations/revenue-ytd", "max_depth": 4},
+		// The identity/authoring surface: an absent id_key must NOT be stamped.
+		{"op": "lookup", "id": "tables/orders", "id_key": "concept-id"},
+		{"op": "pattern", "label": "Policy", "to_label": "Metric", "id_key": "concept-id"},
+	}
+	for _, args := range calls {
+		args["bundle"] = goldenBundle
+		args["today"] = fixedToday
+		if res := callTool(t, "query_graph", args); res.IsError {
+			t.Fatalf("query_graph %v must not be a tool error on a conformant bundle: %s", args, toolText(t, res))
+		}
+	}
+
+	if after := fingerprintDir(t, goldenBundle); after != before {
+		t.Fatalf("bundle bytes changed after query_graph (read-only invariant violated)\nbefore=%s\nafter =%s", before, after)
+	}
+}
+
 // TestUsageError_MissingRequiredParam: a missing required param yields a tool
 // error, not a crash.
 func TestUsageError_MissingRequiredParam(t *testing.T) {

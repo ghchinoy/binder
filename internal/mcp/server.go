@@ -57,6 +57,7 @@ func newServer(codec okf.Codec, version string) *mcp.Server {
 	registerLint(s, d)
 	registerGraph(s, d)
 	registerListGraphs(s, d)
+	registerQueryGraph(s, d)
 
 	return s
 }

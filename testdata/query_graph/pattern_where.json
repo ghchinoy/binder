@@ -1,0 +1,39 @@
+{
+  "binder": "binder/{{VERSION}}",
+  "command": "query_graph",
+  "schema": "binder.report/v1",
+  "result": {
+    "op": "pattern",
+    "query": {
+      "label": "Policy",
+      "to_label": "",
+      "rel": "",
+      "where": {
+        "prop": "type",
+        "eq": "BigQuery Table"
+      }
+    },
+    "node_key": {
+      "strategy": "path",
+      "key": "",
+      "honored": false
+    },
+    "nodes": [
+      {
+        "id": "policies/revenue-recognition",
+        "title": "Acme Retail — Revenue Recognition Policy (FY2026)",
+        "type": "Policy",
+        "tier": "human-reviewed",
+        "stale": false
+      }
+    ],
+    "edges": [
+      {
+        "from": "policies/revenue-recognition",
+        "to": "tables/orders",
+        "text": "tables/orders"
+      }
+    ],
+    "truncated": false
+  }
+}

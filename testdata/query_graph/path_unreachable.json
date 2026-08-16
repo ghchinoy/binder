@@ -1,0 +1,23 @@
+{
+  "binder": "binder/{{VERSION}}",
+  "command": "query_graph",
+  "schema": "binder.report/v1",
+  "result": {
+    "op": "path",
+    "query": {
+      "from": "tables/orders",
+      "to": "metrics/gross-margin",
+      "max_depth": 5,
+      "direction": "out"
+    },
+    "node_key": {
+      "strategy": "path",
+      "key": "",
+      "honored": false
+    },
+    "exists": false,
+    "length": 0,
+    "path": [],
+    "not_found": false
+  }
+}

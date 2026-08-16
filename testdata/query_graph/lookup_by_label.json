@@ -1,0 +1,40 @@
+{
+  "binder": "binder/{{VERSION}}",
+  "command": "query_graph",
+  "schema": "binder.report/v1",
+  "result": {
+    "op": "lookup",
+    "query": {
+      "label": "Metric"
+    },
+    "node_key": {
+      "strategy": "path",
+      "key": "",
+      "honored": false
+    },
+    "nodes": [
+      {
+        "id": "metrics/gross-margin",
+        "title": "Gross Margin",
+        "type": "Metric",
+        "tier": "human-reviewed",
+        "stale": false
+      },
+      {
+        "id": "metrics/gross-margin-legacy",
+        "title": "Gross Margin (legacy, pre-FY2026)",
+        "type": "Metric",
+        "tier": "human-reviewed",
+        "stale": false
+      },
+      {
+        "id": "metrics/revenue",
+        "title": "Revenue",
+        "type": "Metric",
+        "tier": "human-reviewed",
+        "stale": false
+      }
+    ],
+    "truncated": false
+  }
+}

@@ -1,0 +1,57 @@
+{
+  "binder": "binder/{{VERSION}}",
+  "command": "query_graph",
+  "schema": "binder.report/v1",
+  "result": {
+    "op": "pattern",
+    "query": {
+      "label": "Policy",
+      "to_label": "Metric",
+      "rel": ""
+    },
+    "node_key": {
+      "strategy": "path",
+      "key": "",
+      "honored": false
+    },
+    "nodes": [
+      {
+        "id": "policies/margin-standard",
+        "title": "Acme Retail — Cost Allocation & Margin Standard (FY2026)",
+        "type": "Policy",
+        "tier": "human-reviewed",
+        "stale": false
+      },
+      {
+        "id": "policies/revenue-recognition",
+        "title": "Acme Retail — Revenue Recognition Policy (FY2026)",
+        "type": "Policy",
+        "tier": "human-reviewed",
+        "stale": false
+      }
+    ],
+    "edges": [
+      {
+        "from": "policies/margin-standard",
+        "to": "metrics/gross-margin",
+        "text": "metrics/gross-margin"
+      },
+      {
+        "from": "policies/margin-standard",
+        "to": "metrics/gross-margin-legacy",
+        "text": "metrics/gross-margin-legacy"
+      },
+      {
+        "from": "policies/revenue-recognition",
+        "to": "metrics/gross-margin",
+        "text": "metrics/gross-margin"
+      },
+      {
+        "from": "policies/revenue-recognition",
+        "to": "metrics/revenue",
+        "text": "metrics/revenue"
+      }
+    ],
+    "truncated": false
+  }
+}

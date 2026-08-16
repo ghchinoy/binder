@@ -1,0 +1,27 @@
+{
+  "binder": "binder/{{VERSION}}",
+  "command": "query_graph",
+  "schema": "binder.report/v1",
+  "result": {
+    "op": "path",
+    "query": {
+      "from": "metrics/gross-margin",
+      "to": "computations/revenue-ytd",
+      "max_depth": 3,
+      "direction": "out"
+    },
+    "node_key": {
+      "strategy": "path",
+      "key": "",
+      "honored": false
+    },
+    "exists": true,
+    "length": 2,
+    "path": [
+      "metrics/gross-margin",
+      "computations/gross-margin-period",
+      "computations/revenue-ytd"
+    ],
+    "not_found": false
+  }
+}
