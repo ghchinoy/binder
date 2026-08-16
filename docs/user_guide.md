@@ -9,7 +9,10 @@ malformed-input recovery, CI usage, and worked end-to-end examples.
 
 `binder` converts a plain-markdown corpus into a conformant
 [Open Knowledge Format (OKF) v0.2](https://github.com/GoogleCloudPlatform/knowledge-catalog)
-bundle and reports on OKF bundles. It is **Phase 2 complete**.
+bundle and reports on OKF bundles. It is **Phase 2 complete**: as of v0.3.0 every
+Phase 2.x enhancement has shipped, along with the graph surface, `infer`, `config`
+(including mutation), and the stdio MCP server. Only the community-core codec
+adapter remains planned — see [Roadmap](#roadmap--planned-features).
 
 > This guide grows alongside each feature as it ships. Any remaining planned work
 > is listed under [Roadmap & planned features](#roadmap--planned-features), each
@@ -92,6 +95,9 @@ converter machinery, and `infer` never writes at all. `mcp` is a transport rathe
 corpus/bundle command; it exposes the additive verbs over stdio (see
 [MCP server](#mcp-server-binder-mcp)).
 
+*Summary of the command set — written for this guide, **not** verbatim
+`binder --help` output. Run `binder --help` for the authoritative strings.*
+
 ```text
 binder convert    Convert a markdown corpus into an OKF v0.2 bundle
 binder enrich     Inject missing frontmatter into a source tree, in place (frontmatter only)
@@ -149,7 +155,7 @@ Output is required unless you pass `--dry-run`.
 |---|---|---|
 | `-o`, `--output` | — | Output bundle directory (required unless `--dry-run`). |
 | `--dry-run` | `false` | Report what would be written without writing anything. |
-| `--default-type` | `Note` | Concept type applied when none is present or mapped. |
+| `--default-type` | `Note` (or config `default_type`) | Concept type applied when none is present or mapped. |
 | `--type-map` | — | Per-directory type overrides, e.g. `"docs=Guide,adr=Decision"`. The longest (most specific) matching directory key wins. |
 | `--status-map` | — | Per-directory `status`, e.g. `"archive=deprecated,drafts=draft,default=active"`. Longest-prefix match; `default=` is the fallback. Set **only when `status` is absent** (never clobbers an authored value). See [Declarative trust & lifecycle](#declarative-trust--lifecycle-flags). |
 | `--stale-after-map` | — | Per-directory `stale_after` relative to now, e.g. `"07-benchmarks=+6m,legacy=+0d"`. Grammar `+Nd`/`+Nm`/`+Ny` (days/months/years, UTC `YYYY-MM-DD`). Longest-prefix match; set **only when `stale_after` is absent**. |
@@ -219,7 +225,7 @@ Resolution rules:
   **tolerated**, never fatal: it is recorded as an advisory/unresolved edge and the
   exit code stays `0`.
 
-```text
+```bash
 # corpus at /home/me/notes, intro.md links to file:///home/me/notes/docs/doc.md
 binder convert /home/me/notes -o /tmp/bundle
 # → intro.md body now contains [doc](/docs/doc.md); links: 1 (resolved 1)
@@ -267,7 +273,7 @@ findings and does not surface `convert`'s `file://` advisories (external
 `file://` targets are not recorded as edges), so there is nothing there for
 `--external-root` to suppress.
 
-```text
+```bash
 binder convert ./speech -o ./bundle --external-root /Users/me/projects
 # → links under /Users/me/projects stay external but no longer advise;
 #   any file:// link elsewhere still warns. Bundle bytes are unchanged.
@@ -353,6 +359,9 @@ declarative `#7` stamps `convert` offers; core enrichment is `type`/`title`/`gen
 
 #### Output report
 
+*Report shape, with `path/to/corpus` and the filenames standing in for a real
+corpus — not a capture of any particular run:*
+
 ```text
 enrich path/to/corpus
 3 file(s): 2 enriched, 1 unchanged, 0 skipped
@@ -413,7 +422,8 @@ Rules that make it safe to run on a git-tracked tree:
   allowed targets.
 
 The report distinguishes keys that were **added** (were absent) from keys that
-were **overwritten** (named and refreshed in place):
+were **overwritten** (named and refreshed in place) — again a report shape, with
+stand-in paths rather than a capture:
 
 ```text
 enrich path/to/corpus
@@ -591,23 +601,27 @@ staleness are derived on demand, never stored.
 | `--strict` | `false` | Gate (exit 1) when any review finding is present (orphans, stale, unresolved, or unparsed-frontmatter recoveries). Entrypoints are advisory and never gate. Without it `review` never gates (exit 0). See [Strict mode](#strict-mode). |
 | `--entrypoint` | — | Concept id or path (repeatable) to treat as an **entrypoint**, not an orphan, in addition to the general rule and the recognized roots. |
 
-```text
+```console
+$ SOURCE_DATE_EPOCH=1700000000 binder convert testdata/corpus-lint-entrypoints -o /tmp/ep >/dev/null
+$ SOURCE_DATE_EPOCH=1700000000 binder review /tmp/ep
 binder review
-  bundle: /tmp/bundle
-  concepts: 2
+  bundle: /tmp/ep
+  concepts: 4
   by type:
-    Metric: 1
-    Note: 1
+    Guide: 1
+    Note: 3
   trust tiers:
-    human-reviewed: 1
+    human-reviewed: 0
     machine-confirmed: 0
-    unverified: 1
-  stale (as of 2026-08-15): 0
+    unverified: 4
+  stale (as of 2023-11-14): 0
   attested computations: 0
   unparsed frontmatter (recovered as body): 0
-  entrypoints (outbound, no inbound): 1
+  entrypoints (outbound, no inbound): 2
     README
-  orphans (no inbound or outbound links): 0
+    start
+  orphans (no inbound or outbound links): 1
+    lonely
   unresolved links: 0
 ```
 
@@ -690,7 +704,7 @@ bundle). `--strict` gates **exit 1** when any finding is present — the same sh
 contract as `convert`/`review`. The report is always emitted before the gate
 signals. A missing or non-directory `<corpus>` path is a usage error (exit 2).
 
-```text
+```bash
 binder lint path/to/corpus            # report; exit 0 even with findings
 binder lint path/to/corpus --strict   # exit 1 if any finding (CI)
 binder lint path/to/corpus --json     # deterministic envelope, command:"lint"
@@ -779,7 +793,7 @@ binder enrich path/to/corpus --type-map "$(binder infer path/to/corpus)"
 
 | Flag | Default | Purpose |
 |---|---|---|
-| `--default-type` | `Note` | Fallback concept type when none is inferred or mapped. |
+| `--default-type` | `Note` (or config `default_type`) | Fallback concept type when none is inferred or mapped. |
 | `--gemini` | `false` | Enable Gemini semantic inference tier. |
 | `--gemini-model` | `gemini-3.5-flash-lite` | Gemini model name for semantic inference. |
 | `--location` | `global` | Google Cloud location for Vertex AI. |
@@ -879,12 +893,11 @@ flag  >  environment variable  >  config file  >  built-in default
 # Set GCP project locally in ./.binder.yaml:
 binder config set gemini.project my-gcp-project
 
-# Set default model globally in ~/.config/binder/config.yaml:
+# Set default model globally in the user config file:
 binder config set --global gemini.model gemini-3.5-flash-lite
 
-# Inspect a single resolved value:
+# Inspect a single resolved value (see the transcript below for its output):
 binder config get gemini.project
-# Output: my-gcp-project
 
 # Revert setting:
 binder config unset gemini.project
@@ -893,7 +906,7 @@ binder config unset gemini.project
 | Flag | Default | Purpose |
 |---|---|---|
 | `--json` | `false` | Emit the configuration report as deterministic JSON (schema `binder.config/v1`). |
-| `-g`, `--global` | `false` | (`set`/`unset` only) Target global user config (`~/.config/binder/config.yaml`) instead of `./.binder.yaml`. |
+| `-g`, `--global` | `false` | (`set`/`unset` only) Target the global user config — `$XDG_CONFIG_HOME/binder/config.yaml`, falling back to `$HOME/.config/binder/config.yaml` — instead of `./.binder.yaml`. |
 
 #### Key spellings: `gemini.project` and `gemini_project`
 
@@ -1308,6 +1321,10 @@ contract: `0` by default (findings are advisories), `1` under `--strict` when an
 finding is present. See the [exit-code contract](#exit-code-contract).
 
 ### `infer --json` — `result` fields
+
+Like every other `--json` command except `graph`, `infer` wraps its payload in the
+standard [`binder.report/v1` envelope](#the-envelope-schema-binderreportv1) with
+`"command": "infer"`; the object below is the `result` value, shown on its own:
 
 ```json
 {
@@ -2543,8 +2560,8 @@ Unix timestamp:
 SOURCE_DATE_EPOCH=1700000000 binder convert corpus -o bundle
 ```
 
-The same variable seeds the default `--today` used by `review` and `graph`
-staleness, so a fully pinned pipeline is reproducible end to end.
+The same variable seeds the default `--today` used by `review`, `lint`, and
+`graph` staleness, so a fully pinned pipeline is reproducible end to end.
 
 ## CI usage
 
@@ -2716,8 +2733,9 @@ binder graph bundle --format dot | dot -Tsvg -o graph.svg
 
 ## Roadmap & planned features
 
-The following are **planned, not yet shipped**. This guide will grow a full
-section for each as it lands; today each links to its tracking issue.
+Each tracked feature below is marked **✅ shipped** or *Planned*, and links to its
+tracking issue. As of v0.3.0 everything here has shipped except the
+community-core codec adapter. This guide grows a full section for each as it lands.
 
 ### Phase 2.x — `convert`/CLI enhancements
 
