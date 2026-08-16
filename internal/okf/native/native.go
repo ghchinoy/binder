@@ -119,32 +119,242 @@ func (c *Codec) encodeFrontmatter(con *okf.Concept) ([]byte, error) {
 	}
 
 	// Something changed at the TOP level (e.g. a synthesised `generated` stamp, a
-	// defaulted `type`/`title`). Rebuild the mapping node, but for every top-level
-	// key whose value is unchanged reuse the ORIGINAL value node verbatim: a
-	// yaml.Node preserves child order at every level, so nested maps and list
-	// items keep their source order even as we add a top-level key. Only
-	// added/changed top-level values are encoded fresh. This is the mechanism
-	// design-v2 §3.2 specifies — byte-faithful nested/list order, not a
-	// decode→re-encode that alphabetises nested keys.
-	origVals := topLevelNodes(origRoot)
-	root := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
-	for _, k := range con.Frontmatter.Keys() {
-		v, _ := con.Frontmatter.Get(k)
-		keyNode := &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: k}
-		var valNode *yaml.Node
-		if orig, ok := origVals[k]; ok {
-			if ov, had := origOM.Get(k); had && reflect.DeepEqual(ov, v) {
-				valNode = orig // unchanged: reuse the source subtree (order + style)
-			}
-		}
-		if valNode == nil {
-			valNode = &yaml.Node{}
-			if err := valNode.Encode(v); err != nil {
-				return nil, fmt.Errorf("encode frontmatter key %q: %w", k, err)
-			}
-		}
-		root.Content = append(root.Content, keyNode, valNode)
+	// defaulted `type`/`title`, an appended `status`). Re-emit each unchanged
+	// top-level key from its ORIGINAL SOURCE BYTES and encode only the
+	// added/changed keys freshly. Splicing source text — rather than reusing
+	// yaml.Node values and re-encoding — is the only mechanism that is truly
+	// byte-faithful: yaml.v3's encoder does not preserve flow-mapping interior
+	// spacing (`{ a: b }` → `{a: b}`), re-decides scalar quoting, drops the
+	// `!!timestamp` tag (retyping it to `!!str`), and loses top-level head
+	// comments. This applies to ALL pre-existing frontmatter, with no key
+	// singled out (design-v2 §3.2).
+	return spliceFrontmatter(string(con.OriginalFrontmatter), origRoot, origOM, con.Frontmatter)
+}
+
+// spliceFrontmatter reconstructs a frontmatter block that is byte-identical to
+// the source for every UNCHANGED top-level key and freshly encoded only for
+// added or changed keys. It relies on the source line numbers yaml.v3 records on
+// every node: each top-level key's block spans from its own line (and any head
+// comment/blank lines preceding it) through the last source line of its value.
+//
+// Layout of the output, in order:
+//   - the prefix: any comment/blank lines before the first key (defect A: these
+//     top-level head comments were previously dropped);
+//   - each pre-existing key IN SOURCE ORDER — verbatim when its value is
+//     unchanged, else its head-comment lines verbatim followed by a fresh encode;
+//   - any trailing comment/blank lines after the last key's value;
+//   - each key present in fm but absent from the source, freshly encoded, in fm
+//     order (the additive keys enrich/convert appended).
+func spliceFrontmatter(fmText string, origRoot *yaml.Node, origOM, fm *okf.OrderedMap) ([]byte, error) {
+	lines := strings.SplitAfter(fmText, "\n") // each element keeps its trailing "\n"
+
+	type span struct {
+		key             string
+		keyLine, valEnd int        // 0-indexed line indices into lines
+		valNode         *yaml.Node // original value node, for sibling-level splicing
 	}
+	var pairs []span
+	for i := 0; i+1 < len(origRoot.Content); i += 2 {
+		kn, vn := origRoot.Content[i], origRoot.Content[i+1]
+		keyLine := kn.Line - 1
+		valEnd := maxNodeLine(vn) - 1
+		if valEnd < keyLine {
+			valEnd = keyLine
+		}
+		pairs = append(pairs, span{kn.Value, keyLine, valEnd, vn})
+	}
+	// No parseable top-level keys (empty/degenerate block): fall back to a clean
+	// deterministic encode of the desired map.
+	if len(pairs) == 0 {
+		return encodeOrderedMap(fm)
+	}
+
+	inSource := make(map[string]bool, len(pairs))
+	for _, p := range pairs {
+		inSource[p.key] = true
+	}
+
+	var out bytes.Buffer
+	ensureNL := func() {
+		if b := out.Bytes(); len(b) > 0 && b[len(b)-1] != '\n' {
+			out.WriteByte('\n')
+		}
+	}
+	joinLines := func(lo, hi int) string {
+		if lo < 0 {
+			lo = 0
+		}
+		if hi > len(lines) {
+			hi = len(lines)
+		}
+		if lo >= hi {
+			return ""
+		}
+		return strings.Join(lines[lo:hi], "")
+	}
+
+	firstKeyLine := pairs[0].keyLine
+	out.WriteString(joinLines(0, firstKeyLine)) // prefix (top-level head comments)
+
+	for j, p := range pairs {
+		spanStart := firstKeyLine
+		if j > 0 {
+			spanStart = pairs[j-1].valEnd + 1
+		}
+		v, present := fm.Get(p.key)
+		if !present {
+			continue // key removed from the desired map: drop its source block
+		}
+		ov, _ := origOM.Get(p.key)
+		if reflect.DeepEqual(ov, v) {
+			out.WriteString(joinLines(spanStart, p.valEnd+1)) // unchanged: verbatim
+			continue
+		}
+		// Changed key. Keep the head-comment region verbatim either way.
+		out.WriteString(joinLines(spanStart, p.keyLine))
+		// Sibling-level preservation: when the value is a CHANGED block sequence
+		// (e.g. a `verified` list with a stamp appended), re-emit the unchanged
+		// entries from their ORIGINAL bytes and encode only the added/changed
+		// entries freshly. The pre-existing entries — which can be human
+		// attestations — must not be reshaped just because a neighbour arrived.
+		if items, ok := spliceSequenceItems(p.valNode, v, lines); ok {
+			out.WriteString(joinLines(p.keyLine, p.keyLine+1)) // the "key:" line verbatim
+			out.Write(items)
+			continue
+		}
+		// Otherwise re-encode the whole value fresh.
+		fresh, err := encodeOrderedMapPair(p.key, v)
+		if err != nil {
+			return nil, err
+		}
+		ensureNL()
+		out.Write(fresh)
+	}
+
+	// Trailing comment/blank lines after the last key's value.
+	out.WriteString(joinLines(pairs[len(pairs)-1].valEnd+1, len(lines)))
+
+	// Additive keys (present in fm, absent from source), in fm order.
+	for _, k := range fm.Keys() {
+		if inSource[k] {
+			continue
+		}
+		v, _ := fm.Get(k)
+		fresh, err := encodeOrderedMapPair(k, v)
+		if err != nil {
+			return nil, err
+		}
+		ensureNL()
+		out.Write(fresh)
+	}
+	return out.Bytes(), nil
+}
+
+// spliceSequenceItems re-emits a changed BLOCK sequence entry-by-entry, keeping
+// each unchanged leading item byte-identical to the source and encoding only the
+// added or changed items freshly. It returns ok=false — signalling the caller to
+// fall back to a whole-value re-encode — when the value is not a block sequence
+// this mechanism can safely address by source line (a single-line flow sequence,
+// an empty source sequence, a non-slice desired value, or an item span this
+// simple line model cannot bound). This is the sibling-preservation guarantee
+// for the append path, and it is general: no key is singled out.
+func spliceSequenceItems(valNode *yaml.Node, desired any, lines []string) ([]byte, bool) {
+	if valNode == nil || valNode.Kind != yaml.SequenceNode {
+		return nil, false
+	}
+	if valNode.Style&yaml.FlowStyle != 0 {
+		return nil, false // single-line flow sequence: not line-addressable
+	}
+	want, ok := desired.([]any)
+	if !ok {
+		return nil, false
+	}
+	items := valNode.Content
+	if len(items) == 0 {
+		return nil, false
+	}
+	// Derive the block "- " marker indent from the first item's source line; the
+	// dash is the first non-space rune. Bail if the line is not shaped that way.
+	first := items[0].Line - 1
+	if first < 0 || first >= len(lines) {
+		return nil, false
+	}
+	dash := strings.IndexByte(lines[first], '-')
+	if dash < 0 || strings.TrimSpace(lines[first][:dash]) != "" {
+		return nil, false
+	}
+	indent := lines[first][:dash]
+
+	var b bytes.Buffer
+	for i, dv := range want {
+		if i < len(items) && reflect.DeepEqual(nodeToValue(items[i]), dv) {
+			start := items[i].Line - 1
+			end := maxNodeLine(items[i]) - 1
+			if start < 0 || end < start || end >= len(lines) {
+				return nil, false
+			}
+			b.WriteString(strings.Join(lines[start:end+1], ""))
+			continue
+		}
+		fresh, err := encodeSeqItem(dv, indent)
+		if err != nil {
+			return nil, false
+		}
+		b.Write(fresh)
+	}
+	return b.Bytes(), true
+}
+
+// encodeSeqItem encodes a single value as a block-sequence item ("- ...") and
+// indents it (and any continuation lines) to the given marker indent. Only
+// freshly added/changed items take this path, so their exact style need not be
+// byte-faithful — the pre-existing siblings are what must be preserved.
+func encodeSeqItem(v any, indent string) ([]byte, error) {
+	node := &yaml.Node{}
+	if err := node.Encode([]any{v}); err != nil {
+		return nil, err
+	}
+	raw, err := encodeNode(node)
+	if err != nil {
+		return nil, err
+	}
+	var b bytes.Buffer
+	for _, l := range strings.SplitAfter(string(raw), "\n") {
+		if l == "" {
+			continue
+		}
+		b.WriteString(indent)
+		b.WriteString(l)
+	}
+	return b.Bytes(), nil
+}
+
+// maxNodeLine returns the greatest source line number reached by n or any of its
+// descendants — the last line the value occupies in the source. yaml.v3 records
+// a line on every node, so for block and flow structures alike this bounds the
+// key's source span. (Multi-line block scalars have no child nodes and are
+// under-counted; the surplus lines simply fall into the next key's head region
+// and are still emitted verbatim, so the block stays intact.)
+func maxNodeLine(n *yaml.Node) int {
+	m := n.Line
+	for _, c := range n.Content {
+		if l := maxNodeLine(c); l > m {
+			m = l
+		}
+	}
+	return m
+}
+
+// encodeOrderedMapPair renders a single "key: value" mapping deterministically
+// (2-space indent), used for added/changed frontmatter keys.
+func encodeOrderedMapPair(key string, v any) ([]byte, error) {
+	root := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+	keyNode := &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: key}
+	valNode := &yaml.Node{}
+	if err := valNode.Encode(v); err != nil {
+		return nil, fmt.Errorf("encode frontmatter key %q: %w", key, err)
+	}
+	root.Content = append(root.Content, keyNode, valNode)
 	return encodeNode(root)
 }
 
@@ -300,15 +510,6 @@ func parseFrontmatterNode(fmText string) (*yaml.Node, *okf.OrderedMap, error) {
 		m.Set(root.Content[i].Value, nodeToValue(root.Content[i+1]))
 	}
 	return root, m, nil
-}
-
-// topLevelNodes indexes a mapping node's top-level keys to their value nodes.
-func topLevelNodes(root *yaml.Node) map[string]*yaml.Node {
-	out := make(map[string]*yaml.Node, len(root.Content)/2)
-	for i := 0; i+1 < len(root.Content); i += 2 {
-		out[root.Content[i].Value] = root.Content[i+1]
-	}
-	return out
 }
 
 // nodeToValue converts a yaml.Node to a plain Go value (map[string]any, []any,

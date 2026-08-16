@@ -37,7 +37,7 @@ func newEnrichCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 			"\"## Related\" section, and no tag merge — bodies are otherwise untouched.\n\n" +
 			"It is safe on a git-tracked tree: additive/never-clobber (only ABSENT keys\n" +
 			"are added), idempotent (a second run writes nothing), byte-faithful (body and\n" +
-			"pre-existing keys are preserved exactly), and atomic (temp file + rename, so\n" +
+			"unchanged pre-existing keys are preserved exactly), and atomic (temp file + rename, so\n" +
 			"an interrupt never corrupts a source file). Files needing no key are not\n" +
 			"written at all. Files whose frontmatter will not parse, and reserved files\n" +
 			"(index.md/log.md), are skipped and never mutated.\n\n" +

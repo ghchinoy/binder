@@ -6,10 +6,10 @@ tags:
   - sales
   - data
 source: https://example.com/orders-origin
-generated: {by: 'human:alice', at: '2026-01-02T09:00:00Z'}
+generated: { by: human:alice, at: 2026-01-02T09:00:00Z }
 status: stable
 stale_after: 2027-01-01
-usage_window: {from: 2026-01-01, to: 2026-12-31}
+usage_window: { from: 2026-01-01, to: 2026-12-31 }
 verified:
   - by: human:bob
     at: 2026-02-01T10:00:00Z
