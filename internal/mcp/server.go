@@ -42,6 +42,20 @@ func Serve(ctx context.Context, codec okf.Codec, version string) error {
 	return newServer(codec, version).Run(ctx, &mcp.StdioTransport{})
 }
 
+// ToolNames returns the names of every tool the MCP server registers, in
+// registration order. It is the single declared enumeration of the tool set,
+// consumed by help text and doc guards so prose (e.g. `binder mcp`'s Long) can
+// be checked against the registered set and cannot silently understate it — the
+// exact drift that shipped when the help named five tools while seven were
+// registered. It is pinned to the actual registration by TestListTools (which
+// asserts newServer advertises exactly these names), so it cannot fall out of
+// sync with newServer without turning a test RED.
+func ToolNames() []string {
+	return []string{
+		"convert", "validate", "review", "lint", "graph", "list_graphs", "query_graph",
+	}
+}
+
 // newServer builds the MCP server with all tools registered. It is unexported
 // and used by both Serve and the in-package tests (which drive it over the SDK's
 // in-memory transport).

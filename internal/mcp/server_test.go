@@ -129,7 +129,10 @@ func TestListTools(t *testing.T) {
 			t.Errorf("tool %q has no input schema", tool.Name)
 		}
 	}
-	want := []string{"convert", "validate", "review", "lint", "graph", "list_graphs", "query_graph"}
+	// want is ToolNames() — this test is what PINS the exported enumeration to
+	// the actually-registered set, so ToolNames (which help/doc guards consume)
+	// cannot drift from newServer without failing here.
+	want := ToolNames()
 	for _, name := range want {
 		if !got[name] {
 			t.Errorf("tool %q not advertised", name)
