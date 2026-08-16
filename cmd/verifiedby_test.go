@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -152,7 +153,8 @@ func TestVerifiedByConfigDefaultSkipsDifferentIdentity(t *testing.T) {
 // TestVerifiedByEnvDoesNotStamp pins the owner ruling on BINDER_VERIFIED_BY: an
 // inherited environment export is NOT a per-invocation decision to attest, so it
 // does NOT authorize a `verified` stamp without an explicit --verified-by. It gets
-// the same treatment as a repo-local .binder.yaml (Option A).
+// the same treatment as a repo-local .binder.yaml (Option A). The refusal is
+// DISCLOSED with a note parallel to the repo-local one — never silently ignored.
 //
 // This carries a DEMONSTRATED RED: before the OriginEnv arm of
 // config.PermitsStampWithoutFlag was flipped to false, an ambient
@@ -163,13 +165,50 @@ func TestVerifiedByEnvDoesNotStamp(t *testing.T) {
 	t.Setenv("BINDER_VERIFIED_BY", "human:envguy")
 	src := mkCorpus(t)
 	out := t.TempDir()
-	_, code := runCLI(t, "convert", src, "-o", out) // env set, NO flag
+	stdout, code := runCLI(t, "convert", src, "-o", out) // env set, NO flag
 	if code != clijson.ExitSuccess {
 		t.Fatalf("exit = %d, want 0", code)
 	}
 	b, _ := os.ReadFile(filepath.Join(out, "a.md"))
 	if contains(string(b), "verified:") {
 		t.Errorf("BINDER_VERIFIED_BY authorized a stamp without --verified-by (owner ruling violated):\n%s", b)
+	}
+	// The refused env value is disclosed (prose), not silently ignored.
+	if !contains(stdout, "ignored BINDER_VERIFIED_BY") || !contains(stdout, "human:envguy") {
+		t.Errorf("refused env verifier was not disclosed in the report:\n%s", stdout)
+	}
+}
+
+// TestVerifiedByEnvRefusalDisclosedInJSON pins that the refused-env disclosure is
+// present in the JSON note field too (Residual B: prose AND JSON), matching the
+// repo-local shape.
+func TestVerifiedByEnvRefusalDisclosedInJSON(t *testing.T) {
+	t.Setenv("SOURCE_DATE_EPOCH", "1700000000")
+	isolateConfig(t)
+	t.Setenv("BINDER_VERIFIED_BY", "human:envguy")
+	src := mkCorpus(t)
+	out := t.TempDir()
+	stdout, code := runCLI(t, "convert", src, "-o", out, "--json")
+	if code != clijson.ExitSuccess {
+		t.Fatalf("exit = %d, want 0", code)
+	}
+	var env struct {
+		Result struct {
+			Verified struct {
+				Actor string `json:"actor"`
+				Note  string `json:"note"`
+			} `json:"verified"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &env); err != nil {
+		t.Fatalf("output is not valid JSON: %v\n%s", err, stdout)
+	}
+	if env.Result.Verified.Actor != "" {
+		t.Errorf("verified.actor = %q, want empty (nothing stamped)", env.Result.Verified.Actor)
+	}
+	if !contains(env.Result.Verified.Note, "ignored BINDER_VERIFIED_BY") ||
+		!contains(env.Result.Verified.Note, "human:envguy") {
+		t.Errorf("JSON note did not disclose the refused env verifier: %q", env.Result.Verified.Note)
 	}
 }
 
@@ -193,10 +232,13 @@ func TestVerifiedByEnvWithExplicitFlagStamps(t *testing.T) {
 	}
 }
 
-// TestVerifiedByEnvOutranksRepoLocalStillNoStamp pins the precedence edge case:
-// env outranks a repo-local ./.binder.yaml in viper resolution, so with BOTH
-// present and NO flag, the resolved origin is env — which now refuses. The result
-// must be NO stamp; a repo-local value must not sneak a stamp through underneath.
+// TestVerifiedByEnvOutranksRepoLocalStillNoStamp pins the precedence edge case AND
+// the shadowing-disclosure fix: env outranks a repo-local ./.binder.yaml in viper
+// resolution, so with BOTH present and NO flag, the resolved origin is env — which
+// now refuses. The result must be NO stamp; a repo-local value must not sneak a
+// stamp through underneath. Critically, setting env must NOT suppress disclosure:
+// the refusal is still surfaced (via the env note), never silent — otherwise an
+// environment variable would silence a note the repo-local case would have fired.
 func TestVerifiedByEnvOutranksRepoLocalStillNoStamp(t *testing.T) {
 	t.Setenv("SOURCE_DATE_EPOCH", "1700000000")
 	dir := isolateConfig(t)
@@ -207,13 +249,18 @@ func TestVerifiedByEnvOutranksRepoLocalStillNoStamp(t *testing.T) {
 	t.Setenv("BINDER_VERIFIED_BY", "human:envguy")
 	src := mkCorpus(t)
 	out := t.TempDir()
-	_, code := runCLI(t, "convert", src, "-o", out) // env + repo-local, NO flag
+	stdout, code := runCLI(t, "convert", src, "-o", out) // env + repo-local, NO flag
 	if code != clijson.ExitSuccess {
 		t.Fatalf("exit = %d, want 0", code)
 	}
 	b, _ := os.ReadFile(filepath.Join(out, "a.md"))
 	if contains(string(b), "verified:") {
 		t.Errorf("env outranks repo-local but a stamp still slipped through (must be NO stamp):\n%s", b)
+	}
+	// Shadowing fix: the refusal is disclosed (the env value that actually resolved),
+	// so setting env does not silence the disclosure the repo-local case would fire.
+	if !contains(stdout, "ignored BINDER_VERIFIED_BY") || !contains(stdout, "human:envguy") {
+		t.Errorf("env+repo-local refusal was silent — env suppressed disclosure:\n%s", stdout)
 	}
 }
 
