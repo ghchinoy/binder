@@ -489,8 +489,12 @@ func commentEnd(s string, i int) (int, bool) {
 		return 0, false
 	}
 	if i > 0 {
+		// CRLF is normalized to LF before any scanning (see the ReplaceAll near
+		// the top of Decode) and frontmatter is line-split on '\n' only, so a
+		// bare '\r' never precedes a scanned '#'; '\r' is deliberately absent
+		// here rather than an untestable branch.
 		switch s[i-1] {
-		case ' ', '\t', '\n', '\r':
+		case ' ', '\t', '\n':
 		default:
 			return 0, false // "a#b": not a comment
 		}
@@ -506,6 +510,13 @@ func commentEnd(s string, i int) (int, bool) {
 // comments (a '#' comment can carry a stray ']' or '}' that must not be counted
 // into the depth). ok is false if start is not a '{'/'[' or the delimiters never
 // balance.
+//
+// Quoting follows YAML's two scalar rules exactly, because a mis-detected string
+// end lets a ',', ']'/'}', or '#' INSIDE a scalar be read as structure: a
+// double-quoted string escapes a '"' with a backslash (`"a\"b"`), so a '\' skips
+// the next byte; a single-quoted string has no backslash escape and instead
+// writes a literal quote as a doubled pair, which the toggle (close then
+// immediately reopen) already handles.
 func matchFlow(s string, start int) (int, bool) {
 	if start < 0 || start >= len(s) {
 		return 0, false
@@ -520,6 +531,10 @@ func matchFlow(s string, start int) (int, bool) {
 	for i := start; i < len(s); i++ {
 		c := s[i]
 		if q != 0 {
+			if q == '"' && c == '\\' {
+				i++ // '\' escapes the next byte; an escaped '"' is not a close
+				continue
+			}
 			if c == q {
 				q = 0
 			}
@@ -551,8 +566,10 @@ func matchFlow(s string, start int) (int, bool) {
 // surrounding whitespace of each. Interior YAML comments are dropped: a '#'
 // comment (outside quotes, at line-start or after whitespace) is excluded from
 // item text and its content — including any comma or bracket it carries — never
-// affects the split. It returns ok=false if seq is not a flow sequence. An empty
-// sequence ("[]") yields no items.
+// affects the split. Quoting follows YAML exactly (see matchFlow): a '\' inside a
+// double-quoted scalar escapes the next byte, so an escaped '"' is copied
+// verbatim and never mistaken for the string end. It returns ok=false if seq is
+// not a flow sequence. An empty sequence ("[]") yields no items.
 func splitFlowSeqItems(seq string) ([]string, bool) {
 	if len(seq) < 2 || seq[0] != '[' || seq[len(seq)-1] != ']' {
 		return nil, false
@@ -572,6 +589,11 @@ func splitFlowSeqItems(seq string) ([]string, bool) {
 		c := inner[i]
 		if q != 0 {
 			cur.WriteByte(c)
+			if q == '"' && c == '\\' && i+1 < len(inner) {
+				i++
+				cur.WriteByte(inner[i]) // copy the escaped byte verbatim
+				continue
+			}
 			if c == q {
 				q = 0
 			}

@@ -318,31 +318,30 @@ A plain-markdown file (no frontmatter fence) gets a fresh, valid block prepended
 2. **Idempotent.** A second run finds every key present → `unchanged` → **no
    write**. `generated.at` is stable across runs (set-when-absent).
 3. **Body + pre-existing keys byte-faithful (files that already have
-   frontmatter).** enrich reuses the codec's byte-faithful serializer: on a file
-   it changes, every unchanged frontmatter key is re-emitted **from its original
-   source bytes** — nested-map and list order, flow-vs-block style, interior
-   spacing, scalar quoting/folding, and YAML tags (e.g. an `!!timestamp` never
-   silently becomes an `!!str`) are all preserved — and only the **added or
-   changed** keys are encoded fresh. **Comments** are preserved wherever the key
-   or container they belong to is **unchanged**; they are the one property a
-   *changed* container does not carry faithfully, and it fails differently by
-   container kind — a comment inside a changed multi-line flow **sequence** is
-   **dropped**, while one inside a changed flow **mapping** is copied verbatim but
-   **not re-indented** (see *Known limitation* below). Every other property above
-   — order, style, spacing, quoting/folding, tags — does survive a changed
-   container too, at the level of each preserved entry. The **body** is re-emitted
-   exactly, *including the original frontmatter/body separator*: a body that
-   abutted the closing fence stays abutting it, and existing blank lines are
-   neither added nor removed. This guarantee is scoped to files that **already
-   have frontmatter** — see *Residual bounds* below for the byte-level cases it
-   does **not** cover.
+   frontmatter).** enrich reuses the codec's byte-faithful serializer, whose
+   frontmatter guarantee has **two kinds of preservation that are not the same
+   kind of true.** The first holds *by construction* and is unconditional; the
+   second holds *by a scanner* and is bounded, its limits found one case at a
+   time. They are stated separately rather than joined by *and*, because a reader
+   who reads them as one claim will over-trust the second.
 
-   This extends to **sibling granularity**: when a container legitimately changes
-   (e.g. a stamp appended to `verified`), the **pre-existing entries** are
-   re-emitted from their original bytes, so an existing human attestation is
-   **never reshaped or retyped merely because a neighbour was added**. The entry
-   keeps its bytes — flow style, interior spacing, `{by,at}` sub-key order, and
-   the `!!timestamp` tag all intact — for a `verified` authored as:
+   **(a) An unchanged top-level key is byte-faithful by construction.** Every key
+   enrich does **not** touch is re-emitted from its original source bytes, copied
+   verbatim line-for-line; nothing re-parses or re-scans those lines, so nothing
+   can misformat them. Nested-map and list order, flow-vs-block style, interior
+   spacing, scalar quoting/folding, YAML tags (an `!!timestamp` never silently
+   becomes an `!!str`), **and comments** are all preserved — unconditionally.
+   Only the **added or changed** keys are encoded fresh.
+
+   **(b) A pre-existing entry inside a *changed* container is preserved by a
+   scanner.** When a container itself changes (e.g. a stamp appended to
+   `verified`), the codec locates where each pre-existing entry begins and ends
+   and copies those bytes, so an existing human attestation is **never reshaped
+   or retyped merely because a neighbour was added** — its flow style, interior
+   spacing, `{by,at}` sub-key order, and `!!timestamp` tag stay intact. This half
+   is **pattern recognition over YAML, not a verbatim line copy**, so its
+   guarantee is bounded by the *Scanner limitations* below. It covers a
+   `verified` authored as:
 
    - a **block sequence** (`verified:` then `- { … }` entries),
    - a **flow sequence**, single- **or multi-line** (`verified: [{ … }]`), or
@@ -352,27 +351,36 @@ A plain-markdown file (no frontmatter fence) gets a fresh, valid block prepended
    sequence (the natural shape once it has more than one entry), but each
    pre-existing entry keeps its exact bytes. Because preservation is a source-byte
    copy of the entry, it holds whatever the entry contains — nested mappings,
-   multi-line block scalars, anchors/aliases, quoted scalars. A `{by,at}` written
-   instead as an *indented block mapping* is re-indented into the first list item
-   — its leading whitespace necessarily changes when a lone mapping value becomes
-   a sequence item — but its tokens, sub-key order, and YAML tags are still
-   preserved, so an `!!timestamp` never becomes an `!!str`.
+   multi-line block scalars, anchors/aliases, quoted scalars, and a double-quoted
+   scalar with backslash-escaped quotes. A `{by,at}` written instead as an
+   *indented block mapping* is re-indented into the first list item — its leading
+   whitespace necessarily changes when a lone mapping value becomes a sequence
+   item — but its tokens, sub-key order, and YAML tags are still preserved, so an
+   `!!timestamp` never becomes an `!!str`.
 
-   > **Known limitation.** Preservation inside a *changed* container is per
-   > **entry**, not per byte of the whole container. YAML **comments** (and blank
-   > separator lines) that sit *inside a container that changes* — before, between,
-   > or beside its entries — are **not carried onto the rebuilt value**. This is a
-   > limit of the underlying YAML node model (that trivia is not attached to the
-   > entry nodes the serializer copies), not a deliberate normalization; comments
-   > on **unchanged** keys are preserved as above. A comment interleaved in a
-   > *changed* multi-line **flow sequence** (`verified: [` … `]` over several
-   > lines) is likewise dropped — this used to make the output **unparseable** and
-   > no longer does. Relatedly, an empty flow mapping (`verified: {}`) is reshaped
-   > to a block item (`- {}`) when a stamp is appended, and a changed multi-line
-   > flow **mapping** (`verified: {` … `}` over several lines) is copied into the
-   > first block item from its source bytes **without re-indentation** — its
-   > interior lines and closing `}` keep their original columns, so the output
-   > re-parses but is not cleanly re-indented.
+   > **Scanner limitations (the (b) guarantee is bounded, not unconditional).**
+   > Preservation inside a *changed* container is per **entry** located by a
+   > scanner, not a verbatim copy of the whole container, so some interior detail
+   > is not carried:
+   > - **Comments in a changed container.** A comment interleaved in a changed
+   >   multi-line flow **sequence** is **dropped**; a comment inside a changed flow
+   >   **mapping** is copied verbatim but **not re-indented**. Interleaved blank
+   >   separator lines are likewise not carried. (Comments on keys or containers
+   >   that do **not** change are preserved by construction, per (a) — this limit
+   >   applies only to the container that changes.) Such a sequence with an
+   >   interior comment used to produce **unparseable** output; it no longer does.
+   > - **Empty or reshaped flow containers.** An empty flow mapping
+   >   (`verified: {}`) is reshaped to a block item (`- {}`) when a stamp is
+   >   appended, and a changed multi-line flow **mapping** (`verified: {` … `}`
+   >   over several lines) is copied into the first block item without
+   >   re-indentation — its interior lines and closing `}` keep their original
+   >   columns, so the output re-parses but is not cleanly re-indented.
+
+   The **body** is re-emitted exactly, *including the original frontmatter/body
+   separator*: a body that abutted the closing fence stays abutting it, and
+   existing blank lines are neither added nor removed. This guarantee is scoped to
+   files that **already have frontmatter** — see *Residual bounds* below for the
+   byte-level cases it does **not** cover.
 4. **Skip-unchanged (no git churn).** A file that needs no key is **not written
    at all** — no spurious diffs, no mtime bumps. Critical for git-tracked trees.
 5. **Skip-unparseable.** A file whose frontmatter will not parse (invalid YAML or

@@ -124,6 +124,133 @@ func TestSplitFlowSeqItems_CommentAware(t *testing.T) {
 	}
 }
 
+// TestSplitFlowSeqItems_QuoteEscapes pins the YAML scalar-quoting rule the splitter
+// relies on, in isolation, so the rule is readable off the tests: inside a
+// DOUBLE-quoted scalar a '\' escapes the next byte, so an escaped '"' (and any ','
+// ']'/'}' or '#' that follows it while still inside the string) is item text, not
+// structure; a SINGLE-quoted scalar has no backslash escape and writes a literal
+// quote as a doubled pair instead. These are the exact shapes the R3 defect
+// corrupted.
+func TestSplitFlowSeqItems_QuoteEscapes(t *testing.T) {
+	cases := []struct {
+		name string
+		seq  string
+		want []string
+	}{
+		{
+			"escaped_dquote_odd_parity",
+			`[{ by: "he said \"hi", at: t }, { by: y }]`,
+			[]string{`{ by: "he said \"hi", at: t }`, `{ by: y }`},
+		},
+		{
+			"escaped_dquote_then_comma_in_string",
+			`[{ by: "a \", b", at: t }, { by: y }]`,
+			[]string{`{ by: "a \", b", at: t }`, `{ by: y }`},
+		},
+		{
+			"escaped_dquote_then_brace_in_string",
+			`[{ by: "a \"}", at: t }, { by: y }]`,
+			[]string{`{ by: "a \"}", at: t }`, `{ by: y }`},
+		},
+		{
+			"escaped_dquote_then_hash_in_string",
+			`[{ by: "a \" #z", at: t }, { by: y }]`,
+			[]string{`{ by: "a \" #z", at: t }`, `{ by: y }`},
+		},
+		{
+			"escaped_backslash_then_close",
+			`[{ by: "ends with backslash \\" }, { by: y }]`,
+			[]string{`{ by: "ends with backslash \\" }`, `{ by: y }`},
+		},
+		{
+			// A bare single-quoted item whose scalar carries BOTH a doubled quote
+			// ('' is single-quote's only escape — a literal ') AND a comma that
+			// would look top-level if the quote were mis-tracked. This makes the
+			// single-quote toggle load-bearing: it is the single-quote counterpart
+			// to the double-quote rows above. It deliberately stays green under
+			// reverting the '"'-escape fix (correct: that fix is double-quote only)
+			// and reddens only if the single-quote close-then-reopen toggle breaks.
+			"single_quote_doubling_and_interior_comma",
+			`[ 'it''s, ok', { by: y } ]`,
+			[]string{`'it''s, ok'`, `{ by: y }`},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := splitFlowSeqItems(tc.seq)
+			if !ok {
+				t.Fatalf("splitFlowSeqItems(%q) ok = false, want true", tc.seq)
+			}
+			if len(got) != len(tc.want) {
+				t.Fatalf("splitFlowSeqItems(%q) = %q (%d items), want %q (%d items)",
+					tc.seq, got, len(got), tc.want, len(tc.want))
+			}
+			for i := range got {
+				if got[i] != tc.want[i] {
+					t.Errorf("item %d = %q, want %q", i, got[i], tc.want[i])
+				}
+			}
+		})
+	}
+}
+
+// TestByteFaithfulEscapedQuoteInChangedFlowSequence is the invariant regression
+// for the R3 defect: a double-quoted scalar with a backslash-escaped double quote,
+// inside a CHANGED multi-line flow sequence, used to emit UNPARSEABLE output (the
+// quote tracker read the escaped '"' as a close, flipped parity, and scanned the
+// entry's '}' and the flow ']' as ordinary text). The single-line form used to
+// silently re-encode, losing entry byte-faithfulness. Every row must now re-parse
+// with the entry preserved verbatim and no orphan closer leaked. The compound
+// escaped-quote-then-'#' row proves R1 and R3 are ONE root cause (the shared quote
+// tracker), not two: fixing the tracker fixes both, with no comment logic involved.
+func TestByteFaithfulEscapedQuoteInChangedFlowSequence(t *testing.T) {
+	cases := []struct {
+		name     string
+		fm       string
+		sentinel string
+	}{
+		{
+			"multiline_odd_escaped_dquote",
+			"type: Metric\nverified: [\n  { by: \"he said \\\"hi\", at: 2024-02-01T09:30:00Z },\n  { by: human:y, at: 2024-03-01T09:30:00Z },\n]\n",
+			"  - { by: \"he said \\\"hi\", at: 2024-02-01T09:30:00Z }\n",
+		},
+		{
+			"multiline_escaped_dquote_then_comma",
+			"type: Metric\nverified: [\n  { by: \"a \\\", b\", at: 2024-02-01T09:30:00Z },\n  { by: human:y, at: 2024-03-01T09:30:00Z },\n]\n",
+			"  - { by: \"a \\\", b\", at: 2024-02-01T09:30:00Z }\n",
+		},
+		{
+			"multiline_escaped_dquote_then_hash_compound",
+			"type: Metric\nverified: [\n  { by: \"a \\\" #z\", at: 2024-02-01T09:30:00Z },\n  { by: human:y, at: 2024-03-01T09:30:00Z },\n]\n",
+			"  - { by: \"a \\\" #z\", at: 2024-02-01T09:30:00Z }\n",
+		},
+		{
+			"singleline_odd_escaped_dquote",
+			"type: Metric\nverified: [{ by: \"he said \\\"hi\", at: 2024-02-01T09:30:00Z }, { by: human:y, at: 2024-03-01T09:30:00Z }]\n",
+			"  - { by: \"he said \\\"hi\", at: 2024-02-01T09:30:00Z }\n",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			out, reparseErr := appendStamp(t, tc.fm)
+			if !strings.Contains(out, "human:ghchinoy") {
+				t.Fatalf("appended stamp missing — container did not change:\n%s", out)
+			}
+			if reparseErr != nil {
+				t.Fatalf("escaped-quote entry produced UNPARSEABLE output (%v):\n%s", reparseErr, out)
+			}
+			for _, line := range strings.Split(out, "\n") {
+				if s := strings.TrimSpace(line); s == "]" || s == "}" {
+					t.Errorf("orphan flow closer leaked as a standalone line:\n%s", out)
+				}
+			}
+			if !strings.Contains(out, tc.sentinel) {
+				t.Errorf("entry not preserved verbatim; want to contain %q:\n%s", tc.sentinel, out)
+			}
+		})
+	}
+}
+
 // TestByteFaithfulMultiLineFlowSequenceWithCommentReparses is the invariant
 // regression for the R1 defect. Both an interior comment WITHOUT a bracket and one
 // WITH a stray ']' used to produce unparseable output (the reviewer flagged the

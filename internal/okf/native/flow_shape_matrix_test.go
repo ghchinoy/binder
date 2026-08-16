@@ -174,6 +174,16 @@ func TestByteFaithfulShapeMatrix(t *testing.T) {
 			"type: Metric\nverified: [\n  { by: \"human:x #1\", at: \"2024-02-01T09:30:00Z\" },\n  { by: human:y, at: 2024-03-01T09:30:00Z },\n]\n",
 			"  - { by: \"human:x #1\", at: \"2024-02-01T09:30:00Z\" }\n", "!!str",
 		},
+		{
+			// A double-quoted scalar with an ODD number of backslash-escaped double
+			// quotes: the quote tracker used to treat the escaped '"' as a close, so
+			// the parity flipped and the entry's own closing '}' (then the flow ']')
+			// was scanned as ordinary text — producing UNPARSEABLE output. Pins that
+			// the entry survives verbatim, tag intact, and the document re-parses.
+			"W_flowseq_multiline_escaped_dquote",
+			"type: Metric\nverified: [\n  { by: \"he said \\\"hi\", at: 2024-02-01T09:30:00Z },\n  { by: human:y, at: 2024-03-01T09:30:00Z },\n]\n",
+			"  - { by: \"he said \\\"hi\", at: 2024-02-01T09:30:00Z }\n", "!!timestamp",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -214,8 +224,10 @@ func TestByteFaithfulShapeMatrix(t *testing.T) {
 // preservation enumeration in docs/user_guide.md section 3: when the codec changes
 // ONE key (here `verified`), every OTHER top-level key is re-emitted from its
 // source bytes verbatim. Each row exercises one property from the enumeration —
-// interior spacing, scalar quoting (incl. a '#' inside quotes), block-scalar
-// folding, nested-map key order, a YAML tag, a top-level head comment, and a
+// interior spacing, scalar quoting (incl. a '#' inside quotes), a FOLDED scalar
+// (`>`, not literal `|`: a folded scalar reflows under a full re-encode, so the row
+// reddens if byte-copy breaks; a literal `|` survives re-encode and would be a
+// vacuous guard), nested-map key order, a YAML tag, a top-level head comment, and a
 // same-line comment on an unchanged key. The last two pin the TRUE half of the
 // comments claim (comments on UNCHANGED keys survive); the container-kind
 // asymmetry for CHANGED containers is pinned separately by the Characterize tests
@@ -227,7 +239,7 @@ func TestByteFaithfulUnchangedKeysEnumeration(t *testing.T) {
 		"type: Metric\n" +
 		"flowmap: { a: 1,  b: 2 }\n" + // interior spacing (double space)
 		"quoted: \"a: b # not-a-comment\"\n" + // quoting + a '#' inside quotes
-		"folded: |\n  line one\n  line two\n" + // block-scalar folding
+		"folded: >\n  wrapped\n  text\n" + // folded scalar: reflows under re-encode, so a non-vacuous guard
 		"nested:\n  z: 1\n  a: 2\n" + // nested-map key order (non-alpha)
 		"tagged: 2024-02-01T09:30:00Z\n" + // YAML tag (!!timestamp)
 		"withcomment: 42 # keep me\n" + // same-line comment on an unchanged key
@@ -245,7 +257,7 @@ func TestByteFaithfulUnchangedKeysEnumeration(t *testing.T) {
 		{"head comment", "# top head comment\n"},
 		{"interior spacing", "flowmap: { a: 1,  b: 2 }\n"},
 		{"quoting + hash-in-quotes", "quoted: \"a: b # not-a-comment\"\n"},
-		{"block-scalar folding", "folded: |\n  line one\n  line two\n"},
+		{"folded scalar", "folded: >\n  wrapped\n  text\n"},
 		{"nested-map key order", "nested:\n  z: 1\n  a: 2\n"},
 		{"YAML tag", "tagged: 2024-02-01T09:30:00Z\n"},
 		{"same-line comment on unchanged key", "withcomment: 42 # keep me\n"},
