@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -117,6 +118,83 @@ func TestSetAndUnsetKeyInFile(t *testing.T) {
 	}
 	if existed {
 		t.Errorf("existed = true, want false for unset of absent key")
+	}
+}
+
+func TestSetKeyInFileStoresStrings(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, ".binder.yaml")
+
+	// Numeric-looking and bool-looking values must be stored as strings, not
+	// coerced to YAML int/bool.
+	if _, err := SetKeyInFile(cfgPath, "gemini_project", "1234567890"); err != nil {
+		t.Fatalf("SetKeyInFile gemini_project: %v", err)
+	}
+	if _, err := SetKeyInFile(cfgPath, "gemini_model", "true"); err != nil {
+		t.Fatalf("SetKeyInFile gemini_model: %v", err)
+	}
+
+	settings, err := ReadConfigFile(cfgPath)
+	if err != nil {
+		t.Fatalf("ReadConfigFile: %v", err)
+	}
+	if v, ok := settings[KeyGeminiProject].(string); !ok || v != "1234567890" {
+		t.Errorf("gemini_project = %#v (%T), want string \"1234567890\"", settings[KeyGeminiProject], settings[KeyGeminiProject])
+	}
+	if v, ok := settings[KeyGeminiModel].(string); !ok || v != "true" {
+		t.Errorf("gemini_model = %#v (%T), want string \"true\"", settings[KeyGeminiModel], settings[KeyGeminiModel])
+	}
+
+	// The on-disk YAML must quote these so they re-read as strings.
+	data, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatalf("reading config file: %v", err)
+	}
+	if !strings.Contains(string(data), `gemini_project: "1234567890"`) {
+		t.Errorf("YAML did not quote numeric value:\n%s", data)
+	}
+	if !strings.Contains(string(data), `gemini_model: "true"`) {
+		t.Errorf("YAML did not quote bool-like value:\n%s", data)
+	}
+}
+
+func TestUnsetLastKeyRemovesFile(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, ".binder.yaml")
+
+	if _, err := SetKeyInFile(cfgPath, "gemini_project", "my-project"); err != nil {
+		t.Fatalf("SetKeyInFile: %v", err)
+	}
+	if _, _, err := UnsetKeyInFile(cfgPath, "gemini_project"); err != nil {
+		t.Fatalf("UnsetKeyInFile: %v", err)
+	}
+
+	// Removing the last key must leave no file behind (no lingering "{}").
+	if _, err := os.Stat(cfgPath); !os.IsNotExist(err) {
+		data, _ := os.ReadFile(cfgPath)
+		t.Errorf("config file still exists after unsetting last key (err=%v), content:\n%s", err, data)
+	}
+}
+
+func TestWriteConfigFilePreservesMode(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, ".binder.yaml")
+
+	// Create an existing file with a distinctive mode.
+	if err := os.WriteFile(cfgPath, []byte("gemini_model: old\n"), 0o600); err != nil {
+		t.Fatalf("seeding config file: %v", err)
+	}
+
+	if _, err := SetKeyInFile(cfgPath, "gemini_project", "my-project"); err != nil {
+		t.Fatalf("SetKeyInFile: %v", err)
+	}
+
+	info, err := os.Stat(cfgPath)
+	if err != nil {
+		t.Fatalf("stat after write: %v", err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Errorf("mode = %o, want 600 (atomic write must preserve existing mode)", info.Mode().Perm())
 	}
 }
 

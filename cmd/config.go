@@ -42,7 +42,7 @@ func newConfigCmd(cfg *config.Config) *cobra.Command {
 			"configuration: each key's value and its source (flag, env, file, or default),\n" +
 			"plus the config file that was read (if any). Precedence is flag > env >\n" +
 			"config file > built-in default. Ships --json (schema " + config.SchemaVersion + ").",
-		Args: cobra.NoArgs,
+		Args: exactArgs(0),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return printConfig(cmd)
 		},
@@ -53,7 +53,7 @@ func newConfigCmd(cfg *config.Config) *cobra.Command {
 	listCmd := &cobra.Command{
 		Use:   "list",
 		Short: "List all resolved configuration values and their sources",
-		Args:  cobra.NoArgs,
+		Args:  exactArgs(0),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return printConfig(cmd)
 		},
@@ -126,7 +126,7 @@ func newConfigCmd(cfg *config.Config) *cobra.Command {
 			if jsonOut {
 				result := map[string]any{
 					"key":    canonical,
-					"value":  config.CoerceValue(val),
+					"value":  val,
 					"file":   targetFile,
 					"status": "updated",
 				}

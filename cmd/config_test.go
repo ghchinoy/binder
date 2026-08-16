@@ -74,6 +74,49 @@ func TestConfigGetCmdUnknownKeyExit2(t *testing.T) {
 	}
 }
 
+func TestConfigCmdStrayArgsExit2(t *testing.T) {
+	isolateConfig(t)
+
+	// A stray positional arg on the parent `config` command is a usage error
+	// (exit 2), not an IO/internal error (exit 3). Regression guard for the
+	// exactArgs(0) vs cobra.NoArgs exit-code contract.
+	_, code := runCLI(t, "config", "bogus")
+	if code != clijson.ExitUsage {
+		t.Errorf("config bogus exit = %d, want %d (ExitUsage)", code, clijson.ExitUsage)
+	}
+
+	// Same contract for `config list`.
+	_, codeList := runCLI(t, "config", "list", "bogus")
+	if codeList != clijson.ExitUsage {
+		t.Errorf("config list bogus exit = %d, want %d (ExitUsage)", codeList, clijson.ExitUsage)
+	}
+}
+
+func TestConfigSetStoresStringValues(t *testing.T) {
+	dir := isolateConfig(t)
+
+	// A numeric-looking value (e.g. a GCP project id) must stay a string, not
+	// become a YAML int.
+	if _, code := runCLI(t, "config", "set", "gemini_project", "1234567890"); code != clijson.ExitSuccess {
+		t.Fatalf("set gemini_project exit = %d, want 0", code)
+	}
+	// A "true"-looking value must stay a string, not become a YAML bool.
+	if _, code := runCLI(t, "config", "set", "gemini_model", "true"); code != clijson.ExitSuccess {
+		t.Fatalf("set gemini_model exit = %d, want 0", code)
+	}
+
+	settings, err := config.ReadConfigFile(filepath.Join(dir, ".binder.yaml"))
+	if err != nil {
+		t.Fatalf("ReadConfigFile: %v", err)
+	}
+	if v, ok := settings["gemini_project"].(string); !ok || v != "1234567890" {
+		t.Errorf("gemini_project = %#v (%T), want string \"1234567890\"", settings["gemini_project"], settings["gemini_project"])
+	}
+	if v, ok := settings["gemini_model"].(string); !ok || v != "true" {
+		t.Errorf("gemini_model = %#v (%T), want string \"true\"", settings["gemini_model"], settings["gemini_model"])
+	}
+}
+
 func TestConfigSetAndGetWorkflow(t *testing.T) {
 	dir := isolateConfig(t)
 

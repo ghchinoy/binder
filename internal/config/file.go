@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -115,7 +114,11 @@ func ReadConfigFile(path string) (map[string]any, error) {
 	return m, nil
 }
 
-// WriteConfigFile persists the settings map as clean, indented YAML.
+// WriteConfigFile persists the settings map as clean, indented YAML. The write
+// is atomic: the YAML is encoded to a temp file in the same directory and then
+// renamed over the target (rename is atomic on the same filesystem), so a crash
+// or disk-full mid-write cannot leave a partially written config file. The mode
+// of an existing target is preserved; new files default to 0o644.
 func WriteConfigFile(path string, m map[string]any) error {
 	var buf bytes.Buffer
 	enc := yaml.NewEncoder(&buf)
@@ -126,28 +129,35 @@ func WriteConfigFile(path string, m map[string]any) error {
 	if err := enc.Close(); err != nil {
 		return fmt.Errorf("closing YAML encoder: %w", err)
 	}
-	if err := os.WriteFile(path, buf.Bytes(), 0o644); err != nil {
-		return fmt.Errorf("writing config file %q: %w", path, err)
+
+	mode := os.FileMode(0o644)
+	if info, err := os.Stat(path); err == nil {
+		mode = info.Mode().Perm()
+	}
+
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, ".binder-config-*.tmp")
+	if err != nil {
+		return fmt.Errorf("creating temp config file in %q: %w", dir, err)
+	}
+	tmpName := tmp.Name()
+	// Best-effort cleanup if we fail before the rename succeeds.
+	defer func() { _ = os.Remove(tmpName) }()
+
+	if _, err := tmp.Write(buf.Bytes()); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("writing temp config file %q: %w", tmpName, err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("closing temp config file %q: %w", tmpName, err)
+	}
+	if err := os.Chmod(tmpName, mode); err != nil {
+		return fmt.Errorf("setting mode on temp config file %q: %w", tmpName, err)
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		return fmt.Errorf("renaming temp config file over %q: %w", path, err)
 	}
 	return nil
-}
-
-// CoerceValue converts a string CLI value into a typed scalar (bool/int/float)
-// when appropriate.
-func CoerceValue(s string) any {
-	switch strings.ToLower(strings.TrimSpace(s)) {
-	case "true":
-		return true
-	case "false":
-		return false
-	}
-	if i, err := strconv.ParseInt(s, 10, 64); err == nil {
-		return i
-	}
-	if f, err := strconv.ParseFloat(s, 64); err == nil {
-		return f
-	}
-	return s
 }
 
 // SetKeyInFile sets a key/value in the specified config file.
@@ -165,8 +175,10 @@ func SetKeyInFile(filePath, key, value string) (string, error) {
 		return "", err
 	}
 
-	typed := CoerceValue(value)
-	settings[canonical] = typed
+	// All known config keys are string-typed, so store the raw string value.
+	// This avoids surprising YAML type coercion (e.g. a numeric GCP project id
+	// becoming a YAML int, or "true" becoming a YAML bool).
+	settings[canonical] = value
 
 	if err := WriteConfigFile(filePath, settings); err != nil {
 		return "", err
@@ -200,7 +212,13 @@ func UnsetKeyInFile(filePath, key string) (string, bool, error) {
 	}
 
 	if existed {
-		if err := WriteConfigFile(filePath, settings); err != nil {
+		if len(settings) == 0 {
+			// Removing the last key would leave an ugly "{}" in the file;
+			// delete the file instead so an empty config is genuinely absent.
+			if err := os.Remove(filePath); err != nil && !os.IsNotExist(err) {
+				return canonical, false, fmt.Errorf("removing empty config file %q: %w", filePath, err)
+			}
+		} else if err := WriteConfigFile(filePath, settings); err != nil {
 			return canonical, false, err
 		}
 	}
