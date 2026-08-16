@@ -38,7 +38,7 @@ func TestLintEntrypointsNotOrphans(t *testing.T) {
 	}
 
 	s := rep.String()
-	if !strings.Contains(s, "entrypoints (outbound, no inbound): 2") ||
+	if !strings.Contains(s, "entrypoints (no inbound links): 2") ||
 		!strings.Contains(s, "orphans (no inbound or outbound links): 1") {
 		t.Errorf("prose missing entrypoint/orphan sections:\n%s", s)
 	}

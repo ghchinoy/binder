@@ -2,8 +2,11 @@ package linkcheck
 
 import "testing"
 
-// TestIsRootEntrypoint: only a corpus-root README.md/index.md (any case, no
-// directory component) is auto-recognized as an entrypoint (issue #24).
+// TestIsRootEntrypoint: only a corpus-root README.md (any case, no directory
+// component) is auto-recognized as an entrypoint (issue #24). A root index.md
+// is NOT elected (issue #71) — the lowercase form is renamed away before
+// classification, so electing only the uppercase form was an asymmetry no user
+// could observe end to end.
 func TestIsRootEntrypoint(t *testing.T) {
 	cases := []struct {
 		relPath string
@@ -11,8 +14,8 @@ func TestIsRootEntrypoint(t *testing.T) {
 	}{
 		{"README.md", true},
 		{"readme.md", true},
-		{"index.md", true},
-		{"INDEX.md", true},
+		{"index.md", false},
+		{"INDEX.md", false},
 		{"", false},
 		{"docs/README.md", false}, // nested, not the corpus root
 		{"docs/index.md", false},

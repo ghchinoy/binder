@@ -8,7 +8,7 @@ import (
 )
 
 // conceptAt is like concept() but lets the test set an explicit RelPath so root
-// entrypoint recognition (README.md/index.md) can be exercised.
+// entrypoint recognition (README.md) can be exercised.
 func conceptAt(id, relPath, typ string, links ...okf.Link) *okf.Concept {
 	fm := okf.NewOrderedMap()
 	fm.Set("title", id)
@@ -63,7 +63,7 @@ func TestReviewRootReadmeIsEntrypointNotOrphan(t *testing.T) {
 
 	// Prose surfaces both buckets with the disambiguating labels.
 	s := r.String()
-	if !strings.Contains(s, "entrypoints (outbound, no inbound): 2") {
+	if !strings.Contains(s, "entrypoints (no inbound links): 2") {
 		t.Errorf("prose missing entrypoint count:\n%s", s)
 	}
 	if !strings.Contains(s, "orphans (no inbound or outbound links): 1") {
