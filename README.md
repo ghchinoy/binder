@@ -13,10 +13,21 @@ bundle, extracts every relationship signal (wikilinks, anchor links, frontmatter
 refs, hashtags), maps corpus-native provenance into the trust vocabulary,
 generates per-directory index navigation, validates bundles against the spec's
 §11 conformance rules, and preserves trust frontmatter byte-for-byte on
-round-trip. It also reports and visualizes a bundle (`review`, `graph`), lints a
-source corpus before conversion (`lint`), declaratively stamps trust/lifecycle
-metadata (`--status-map`, `--stale-after-map`, `--verified-by`), is configurable
-via `binder config`, and supports `--strict` CI gating.
+round-trip — scoped to files whose frontmatter binder recognises: the file's
+first bytes must be `---` and then a newline, LF or CRLF, with nothing before
+them and nothing in between. It also reports and visualizes a bundle (`review`,
+`graph`), lints a source corpus before conversion (`lint`), declaratively stamps
+trust/lifecycle metadata (`--status-map`, `--stale-after-map`, `--verified-by`),
+is configurable via `binder config`, and supports `--strict` CI gating.
+
+**That scoping is load-bearing if you rely on binder for provenance.**
+Recognising the fence is a scanner, not a property of the file: frontmatter
+binder does not recognise leaves the file looking plain, so `convert` and
+`enrich` synthesize a fresh block and leave the original — any `verified:`
+attestation with it — in the body as text, exiting `0` with nothing skipped and
+no warning ([#124](https://github.com/ghchinoy/binder/issues/124), open). For
+the bounds known to remain even on a recognised fence, see *Residual bounds*
+under [`enrich`](docs/user_guide.md#enrich).
 
 ## Table of Contents
 
@@ -76,9 +87,17 @@ Two properties make it trustworthy for pipelines:
 
 - **Deterministic output.** `convert` honours `SOURCE_DATE_EPOCH` for any
   synthesised timestamps, so identical input yields byte-identical output.
-- **Byte-faithful frontmatter round-trip.** Unmodified YAML frontmatter is passed
-  through verbatim — including nested-map and list key order — so a round-trip
-  changes nothing it did not have to change.
+- **Byte-faithful frontmatter round-trip, on a recognised fence.** Unmodified
+  YAML frontmatter is passed through verbatim — including nested-map and list
+  key order — so a round-trip changes nothing it did not have to change. This is
+  scoped to files whose frontmatter binder recognises: the file's first bytes
+  must be `---` and then a newline, LF or CRLF, with nothing before them and
+  nothing in between. Recognising the fence is a scanner, so a file binder
+  reads as plain is one it will synthesize over, leaving the original
+  frontmatter in the body
+  ([#124](https://github.com/ghchinoy/binder/issues/124), open). For the bounds
+  known to remain even on a recognised fence, see *Residual bounds* under
+  [`enrich`](docs/user_guide.md#enrich).
 
 ## Installation
 
