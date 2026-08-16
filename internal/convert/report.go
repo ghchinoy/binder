@@ -45,12 +45,14 @@ type VerifiedStampReport struct {
 	// Actor is the verifier that was stamped (or would be, under --dry-run), or ""
 	// when no verifier was determined.
 	Actor string `json:"actor"`
-	// Source is where Actor came from: "flag" | "env" | "config" | "none".
+	// Source is where Actor came from: "flag" | "config" | "input" (MCP) | "none".
+	// A refused env or repo-local verifier is never a write source: it carries no
+	// Actor and is disclosed in Note instead, so it never appears here.
 	Source string `json:"source"`
 	// Stamped lists the out-relative concept paths that received the stamp, sorted.
 	Stamped    []string `json:"stamped"`
 	NumStamped int      `json:"num_stamped"`
-	// Skipped lists concepts where a config/env stamp was declined because a
+	// Skipped lists concepts where a global config stamp was declined because a
 	// different identity had already attested them (Residual A), sorted by path.
 	Skipped    []VerifiedSkip `json:"skipped"`
 	NumSkipped int            `json:"num_skipped"`
@@ -60,7 +62,7 @@ type VerifiedStampReport struct {
 	Note string `json:"note,omitempty"`
 }
 
-// VerifiedSkip is one concept where a config/env stamp was declined to avoid
+// VerifiedSkip is one concept where a global config stamp was declined to avoid
 // co-signing another identity's attestation (Residual A).
 type VerifiedSkip struct {
 	Path          string `json:"path"`           // out-relative concept path

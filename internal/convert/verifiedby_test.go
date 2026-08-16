@@ -97,7 +97,7 @@ func TestVerifiedByPreservesSpecInvalidScalar(t *testing.T) {
 }
 
 // TestVerifiedByResidualASkipsNonExplicitCoSign proves the Residual A guard: a
-// non-explicit (config/env) actor must NOT co-sign a document a DIFFERENT identity
+// non-explicit (global config) actor must NOT co-sign a document a DIFFERENT identity
 // has already attested. It is a SKIP — the result reports Skipped with the existing
 // actor, and the pre-existing attestation is left byte-identical (no append, no
 // reshape).

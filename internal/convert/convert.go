@@ -64,14 +64,14 @@ type Options struct {
 
 	// VerifiedByExplicit records that VerifiedBy came from an EXPLICIT
 	// per-invocation act (a --verified-by flag, or an MCP tool input), as opposed
-	// to the user-set config/env exception. It governs Residual A (never-co-sign):
+	// to the user-set global config exception. It governs Residual A (never-co-sign):
 	// an explicit actor MAY co-sign a concept another identity already attested; a
-	// config/env actor MUST NOT — that concept is skipped instead. The CLI decides
+	// global config actor MUST NOT — that concept is skipped instead. The CLI decides
 	// this via config.PermitsStampWithoutFlag; empty (the default) means "not
 	// explicit".
 	VerifiedByExplicit bool
 	// VerifiedBySource is the disclosure token for the resolved actor's origin
-	// ("flag" | "env" | "config" | "none"), surfaced in the report's trust
+	// ("flag" | "config" | "input" (MCP) | "none"), surfaced in the report's trust
 	// disclosure (Residual B). Empty is treated as "none".
 	VerifiedBySource string
 

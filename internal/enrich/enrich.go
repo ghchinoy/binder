@@ -61,11 +61,11 @@ type Options struct {
 
 	// VerifiedByExplicit records that VerifiedBy came from an explicit
 	// per-invocation --verified-by (co-sign permitted) rather than the user-set
-	// config/env exception (co-sign declined — Residual A). Set by the CLI via
+	// global config exception (co-sign declined — Residual A). Set by the CLI via
 	// config.PermitsStampWithoutFlag. Empty (default) means "not explicit".
 	VerifiedByExplicit bool
 	// VerifiedBySource is the disclosure token for the resolved actor's origin
-	// ("flag" | "env" | "config" | "none"), surfaced in the report (Residual B).
+	// ("flag" | "config" | "input" (MCP) | "none"), surfaced in the report (Residual B).
 	VerifiedBySource string
 
 	// StatusNotes are pre-computed OKF §5.4 status-vocabulary messages (issue #23)
@@ -120,7 +120,7 @@ type Report struct {
 	StatusNotes []string `json:"status_notes"`
 	// Verified discloses the never-fabricate-trust decision for this run (Residual
 	// B): which actor (if any) was stamped, from where, every source file it
-	// stamped, and every file where a config/env stamp was DECLINED because a
+	// stamped, and every file where a global config stamp was DECLINED because a
 	// different identity had already attested it (Residual A). Additive to
 	// binder.report/v1 and always emitted so the decision is observable.
 	Verified convert.VerifiedStampReport `json:"verified"`

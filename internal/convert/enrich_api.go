@@ -77,7 +77,7 @@ func ApplyLifecycleMaps(c *okf.Concept, relPath string, opts Options) {
 // ApplyVerifiedBy appends a verified actorstamp for opts.VerifiedBy (dedup by
 // by,at), set-when-absent/idempotent, and returns a VerifiedResult so enrich can
 // disclose what it wrote or declined (Residual B). It honors Residual A (a
-// non-explicit config/env actor never co-signs a different identity) and the
+// non-explicit global config actor never co-signs a different identity) and the
 // preserve-or-advise carry-forward for a spec-invalid scalar verified value.
 // Behavior is identical to the helper convert uses.
 func ApplyVerifiedBy(c *okf.Concept, opts Options) VerifiedResult {

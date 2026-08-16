@@ -53,7 +53,7 @@ func find(t *testing.T, rep *enrich.Report, path string) enrich.FileResult {
 }
 
 // TestResidualASkipDoesNotWriteOrReshape proves the never-fabricate-trust ruling
-// at the enrich boundary: a NON-explicit (config/env) verifier must NOT co-sign a
+// at the enrich boundary: a NON-explicit (global config) verifier must NOT co-sign a
 // document a DIFFERENT identity has already attested. The skip must (a) write
 // nothing — the file is byte-identical afterward, including a single-line FLOW
 // sequence that a whole-value re-encode would reshape (the PR #115 residual) — and

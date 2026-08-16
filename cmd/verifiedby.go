@@ -17,8 +17,9 @@ var envVerifiedByName = config.EnvPrefix + "_" + strings.ToUpper(config.KeyVerif
 // (convert/enrich) under the owner's never-fabricate-trust ruling: the actor to
 // stamp (empty ⇒ write no stamp), whether it came from an EXPLICIT per-invocation
 // --verified-by (which alone may co-sign another identity — Residual A), the
-// disclosure source token ("flag"|"env"|"config"|"none"), and an optional Note
-// disclosing a resolved-but-unhonored verifier.
+// disclosure source token ("flag" or "config" — a refused env or repo-local value
+// is not a source and rides in Note instead), and an optional Note disclosing that
+// resolved-but-unhonored verifier.
 type verifiedByDecision struct {
 	Actor    string
 	Explicit bool

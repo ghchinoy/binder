@@ -21,14 +21,14 @@ type VerifiedResult struct {
 // applyVerifiedBy appends a verified actorstamp {by: opts.VerifiedBy, at:
 // opts.Now (RFC3339 UTC)} to a concept's verified list (issue #7). It is
 // deduplicated by (by, at) so a re-run with a fixed clock is idempotent /
-// byte-identical. With opts.VerifiedBy empty (no flag, and no user-set config/env
+// byte-identical. With opts.VerifiedBy empty (no flag, and no user-set global config
 // exception) NO stamp is written — binder never auto-stamps (design §3.1,
 // never-fabricate). The actor is assumed valid: the CLI validates it (and the
 // config default) with okf.IsValidActor before Convert runs (option (a)).
 //
 // Residual A (never co-sign): when the actor did NOT come from an explicit
 // per-invocation act (opts.VerifiedByExplicit is false — i.e. it came from the
-// user-set config/env exception) and the concept ALREADY carries a `verified`
+// user-set global config exception) and the concept ALREADY carries a `verified`
 // attestation by a DIFFERENT identity, the stamp is SKIPPED rather than appended.
 // The user-set default is consent to attest the user's OWN work, not to co-sign
 // somebody else's. This is a skip, never a reject: nothing errors, nothing is
@@ -64,7 +64,7 @@ func applyVerifiedBy(c *okf.Concept, opts Options) VerifiedResult {
 		return VerifiedResult{Advisory: fmt.Sprintf("verified: value %q is not a {by,at} stamp or list of them (spec §5.2); preserved unchanged, no verified stamp appended", okf.AsString(v))}
 	}
 
-	// Residual A: a config/env (non-explicit) actor must not co-sign a concept a
+	// Residual A: a global config (non-explicit) actor must not co-sign a concept a
 	// DIFFERENT identity has already attested. An explicit --verified-by is exempt.
 	if !opts.VerifiedByExplicit {
 		for _, e := range list {
