@@ -155,8 +155,10 @@ touches frontmatter only (no bodies, no links, no indexes). See [`enrich`](#enri
 binder convert <src> [flags]
 ```
 
-Walks a plain-markdown corpus and writes a conformant OKF v0.2 bundle. It **never
-mutates the source**, is **deterministic**, and **never rejects** an input file.
+Walks a plain-markdown corpus and writes a conformant OKF v0.2 bundle. It is
+**deterministic** and **never rejects** an input file. `convert` writes into the
+output directory, and if the output path resolves to the source directory the
+source is rewritten in place.
 For each non-reserved `.md` it emits one concept with:
 
 - `type` ensured (precedence: existing frontmatter → `--type-map` per-directory →

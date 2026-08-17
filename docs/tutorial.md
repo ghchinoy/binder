@@ -59,9 +59,8 @@ Two habits make every run in this tutorial reproducible:
   (`generated.at`, a resolved `stale_after`, a `verified.at`) is byte-stable.
 - Read the structured `--json` output, not the prose, when you script or gate.
 
-Throughout, keep two guarantees in mind — two things binder always holds to.
-`binder convert` never mutates its
-source, and binder never fabricates trust: it derives trust tiers from
+Throughout, keep one guarantee in mind — a thing binder always holds to.
+binder never fabricates trust: it derives trust tiers from
 frontmatter, stamps an honest `generated` provenance for content it produced, and
 never invents a source or auto-stamps `verified`. A `verified` attestation is
 always something you asked for — Part 2 shows exactly what counts as asking.

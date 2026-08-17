@@ -49,7 +49,7 @@ under [`enrich`](docs/user_guide.md#enrich).
   v0.2 bundle: one concept per non-reserved `.md`, standard markdown links and
   `[[wikilinks]]` rewritten to bundle-relative form, frontmatter-ref edges,
   `#hashtags` merged into `tags`, per-directory `index.md` navigation, and a
-  generated provenance stamp. It never mutates the source.
+  generated provenance stamp.
 - **`enrich`** adds the missing required frontmatter (`type`, `title`,
   `generated`) to a source markdown tree **in place** — frontmatter only, no body
   changes. It is additive/never-clobber, idempotent, atomic, and safe on a
