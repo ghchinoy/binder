@@ -136,8 +136,8 @@ func TestLineEndingShapeMatrix(t *testing.T) {
 // but WHERE the lone CR sits relative to the rewritten key's value. So this is a
 // deliberately reduced, representative subset:
 //
-//   {5 value shapes: block map, block seq, flow seq, flow map, block scalar}
-//     x {lone CR BEFORE the shaped key, lone CR INSIDE its multi-line value}
+//	{5 value shapes: block map, block seq, flow seq, flow map, block scalar}
+//	  x {lone CR BEFORE the shaped key, lone CR INSIDE its multi-line value}
 //
 // and the shaped key is the one rewritten. DROPPED, and why:
 //   - the other 3 rewrite positions: covered scalar-wise by the 64-case matrix; the
@@ -151,7 +151,16 @@ func TestLineEndingShapeMatrix(t *testing.T) {
 // Rewriting the shaped key to a plain scalar exercises the "changed key with a
 // multi-line block value" splice path (the brick route) as well as the destroy/dup
 // routes. Assertions match the core wall: accepted, re-parses, no key lost, no key
-// duplicated, only the target changed.
+// duplicated, surrounding scalars unmutated.
+//
+// SCOPE BOUNDARY (corrected after review — see 123-test-wall.md §2.6). For the two
+// block-SCALAR shapes the REWRITTEN value's integrity is NOT asserted here: rewriting
+// a multi-line block scalar leaks its continuation lines into the new value via a
+// SEPARATE, line-ending-independent defect (the spliceFrontmatter maxNodeLine
+// undercount), which reproduces on pure LF and is therefore outside the #123 lone-CR
+// scope. That assertion lives in the Skipped TestBlockScalarRewrite_ValueIntegrity.
+// The lone-CR properties for block-scalar shapes (accepted, re-parses, no key lost,
+// no duplicate, neighbours intact) REMAIN asserted here so that coverage is not lost.
 func TestLineEndingShapeMatrix_ValueShapes(t *testing.T) {
 	// Each case is a full frontmatter interior with a `lead` scalar, a shaped middle
 	// key, and a `trail` scalar. `rewrite` names the key set to a new scalar value.
@@ -159,46 +168,65 @@ func TestLineEndingShapeMatrix_ValueShapes(t *testing.T) {
 		name    string
 		fm      string // interior between the fences
 		rewrite string
+		// valueIntegrityDeferred marks a value shape whose REWRITTEN value integrity is
+		// NOT asserted here because it is broken by a SEPARATE, line-ending-independent
+		// defect (the block-scalar maxNodeLine undercount — see
+		// TestBlockScalarRewrite_ValueIntegrity, which is Skipped). The #123 lone-CR
+		// properties (accepted on read, re-parses, no key lost, no duplicate, surrounding
+		// scalars intact) ARE still asserted for these shapes — that is the coverage we
+		// must not lose while extracting the unrelated assertion.
+		valueIntegrityDeferred bool
 	}{
 		{
 			"block_map/cr_before",
 			"lead: L\r" + "meta:\n  k1: v1\n  k2: v2\n" + "trail: T\n",
 			"meta",
+			false,
 		},
 		{
 			"block_map/cr_inside",
 			"lead: L\n" + "meta:\n  k1: v1\r  k2: v2\n" + "trail: T\n",
 			"meta",
+			false,
 		},
 		{
 			"block_seq/cr_before",
 			"lead: L\r" + "items:\n  - one\n  - two\n" + "trail: T\n",
 			"items",
+			false,
 		},
 		{
 			"block_seq/cr_inside",
 			"lead: L\n" + "items:\n  - one\r  - two\n" + "trail: T\n",
 			"items",
+			false,
 		},
 		{
 			"flow_seq/cr_before", // single-line value: only the CR-adjacent variant applies
 			"lead: L\r" + "list: [one, two]\n" + "trail: T\n",
 			"list",
+			false,
 		},
 		{
 			"flow_map/cr_before", // single-line value: only the CR-adjacent variant applies
 			"lead: L\r" + "obj: {k1: v1, k2: v2}\n" + "trail: T\n",
 			"obj",
+			false,
 		},
+		// block-scalar shapes: the lone-CR properties are asserted here (they must stay
+		// green under C2); the rewritten-value integrity is deferred to the Skipped
+		// TestBlockScalarRewrite_ValueIntegrity because it fails on pure LF too.
 		{
 			"block_scalar/cr_before",
 			"lead: L\r" + "note: |\n  line1\n  line2\n" + "trail: T\n",
 			"note",
+			true,
 		},
 		{
 			"block_scalar/cr_inside",
 			"lead: L\n" + "note: |\n  line1\r  line2\n" + "trail: T\n",
 			"note",
+			true,
 		},
 	}
 
@@ -238,15 +266,30 @@ func TestLineEndingShapeMatrix_ValueShapes(t *testing.T) {
 					t.Errorf("key %q appears %d times, want 1 (stale duplicate)\noutput frontmatter:\n%q", k, n, fm)
 				}
 			}
-			// Surrounding scalars unmutated; shaped key holds the new value.
+			// Surrounding scalars unmutated: THIS is the #123 lone-CR property for these
+			// shapes — a lone CR before/inside the shaped value must not corrupt its
+			// neighbours. Asserted for every shape, block scalar included.
 			if v, _ := re.Frontmatter.Get("lead"); v != "L" {
 				t.Errorf("lead mutated: got %#v want %q\noutput:\n%q", v, "L", out)
 			}
 			if v, _ := re.Frontmatter.Get("trail"); v != "T" {
 				t.Errorf("trail mutated: got %#v want %q\noutput:\n%q", v, "T", out)
 			}
-			if v, _ := re.Frontmatter.Get(tc.rewrite); v != newScalar {
-				t.Errorf("rewritten key %q = %#v, want %q\noutput:\n%q", tc.rewrite, v, newScalar, out)
+
+			if !tc.valueIntegrityDeferred {
+				// The rewritten key holds EXACTLY the new value.
+				if v, _ := re.Frontmatter.Get(tc.rewrite); v != newScalar {
+					t.Errorf("rewritten key %q = %#v, want %q\noutput:\n%q", tc.rewrite, v, newScalar, out)
+				}
+			} else {
+				// Value integrity is broken by the block-scalar undercount defect (not
+				// #123, fails on pure LF too) and is asserted separately in the Skipped
+				// TestBlockScalarRewrite_ValueIntegrity. Here we only guard against a
+				// vacuous cell: the rewrite must actually have landed in the bytes, so
+				// this subtest is genuinely exercising the splice path.
+				if !strings.Contains(string(out), newScalar) {
+					t.Fatalf("rewrite of %q did not land in output (cell is vacuous):\n%q", tc.rewrite, out)
+				}
 			}
 		})
 	}
@@ -337,3 +380,66 @@ func TestLineEndingShapeMatrix_BlockSeqPerPosition(t *testing.T) {
 }
 
 const newScalar = "REWRITTEN"
+
+// TestBlockScalarRewrite_ValueIntegrity isolates a SEPARATE, pre-existing defect that
+// is NOT issue #123. When the key of a multi-line block SCALAR value is REWRITTEN,
+// spliceFrontmatter's maxNodeLine UNDER-COUNTS the block scalar's line span, so its
+// continuation lines are left behind and leak into the rewritten value: rewriting
+// `note` to "REWRITTEN" over `note: |` / `  line1` / `  line2` yields the reparsed
+// value "REWRITTEN line1 line2" instead of "REWRITTEN". The undercount is documented
+// in maxNodeLine's own comment as acceptable ONLY for an UNCHANGED block scalar (where
+// the surplus lines fall into the next key's head region and the block stays intact);
+// when the key is CHANGED the surplus leaks.
+//
+// It reproduces on PURE LF with no carriage return anywhere (the `lf` case below), so
+// it is independent of line endings and outside the lone-CR (#123) scope. This test
+// was split out of TestLineEndingShapeMatrix_ValueShapes/block_scalar/* after review:
+// those cells originally welded this value-integrity assertion to the #123 lone-CR
+// assertions, and C2 satisfies the latter but not the former. The lone-CR half stays
+// asserted (and green) in TestLineEndingShapeMatrix_ValueShapes; only this integrity
+// assertion moved here.
+//
+// SKIPPED, not deleted: a named skipped test is a standing marker for the defect; a
+// deleted one is an unrecorded decision. Unskip when the block-scalar undercount is
+// fixed.
+//
+// TODO(#<block-scalar-undercount-issue>): binder-030-em is assigning an issue number;
+// drop it into this skip reason and the comment above when it arrives.
+func TestBlockScalarRewrite_ValueIntegrity(t *testing.T) {
+	t.Skip("SEPARATE pre-existing defect, NOT #123: rewriting a multi-line block-SCALAR " +
+		"key leaks its continuation lines into the new value (spliceFrontmatter maxNodeLine " +
+		"undercount). Reproduces on pure LF, independent of lone-CR. Standing marker for " +
+		"issue TBD (block-scalar undercount); unskip when fixed.")
+
+	cases := []struct{ name, fm string }{
+		{"lf", "lead: L\n" + "note: |\n  line1\n  line2\n" + "trail: T\n"},
+		{"cr_before", "lead: L\r" + "note: |\n  line1\n  line2\n" + "trail: T\n"},
+		{"cr_inside", "lead: L\n" + "note: |\n  line1\r  line2\n" + "trail: T\n"},
+	}
+	c := New()
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			raw := "---\n" + tc.fm + "---\n# Body\n"
+			con, err := c.ParseConcept("doc.md", []byte(raw))
+			if err != nil {
+				t.Fatalf("input refused on read: %v\ninput: %q", err, raw)
+			}
+			con.Frontmatter.Set("note", newScalar) // rewrite the block-scalar key
+
+			out, err := c.Serialize(con)
+			if err != nil {
+				t.Fatalf("Serialize: %v", err)
+			}
+			re, reErr := c.ParseConcept("doc.md", out)
+			if reErr != nil {
+				t.Fatalf("output does not re-parse (%v):\n%q", reErr, out)
+			}
+			// The value-integrity assertion the block-scalar undercount defect breaks:
+			// the rewritten block-scalar key must hold EXACTLY the new value, with no
+			// continuation lines leaked in.
+			if v, _ := re.Frontmatter.Get("note"); v != newScalar {
+				t.Errorf("block-scalar value integrity: note = %#v, want %q (continuation lines leaked)\noutput:\n%q", v, newScalar, out)
+			}
+		})
+	}
+}
