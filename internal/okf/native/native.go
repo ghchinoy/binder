@@ -54,6 +54,22 @@ func (c *Codec) ParseConcept(relPath string, raw []byte) (*okf.Concept, error) {
 		return nil, err
 	}
 
+	// Issue #123, Option C2, edit 2 of 2: normalise a lone "\r" to "\n" ONLY
+	// within the frontmatter region. CRLF was already collapsed above, so every
+	// remaining "\r" in fmText is a lone CR. yaml.v3 counts a lone CR as a line
+	// break but spliceFrontmatter's line model (SplitAfter on "\n") does not, so
+	// the two disagree on line numbers and the splice silently corrupts or bricks
+	// the file. Normalising here makes the one line model the codec relies on
+	// hold by construction, and keeps the byte-preserving splice untouched.
+	//
+	// The BODY is deliberately NOT normalised: body bytes, lone CRs included,
+	// survive verbatim. That is precisely what distinguishes C2 from C1 (which
+	// normalised the whole document). See TestLoneCRBody_PreservedUnderC2. This
+	// extends the already-ratified CRLF→LF frontmatter normalisation to the one
+	// line ending the codec previously forgot; it is a disclosed residual bound,
+	// not an accident.
+	fmText = strings.ReplaceAll(fmText, "\r", "\n")
+
 	fm, err := parseFrontmatter(fmText)
 	if err != nil {
 		return nil, err
@@ -159,6 +175,17 @@ func (c *Codec) encodeFrontmatter(con *okf.Concept) ([]byte, error) {
 //   - each key present in fm but absent from the source, freshly encoded, in fm
 //     order (the additive keys enrich/convert appended).
 func spliceFrontmatter(fmText string, origRoot *yaml.Node, origOM, fm *okf.OrderedMap) ([]byte, error) {
+	// Defence in depth (issue #123, plan §1.3). The splice indexes its line array
+	// with yaml.v3's line numbers, which count a lone "\r" as a break; this line
+	// array does not. ParseConcept normalises the frontmatter region so no "\r"
+	// can reach here, making this branch unreachable by construction. It is an
+	// ERROR rather than a silent repair on purpose: a future regression at the
+	// normalisation boundary then fails LOUDLY (P46) instead of destroying keys
+	// quietly. See TestSpliceRefusesCarriageReturn.
+	if strings.IndexByte(fmText, '\r') >= 0 {
+		return nil, fmt.Errorf("spliceFrontmatter: frontmatter text contains a carriage return; " +
+			"the line model was not normalised before splicing (issue #123 guard)")
+	}
 	lines := strings.SplitAfter(fmText, "\n") // each element keeps its trailing "\n"
 
 	type span struct {
@@ -858,7 +885,13 @@ func normalizeConceptID(id string) string {
 // fence. It errors if the document does not open with "---" or the fence is
 // never closed (spec §11.1).
 func splitFrontmatter(text string) (fmText, body string, err error) {
-	lines := strings.SplitAfter(text, "\n")
+	// Split on every line break yaml.v3 recognises — "\r\n", "\n", AND a lone
+	// "\r" (issue #123, Option C2, edit 1 of 2). A plain SplitAfter on "\n" fuses
+	// a closing "---" that is preceded by a lone CR onto the previous value line,
+	// so the fence is never found and binder refuses the file ("unterminated '---'
+	// block"). The fence scan must be CR-aware FIRST: the frontmatter region
+	// cannot be normalised (edit 2) until it can be located.
+	lines := splitLinesKeepEnds(text)
 	if len(lines) == 0 || strings.TrimRight(lines[0], "\r\n") != "---" {
 		return "", "", fmt.Errorf("missing frontmatter: document does not start with '---'")
 	}
@@ -871,6 +904,36 @@ func splitFrontmatter(text string) (fmText, body string, err error) {
 		offset += len(lines[i])
 	}
 	return "", "", fmt.Errorf("invalid frontmatter: unterminated '---' block")
+}
+
+// splitLinesKeepEnds splits text into lines, treating "\r\n", a lone "\r", and
+// "\n" all as line terminators — the YAML 1.1 line-break set that yaml.v3 honours
+// — and keeps each terminator attached to its line so byte offsets are preserved
+// exactly. This is what lets splitFrontmatter's fence scan (issue #123) recognise
+// a closing "---" that a lone CR precedes; the ordinary strings.SplitAfter(text,
+// "\n") knows only one of these three breaks.
+func splitLinesKeepEnds(text string) []string {
+	var lines []string
+	start := 0
+	for i := 0; i < len(text); i++ {
+		switch text[i] {
+		case '\n':
+			lines = append(lines, text[start:i+1])
+			start = i + 1
+		case '\r':
+			if i+1 < len(text) && text[i+1] == '\n' {
+				lines = append(lines, text[start:i+2])
+				i++ // consume the "\n" of a "\r\n" pair
+			} else {
+				lines = append(lines, text[start:i+1])
+			}
+			start = i + 1
+		}
+	}
+	if start < len(text) {
+		lines = append(lines, text[start:])
+	}
+	return lines
 }
 
 // parseFrontmatter parses a YAML frontmatter block into an OrderedMap, keeping
