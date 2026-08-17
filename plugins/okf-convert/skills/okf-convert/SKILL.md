@@ -36,8 +36,10 @@ The OKF v0.2 specification itself is
 
 binder stamps an honest `generated: binder/<version>` provenance mark, and it
 writes a `verified` actor or `sources` **only** from what you point it at — a
-`verified` stamp only when you pass `--verified-by`, and `sources` only from real
-corpus content you map. That is the mechanism binder is built on, not a proof it
+`verified` stamp only from an attestation you supply, through one of three routes
+(the `--verified-by` flag, a `verified_by:` default you set in your **global**
+config, or the `verified_by` input to the MCP `convert` tool), and `sources` only
+from real corpus content you map. That is the mechanism binder is built on, not a proof it
 can never invent trust — closing the one corruption path we found does not
 establish that no path invents. **So verify what binder wrote — two checks, both
 required, they are not interchangeable.** (1) Reparse the output with a YAML
@@ -55,17 +57,21 @@ validate` and `binder review` report this corruption class as healthy, so binder
 own output cannot be the check. As of
 `binder/0.3.1` it is also **safe by default**: with no `--verified-by` flag and
 no attester *you* configured, `convert` and `enrich` write **no** `verified`
-stamp at all. A stamp is written only when you decide it, and every stamp is
-disclosed (`.result.verified` in `--json`). The remaining trap is a *default you
+stamp at all. On any surface a stamp is written only when you supply one — by the
+`--verified-by` flag, a global default you set, or the MCP `convert` input — and
+every stamp is disclosed (`.result.verified` in `--json`). The remaining trap is a *default you
 set* silently applying to a corpus you did not mean it for:
 
-> A `verified` stamp is written only from an **explicit `--verified-by`**, or
-> from a default **you set** in your **global** config
-> (`~/.config/binder/config.yaml`). A global `verified_by:` counts as you having
-> chosen a default and **will** stamp `convert` and `enrich` (which writes into
-> your **source tree**) without the flag. **Neither `BINDER_VERIFIED_BY` (env)
-> nor a repo-local `./.binder.yaml` authorizes stamping** — binder refuses both
-> and discloses the refused value in `.result.verified.note`.
+> A `verified` stamp is written only from one of three explicit routes: an
+> **explicit `--verified-by`**, a default **you set** in your **global** config
+> (`~/.config/binder/config.yaml`), or the **`verified_by` input to the MCP
+> `convert` tool** (the MCP analog of the flag). A global `verified_by:` counts as
+> you having chosen a default and **will** stamp `convert` and `enrich` (which
+> writes into your **source tree**) without the flag. On the CLI, **neither
+> `BINDER_VERIFIED_BY` (env) nor a repo-local `./.binder.yaml` authorizes
+> stamping** — binder refuses both and discloses the refused value in
+> `.result.verified.note`; the MCP surface reaches the writer only from its
+> explicit `verified_by` input, never from env or any config.
 
 So the risk is no longer a stray repo-local file *or* an env export — both are
 now refused. The remaining risk is a machine-wide **global** default applying
@@ -84,7 +90,9 @@ run anything.
 binder will also **decline to co-sign**: when a concept already carries a
 `verified` attestation from a *different* identity, a non-explicit (global-config)
 default does **not** add a second stamp — it skips and discloses the skip under
-`.result.verified.skipped`. Only an explicit `--verified-by` co-signs. Propose
+`.result.verified.skipped`. Only an **explicit** attestation co-signs — the
+`--verified-by` flag or the MCP `convert` `verified_by` input — never a
+non-explicit global-config default. Propose
 trust to the user; defer all stamping to deterministic binder. The full
 treatment — including the `--verified-by` guardrail — is in
 [`references/trust-discipline.md`](references/trust-discipline.md), loaded at
@@ -285,8 +293,10 @@ binder validate <bundle> --json | jq '.result.findings'   # [] ⇒ conformant (e
 binder review   <bundle> --json | jq '.result | {by_type, tiers, orphans, stale, unresolved}'
 ```
 
-**`convert` applies the same stamping decision as `enrich`** — the CLI's
-`--verified-by` resolution, not a quirk of either command. A **global**-config
+**On the CLI, `convert` applies the same `--verified-by` resolution as `enrich`**,
+not a quirk of either command — and this equivalence is a CLI fact: the MCP
+`convert` tool takes its `verified_by` as a direct input and does not go through
+that resolution, and there is no MCP `enrich` tool. A **global**-config
 default *you set* that you don't suppress writes `verified` into **every concept
 in the bundle**, and `review` then reports them `human-reviewed` rather than
 `unverified`. Neither `BINDER_VERIFIED_BY` nor a repo-local `./.binder.yaml`
@@ -328,10 +338,10 @@ for the raw edge export, and `binder infer <corpus> --json` to propose a
 ### 6. Trust-extraction review — the never-fabricate-trust crux
 
 Load [`references/trust-discipline.md`](references/trust-discipline.md). binder
-stamps an honest `generated: binder/<ver>` and writes a `verified` actor only when
-you pass `--verified-by` — by default it writes no `verified` at all, but a
-default **you set** in your global
-config will stamp one, and it discloses every stamp under `.result.verified`.
+stamps an honest `generated: binder/<ver>` and writes a `verified` actor only from
+an attestation you supply — the `--verified-by` flag, a default **you set** in your
+global config, or the `verified_by` input to the MCP `convert` tool — by default it
+writes no `verified` at all, and it discloses every stamp under `.result.verified`.
 Hold the line binder cannot hold for you:
 
 - No `--verified-by` unless a **real, named actor actually attests** — never
