@@ -157,8 +157,9 @@ func TestLineEndingShapeMatrix(t *testing.T) {
 // block-SCALAR shapes the REWRITTEN value's integrity is NOT asserted here: rewriting
 // a multi-line block scalar leaks its continuation lines into the new value via a
 // SEPARATE, line-ending-independent defect (the spliceFrontmatter maxNodeLine
-// undercount), which reproduces on pure LF and is therefore outside the #123 lone-CR
-// scope. That assertion lives in the Skipped TestBlockScalarRewrite_ValueIntegrity.
+// undercount — a REGRESSION introduced by 427503e and shipped in 0.3.2, NOT #123 and
+// NOT pre-existing), which reproduces on pure LF and is therefore outside the #123
+// lone-CR scope. That assertion lives in the Skipped TestBlockScalarRewrite_ValueIntegrity.
 // The lone-CR properties for block-scalar shapes (accepted, re-parses, no key lost,
 // no duplicate, neighbours intact) REMAIN asserted here so that coverage is not lost.
 func TestLineEndingShapeMatrix_ValueShapes(t *testing.T) {
@@ -170,8 +171,9 @@ func TestLineEndingShapeMatrix_ValueShapes(t *testing.T) {
 		rewrite string
 		// valueIntegrityDeferred marks a value shape whose REWRITTEN value integrity is
 		// NOT asserted here because it is broken by a SEPARATE, line-ending-independent
-		// defect (the block-scalar maxNodeLine undercount — see
-		// TestBlockScalarRewrite_ValueIntegrity, which is Skipped). The #123 lone-CR
+		// defect (the block-scalar maxNodeLine undercount — a REGRESSION from 427503e,
+		// shipped 0.3.2, not pre-existing — see TestBlockScalarRewrite_ValueIntegrity,
+		// which is Skipped). The #123 lone-CR
 		// properties (accepted on read, re-parses, no key lost, no duplicate, surrounding
 		// scalars intact) ARE still asserted for these shapes — that is the coverage we
 		// must not lose while extracting the unrelated assertion.
@@ -381,20 +383,27 @@ func TestLineEndingShapeMatrix_BlockSeqPerPosition(t *testing.T) {
 
 const newScalar = "REWRITTEN"
 
-// TestBlockScalarRewrite_ValueIntegrity isolates a SEPARATE, pre-existing defect that
-// is NOT issue #123. When the key of a multi-line block SCALAR value is REWRITTEN,
-// spliceFrontmatter's maxNodeLine UNDER-COUNTS the block scalar's line span, so its
-// continuation lines are left behind and leak into the rewritten value: rewriting
-// `note` to "REWRITTEN" over `note: |` / `  line1` / `  line2` yields the reparsed
-// value "REWRITTEN line1 line2" instead of "REWRITTEN". The undercount is documented
-// in maxNodeLine's own comment as acceptable ONLY for an UNCHANGED block scalar (where
-// the surplus lines fall into the next key's head region and the block stays intact);
-// when the key is CHANGED the surplus leaks.
+// TestBlockScalarRewrite_ValueIntegrity isolates a SEPARATE defect that is NOT issue
+// #123 and — importantly — is NOT pre-existing: it is a REGRESSION introduced by commit
+// 427503e (the byte-faithfulness commit this release advertises) and shipped in 0.3.2.
+// It reproduces on the released 0.3.2 binary via `enrich --overwrite-keys` on a
+// block-scalar key, so users have it today. (git log -S on both spliceFrontmatter and
+// maxNodeLine returns 427503e and only 427503e.)
+//
+// When the key of a multi-line block SCALAR value is REWRITTEN, spliceFrontmatter's
+// maxNodeLine UNDER-COUNTS the block scalar's line span, so its continuation lines are
+// left behind and leak into the rewritten value: rewriting `note` to "REWRITTEN" over
+// `note: |` / `  line1` / `  line2` yields the reparsed value "REWRITTEN line1 line2"
+// instead of "REWRITTEN". The undercount is documented in maxNodeLine's own comment as
+// acceptable ONLY for an UNCHANGED block scalar (where the surplus lines fall into the
+// next key's head region and the block stays intact); when the key is CHANGED the
+// surplus leaks. Before 427503e the changed-key path re-serialised through yaml.v3,
+// which bounds the block scalar correctly — hence a regression, not a longstanding bug.
 //
 // It reproduces on PURE LF with no carriage return anywhere (the `lf` case below), so
-// it is independent of line endings and outside the lone-CR (#123) scope. This test
-// was split out of TestLineEndingShapeMatrix_ValueShapes/block_scalar/* after review:
-// those cells originally welded this value-integrity assertion to the #123 lone-CR
+// it is line-ending-independent and outside the lone-CR (#123) scope. This test was
+// split out of TestLineEndingShapeMatrix_ValueShapes/block_scalar/* after review: those
+// cells originally welded this value-integrity assertion to the #123 lone-CR
 // assertions, and C2 satisfies the latter but not the former. The lone-CR half stays
 // asserted (and green) in TestLineEndingShapeMatrix_ValueShapes; only this integrity
 // assertion moved here.
@@ -406,10 +415,14 @@ const newScalar = "REWRITTEN"
 // TODO(#<block-scalar-undercount-issue>): binder-030-em is assigning an issue number;
 // drop it into this skip reason and the comment above when it arrives.
 func TestBlockScalarRewrite_ValueIntegrity(t *testing.T) {
-	t.Skip("SEPARATE pre-existing defect, NOT #123: rewriting a multi-line block-SCALAR " +
-		"key leaks its continuation lines into the new value (spliceFrontmatter maxNodeLine " +
-		"undercount). Reproduces on pure LF, independent of lone-CR. Standing marker for " +
-		"issue TBD (block-scalar undercount); unskip when fixed.")
+	t.Skip("SEPARATE defect, NOT #123 and NOT pre-existing: a REGRESSION introduced by " +
+		"427503e (the byte-faithfulness commit) and shipped in 0.3.2. Rewriting a multi-line " +
+		"block-SCALAR key leaks its continuation lines into the new value (spliceFrontmatter " +
+		"maxNodeLine undercounts a CHANGED block scalar; before 427503e the changed-key path " +
+		"re-serialised through yaml.v3, which bounds it correctly). Reproduces on the released " +
+		"0.3.2 binary via `enrich --overwrite-keys` on a block-scalar key, on pure LF — " +
+		"line-ending-independent, unrelated to lone-CR. Standing marker for issue TBD " +
+		"(block-scalar undercount regression); unskip when fixed.")
 
 	cases := []struct{ name, fm string }{
 		{"lf", "lead: L\n" + "note: |\n  line1\n  line2\n" + "trail: T\n"},
