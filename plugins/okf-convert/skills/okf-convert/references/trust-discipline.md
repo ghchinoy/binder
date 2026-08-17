@@ -5,7 +5,20 @@ drive binder, **propose trust, never fabricate it; defer all stamping to the
 deterministic tool.** binder is built for that division of labour — it writes a
 `verified` actor or `sources` only from signals you point it at, and only when you
 pass `--verified-by` — so your job is to decide and its job is to stamp only what
-you decided.
+you decided. Then **verify what it wrote — two checks, both required, they are not
+interchangeable.** (1) Reparse binder's output with a YAML parser other than
+binder's: catches a **fabricated actor**, visible in the parse. (2) **Copy the
+file *before* you invoke binder** and diff the result against that copy: the
+**only** check that catches **destroyed content**, because with more than one
+block-scalar attestation every value but the last can be lost and the damaged file
+**reparses cleanly and shows nothing missing** — with no prior copy the loss is
+**undetectable**, because nothing left in the file reveals it, so reparse cannot
+find it and keeping the copy is not optional. A correct diff shows exactly
+**one** change — the attestation you asked for; every pre-existing entry
+byte-identical, and any altered entry or any block-scalar value that shrank or
+vanished **is** the defect. Closing the one corruption path we found does not
+prove none remains, and `binder validate`/`binder review` report this class as
+healthy — so binder cannot be its own check.
 
 ## What binder does (and does not) stamp
 
@@ -14,7 +27,20 @@ you decided.
 - binder writes a `verified` actor or `sources` **only** from what you
   explicitly point it at: trust mapping is off by default and maps only the
   signals you name (`--source-keys`, `--map-citations`), from real corpus content;
-  a `verified` stamp is written only when you pass `--verified-by`.
+  a `verified` stamp is written only when you pass `--verified-by`. That is the
+  mechanism, not a proof binder can never invent — so **verify what it wrote, two
+  checks, both required and not interchangeable**: (1) reparse the output with a
+  non-binder YAML parser to catch a **fabricated actor** (visible in the parse);
+  (2) **copy the file *before* you invoke binder** and diff the result against that
+  copy — the **only** check that catches **destroyed content**, since with more
+  than one block-scalar attestation every value but the last can be lost and the
+  damaged file **reparses cleanly and shows nothing missing** — with no prior copy
+  the loss is **undetectable** (nothing left in the file reveals it), so reparse
+  cannot find it and keeping the copy is not optional. A correct diff shows
+  exactly **one** change — the attestation you asked for; every pre-existing entry
+  byte-identical, and any altered entry or shrunken/vanished block scalar **is**
+  the defect. `binder validate`/`binder review` pass this corruption class as
+  healthy, so they cannot be the check.
 - **binder is safe by default (`binder/0.3.1`+): no flag and no default *you*
   set means no `verified` stamp.** A stamp is written without the flag only from
   `verified_by:` in your **global** config (`~/.config/binder/config.yaml`) — a

@@ -37,7 +37,22 @@ The OKF v0.2 specification itself is
 binder stamps an honest `generated: binder/<version>` provenance mark, and it
 writes a `verified` actor or `sources` **only** from what you point it at — a
 `verified` stamp only when you pass `--verified-by`, and `sources` only from real
-corpus content you map. As of
+corpus content you map. That is the mechanism binder is built on, not a proof it
+can never invent trust — closing the one corruption path we found does not
+establish that no path invents. **So verify what binder wrote — two checks, both
+required, they are not interchangeable.** (1) Reparse the output with a YAML
+parser other than binder's: this catches a **fabricated actor**, which is visible
+in the parse. (2) **Copy the file *before* you invoke binder** and diff the result
+against that copy: this is the **only** check that catches **destroyed content**,
+because with more than one block-scalar attestation every value but the last can
+be lost and the damaged file still **reparses cleanly and shows nothing missing**
+— with no prior copy the loss is **undetectable**, because nothing left in the
+file reveals it, so reparse cannot find it and keeping the copy is not optional. A
+correct diff shows exactly **one** change — the attestation you asked for; every
+pre-existing entry must be byte-identical, and any altered entry or any
+block-scalar value that shrank or vanished **is** the defect. `binder
+validate` and `binder review` report this corruption class as healthy, so binder's
+own output cannot be the check. As of
 `binder/0.3.1` it is also **safe by default**: with no `--verified-by` flag and
 no attester *you* configured, `convert` and `enrich` write **no** `verified`
 stamp at all. A stamp is written only when you decide it, and every stamp is
@@ -329,6 +344,19 @@ Hold the line binder cannot hold for you:
   that carry *real* provenance.
 - Never store a credibility score/tier — tiers are **derived** (`binder review`
   computes them on read).
+- **Verify what binder wrote — two checks, both required, not interchangeable.**
+  (1) Reparse the output with a YAML parser other than binder's — catches a
+  **fabricated actor** (visible in the parse). (2) **Copy the file *before* you run
+  binder** and diff the result against that copy — the **only** check that catches
+  **destroyed content**: with more than one block-scalar attestation every value
+  but the last can be lost, and the damaged file **reparses cleanly and shows
+  nothing missing** — with no prior copy the loss is **undetectable** (nothing left
+  in the file reveals it), so reparse cannot find it and keeping the copy is not
+  optional. A correct diff shows exactly **one** change — the attestation you asked
+  for; every pre-existing entry byte-identical, and any altered entry or
+  shrunken/vanished block scalar **is** the defect.
+  `binder validate`/`binder review` report this class as healthy, so binder's own
+  output cannot be the check.
 
 Propose trust to the user; defer all stamping to deterministic binder.
 
