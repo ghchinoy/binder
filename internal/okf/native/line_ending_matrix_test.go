@@ -160,7 +160,8 @@ func TestLineEndingShapeMatrix(t *testing.T) {
 // undercount — a REGRESSION introduced by 427503e, first shipped in v0.3.1 and still
 // present in v0.3.2, NOT #123 and
 // NOT pre-existing), which reproduces on pure LF and is therefore outside the #123
-// lone-CR scope. That assertion lives in the Skipped TestBlockScalarRewrite_ValueIntegrity.
+// lone-CR scope. That assertion lives in TestBlockScalarRewrite_ValueIntegrity
+// (now un-skipped — the undercount is fixed).
 // The lone-CR properties for block-scalar shapes (accepted, re-parses, no key lost,
 // no duplicate, neighbours intact) REMAIN asserted here so that coverage is not lost.
 func TestLineEndingShapeMatrix_ValueShapes(t *testing.T) {
@@ -175,7 +176,7 @@ func TestLineEndingShapeMatrix_ValueShapes(t *testing.T) {
 		// defect (the block-scalar maxNodeLine undercount — a REGRESSION from 427503e,
 		// first shipped in v0.3.1 and still present in v0.3.2, not pre-existing — see
 		// TestBlockScalarRewrite_ValueIntegrity,
-		// which is Skipped). The #123 lone-CR
+		// now un-skipped). The #123 lone-CR
 		// properties (accepted on read, re-parses, no key lost, no duplicate, surrounding
 		// scalars intact) ARE still asserted for these shapes — that is the coverage we
 		// must not lose while extracting the unrelated assertion.
@@ -412,23 +413,13 @@ const newScalar = "REWRITTEN"
 // asserted (and green) in TestLineEndingShapeMatrix_ValueShapes; only this integrity
 // assertion moved here.
 //
-// SKIPPED, not deleted: a named skipped test is a standing marker for the defect; a
-// deleted one is an unrecorded decision. Unskip when the block-scalar undercount is
-// fixed.
-//
-// TODO(#<block-scalar-undercount-issue>): binder-030-em is assigning an issue number;
-// drop it into this skip reason and the comment above when it arrives.
+// UN-SKIPPED: the block-scalar span undercount is now fixed (maxNodeLine recovers
+// the block scalar's true end from the source lines). This test — kept exactly as
+// the test hand wrote it, only un-skipped — now asserts the value integrity it was
+// a standing marker for. The nested reach of the same defect (Case E: a block
+// scalar as a field of an entry INSIDE a rewritten container) is asserted in
+// TestBlockScalarRewrite_NestedInVerifiedEntry below.
 func TestBlockScalarRewrite_ValueIntegrity(t *testing.T) {
-	t.Skip("SEPARATE defect, NOT #123 and NOT pre-existing: a REGRESSION introduced by " +
-		"427503e (the byte-faithfulness commit), FIRST shipped in v0.3.1 and still present in " +
-		"v0.3.2 (both functions absent at v0.3.0; git tag --contains 427503e == {v0.3.1, " +
-		"v0.3.2}). Rewriting a multi-line block-SCALAR key leaks its continuation lines into " +
-		"the new value (spliceFrontmatter maxNodeLine undercounts a CHANGED block scalar; " +
-		"before 427503e the changed-key path re-serialised through yaml.v3, which bounds it " +
-		"correctly). Reproduces on the released 0.3.2 binary via `enrich --overwrite-keys` on " +
-		"a block-scalar key, on pure LF — line-ending-independent, unrelated to lone-CR. " +
-		"Standing marker for issue TBD (block-scalar undercount regression); unskip when fixed.")
-
 	cases := []struct{ name, fm string }{
 		{"lf", "lead: L\n" + "note: |\n  line1\n  line2\n" + "trail: T\n"},
 		{"cr_before", "lead: L\r" + "note: |\n  line1\n  line2\n" + "trail: T\n"},
@@ -459,5 +450,85 @@ func TestBlockScalarRewrite_ValueIntegrity(t *testing.T) {
 				t.Errorf("block-scalar value integrity: note = %#v, want %q (continuation lines leaked)\noutput:\n%q", v, newScalar, out)
 			}
 		})
+	}
+}
+
+// TestBlockScalarRewrite_NestedInVerifiedEntry is the nested reach of the same
+// block-scalar span undercount — "Case E". A block scalar is NOT the rewritten
+// key's own value; it is a FIELD of a pre-existing entry INSIDE a container that
+// is rewritten (a `verified` list gaining an appended stamp, the ordinary
+// `enrich --verified-by` path). Measured on the released 0.3.2 binary, pure LF, no
+// carriage return: the appended stamp spliced into the MIDDLE of the pre-existing
+// entry — its block scalar was severed and the orphaned body folded into the new
+// actor's identity (validate stayed conformant, exit 0). This reaches the TRUST
+// path via a user-authored block-scalar field and is reachable by plain
+// enrich --verified-by, so the earlier "own value only / off the trust path"
+// reading did not hold. Same root cause as TestBlockScalarRewrite_ValueIntegrity,
+// one level deeper; the maxNodeLine source-aware fix covers both.
+//
+// Asserted here: appending a second stamp to a verified entry that carries a
+// block-scalar field leaves the pre-existing entry byte-intact (its block scalar
+// survives verbatim) and gives the appended stamp a clean, unfolded identity.
+func TestBlockScalarRewrite_NestedInVerifiedEntry(t *testing.T) {
+	c := New()
+	raw := "---\n" +
+		"title: Doc\n" +
+		"verified:\n" +
+		"  - by: human:bob\n" +
+		"    at: \"2024-01-01T00:00:00Z\"\n" +
+		"    note: |\n" +
+		"      inner1\n" +
+		"      inner2\n" +
+		"---\n# Body\n"
+	con, err := c.ParseConcept("doc.md", []byte(raw))
+	if err != nil {
+		t.Fatalf("input refused on read: %v\ninput: %q", err, raw)
+	}
+	// Append a second stamp exactly as convert.applyVerifiedBy does: take the parsed
+	// verified list (so element 0 IS the pre-existing bob entry) and add alice.
+	v, ok := con.Frontmatter.Get("verified")
+	if !ok {
+		t.Fatalf("verified missing after parse")
+	}
+	list, ok := v.([]any)
+	if !ok || len(list) != 1 {
+		t.Fatalf("verified parsed as %#v, want a 1-element []any", v)
+	}
+	list = append(list, map[string]any{"by": "human:alice", "at": "2026-08-17T05:00:00Z"})
+	con.Frontmatter.Set("verified", list)
+
+	out, err := c.Serialize(con)
+	if err != nil {
+		t.Fatalf("Serialize: %v", err)
+	}
+	// Byte-level: the pre-existing bob block scalar must survive verbatim and must
+	// not have been split by the inserted stamp.
+	if !strings.Contains(string(out), "note: |\n      inner1\n      inner2\n") {
+		t.Errorf("pre-existing block scalar was severed (Case E):\n%s", out)
+	}
+
+	re, reErr := c.ParseConcept("doc.md", out)
+	if reErr != nil {
+		t.Fatalf("output does not re-parse (%v):\n%s", reErr, out)
+	}
+	rv, _ := re.Frontmatter.Get("verified")
+	rlist, ok := rv.([]any)
+	if !ok || len(rlist) != 2 {
+		t.Fatalf("verified reparsed as %#v, want 2 entries (bob preserved, alice appended)\noutput:\n%s", rv, out)
+	}
+	get := func(e any, k string) any {
+		m, _ := e.(map[string]any)
+		return m[k]
+	}
+	// bob entry preserved, block scalar intact.
+	if got := get(rlist[0], "by"); got != "human:bob" {
+		t.Errorf("entry[0].by = %#v, want %q\noutput:\n%s", got, "human:bob", out)
+	}
+	if got := get(rlist[0], "note"); got != "inner1\ninner2\n" {
+		t.Errorf("entry[0].note = %#v, want %q (block scalar corrupted)\noutput:\n%s", got, "inner1\ninner2\n", out)
+	}
+	// alice identity is clean — the orphaned body must NOT have folded into it.
+	if got := get(rlist[1], "by"); got != "human:alice" {
+		t.Errorf("entry[1].by = %#v, want %q (block-scalar body folded into actor identity)\noutput:\n%s", got, "human:alice", out)
 	}
 }

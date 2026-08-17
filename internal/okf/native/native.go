@@ -197,7 +197,7 @@ func spliceFrontmatter(fmText string, origRoot *yaml.Node, origOM, fm *okf.Order
 	for i := 0; i+1 < len(origRoot.Content); i += 2 {
 		kn, vn := origRoot.Content[i], origRoot.Content[i+1]
 		keyLine := kn.Line - 1
-		valEnd := maxNodeLine(vn) - 1
+		valEnd := maxNodeLine(vn, lines) - 1
 		if valEnd < keyLine {
 			valEnd = keyLine
 		}
@@ -370,7 +370,7 @@ func spliceSequenceItems(valNode *yaml.Node, desired any, lines []string) ([]byt
 	for i, dv := range want {
 		if i < len(items) && reflect.DeepEqual(nodeToValue(items[i]), dv) {
 			start := items[i].Line - 1
-			end := maxNodeLine(items[i]) - 1
+			end := maxNodeLine(items[i], lines) - 1
 			if start < 0 || end < start || end >= len(lines) {
 				return nil, false
 			}
@@ -688,7 +688,7 @@ func spliceBlockMapToSeq(key string, valNode *yaml.Node, desired any, lines []st
 		return nil, false
 	}
 	start := valNode.Line - 1
-	end := maxNodeLine(valNode) // exclusive: last source line index is end-1
+	end := maxNodeLine(valNode, lines) // exclusive: last source line index is end-1
 	if start < 0 || end > len(lines) || end <= start {
 		return nil, false
 	}
@@ -757,17 +757,62 @@ func encodeSeqItem(v any, indent string) ([]byte, error) {
 // maxNodeLine returns the greatest source line number reached by n or any of its
 // descendants — the last line the value occupies in the source. yaml.v3 records
 // a line on every node, so for block and flow structures alike this bounds the
-// key's source span. (Multi-line block scalars have no child nodes and are
-// under-counted; the surplus lines simply fall into the next key's head region
-// and are still emitted verbatim, so the block stays intact.)
-func maxNodeLine(n *yaml.Node) int {
+// key's source span.
+//
+// A literal/folded block scalar is the exception: yaml.v3 records only the line
+// of its `|`/`>` indicator, not the body that follows, and a block scalar is a
+// leaf (no Content to recurse into). Left uncorrected the body lines are disowned
+// by the value's span; for a CHANGED key that leaks them — either the key's own
+// value (top-level rewrite) or, one level deeper, an entry INSIDE a rewritten
+// container (a `verified` list whose pre-existing stamp carries a block-scalar
+// field), where the appended stamp splices into the middle of the entry and the
+// orphaned body folds into the new actor identity. This is a regression from
+// 427503e (first shipped v0.3.1, present through v0.3.2); counting newlines in
+// n.Value is unreliable (folding and chomping decouple Value from the physical
+// line count), so we recover the true end from the SOURCE: the body is the run of
+// following lines indented at least as deep as its first non-blank line. lines is
+// the 0-indexed source array. See TestBlockScalarRewrite_ValueIntegrity.
+func maxNodeLine(n *yaml.Node, lines []string) int {
 	m := n.Line
+	if n.Kind == yaml.ScalarNode && n.Style&(yaml.LiteralStyle|yaml.FoldedStyle) != 0 {
+		if e := blockScalarEndLine(n.Line-1, lines) + 1; e > m { // +1: 0-indexed -> 1-based
+			m = e
+		}
+	}
 	for _, c := range n.Content {
-		if l := maxNodeLine(c); l > m {
+		if l := maxNodeLine(c, lines); l > m {
 			m = l
 		}
 	}
 	return m
+}
+
+// blockScalarEndLine returns the 0-indexed source line of the LAST non-blank line
+// belonging to a literal/folded block scalar whose `|`/`>` indicator is on line
+// startIdx (0-indexed). The body is the run of subsequent lines that are blank or
+// indented at least as deep as the first non-blank body line; it ends at the
+// first non-blank line indented less than that. Trailing blank lines are excluded
+// from the span so they stay in the neighbouring head/trailing region and re-emit
+// verbatim. When there is no body (nothing follows, or the next non-blank line is
+// not indented past the first body line) it returns startIdx unchanged.
+func blockScalarEndLine(startIdx int, lines []string) int {
+	end := startIdx
+	bodyIndent := -1
+	for i := startIdx + 1; i < len(lines); i++ {
+		trimmed := strings.TrimRight(lines[i], "\r\n")
+		if strings.TrimSpace(trimmed) == "" {
+			continue // blank: interior or trailing; do not advance end on its own
+		}
+		indent := len(trimmed) - len(strings.TrimLeft(trimmed, " "))
+		if bodyIndent == -1 {
+			bodyIndent = indent
+		}
+		if indent < bodyIndent {
+			break // dedent: the block scalar ended before this line
+		}
+		end = i // a non-blank body line
+	}
+	return end
 }
 
 // encodeOrderedMapPair renders a single "key: value" mapping deterministically
