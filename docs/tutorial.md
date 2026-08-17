@@ -977,4 +977,4 @@ whichever surface you reach for.
   wikilinks, frontmatter refs, hashtags, and `file://` resolution in depth.
 - [Integrating with iwe](integrating-with-iwe.md) takes a converted bundle into
   an outside markdown knowledge-graph tool, and spells out what the trust
-  vocabulary does and does not survive at that seam.
+  vocabulary does and does not survive the handover.

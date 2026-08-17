@@ -3,12 +3,14 @@
 A hands-on mini tutorial. You will take an existing plain-markdown corpus,
 convert it to an OKF v0.2 bundle with binder, and query that bundle as a
 knowledge graph with [iwe](https://github.com/iwe-org/iwe) — no adapter, no
-import step. Then you will walk the seam between the two tools in plain terms:
-what carries across, what does not, and the ways **provenance gets rewritten,
-relocated, or quietly outlived** when iwe writes to a bundle binder produced.
+import step. Then you will trace, in plain terms, how far provenance is
+preserved between the two tools: what carries across, what does not, and the
+ways **provenance gets rewritten, relocated, or quietly outlived** when iwe
+writes to a bundle binder produced.
 
 For the binder side on its own, see the [tutorial](tutorial.md) and the [user
-guide](user_guide.md). This document is about the seam.
+guide](user_guide.md). This document is about where provenance is preserved
+between them.
 
 **What was run to write this.** Every command and every block of output below
 was executed on 2026-08-17 in a Debian 12 container, against:
@@ -61,9 +63,8 @@ binder contributes that iwe cannot. The precise one-line form of the composition
 is:
 
 > **binder onboards and derives trust; iwe queries and retrieves; the
-> derived-trust vocabulary does not
-> cross the seam, and everything iwe writes lands in files whose provenance
-> binder stamped.**
+> derived-trust vocabulary does not carry across, and everything iwe writes
+> lands in files whose provenance binder stamped.**
 
 ---
 
@@ -181,7 +182,8 @@ Three things to notice, because each one comes back in Part 2:
    ([#124](https://github.com/ghchinoy/binder/issues/124), open). The bounds
    that remain even on a recognised fence are *Residual bounds* under
    [`enrich`](user_guide.md#enrich). This tutorial's corpus is inside that
-   scope; a real one may not be, and the seam below assumes the guarantee holds.
+   scope; a real one may not be, and the account below of where provenance is
+   preserved assumes the guarantee holds.
 2. **A `generated` stamp is added, and only when absent.** `stampGenerated`
    (`internal/convert/frontmatter.go`) returns early if the concept already
    carries one. binder does not re-stamp on a later run.
@@ -336,9 +338,9 @@ you should build on it.
 ## Part 2: gotchas — unvarnished
 
 Nothing below is a bug report against iwe. iwe is an *authoring and refactoring*
-tool and behaves correctly by its own contract. The losses happen **at the
-seam**, and they are invisible unless you go looking — which is precisely the
-failure mode binder exists to prevent.
+tool and behaves correctly by its own contract. The losses happen **where
+provenance changes hands**, and they are invisible unless you go looking —
+which is precisely the failure mode binder exists to prevent.
 
 ### Gotcha 1 (the big one): provenance rewriting and relocation
 
@@ -394,7 +396,7 @@ How much does that matter? Measured, both ways:
   binder's byte-faithful round-trip exists to avoid — and the one its own
   *[Residual bounds](user_guide.md#enrich)* enumerate where it cannot. iwe is
   outside that guarantee, so nothing here contradicts it; the point is that the
-  guarantee stops at the seam.
+  guarantee stops where binder hands the bundle to iwe.
 - **Every attestation shows up in the diff.** After any iwe write, `git diff` on
   a bundle contains provenance-block churn that has nothing to do with what you
   meant to change. Review fatigue is how a real provenance change slips through.
@@ -758,7 +760,7 @@ above.
 
 ## What ports, and what does not
 
-| Capability | Across the binder → iwe seam | Notes |
+| Capability | Across the binder → iwe handover | Notes |
 |---|---|---|
 | The bundle itself — markdown + frontmatter + links | **Ports** | No adapter, no import, no index build. `iwe init --okf` writes only `.iwe/`. |
 | OKF frontmatter as query predicates (`type`, `status`, nested fields) | **Ports** | Ordinary frontmatter to iwe; dotted paths work on single mappings. |

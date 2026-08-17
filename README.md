@@ -176,7 +176,7 @@ where to start if you want to change binder rather than just run it.
 > malformed-input recovery, CI usage, and worked end-to-end examples) see the
 > **[user guide](docs/user_guide.md)**. This section is the quickstart. For
 > composing a bundle with an outside knowledge-graph tool — and what the trust
-> vocabulary does and does not survive at that seam — see
+> vocabulary does and does not survive when the bundle changes hands — see
 > **[Integrating with iwe](docs/integrating-with-iwe.md)**.
 
 Convert a plain markdown corpus into an OKF v0.2 bundle:
