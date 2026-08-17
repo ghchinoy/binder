@@ -35,7 +35,9 @@ The OKF v0.2 specification itself is
 ## The one guardrail that overrides everything: never fabricate trust
 
 binder stamps an honest `generated: binder/<version>` provenance mark, and it
-never **invents** a `verified` actor or `sources` out of nothing. As of
+writes a `verified` actor or `sources` **only** from what you point it at — a
+`verified` stamp only when you pass `--verified-by`, and `sources` only from real
+corpus content you map. As of
 `binder/0.3.1` it is also **safe by default**: with no `--verified-by` flag and
 no attester *you* configured, `convert` and `enrich` write **no** `verified`
 stamp at all. A stamp is written only when you decide it, and every stamp is
@@ -311,8 +313,9 @@ for the raw edge export, and `binder infer <corpus> --json` to propose a
 ### 6. Trust-extraction review — the never-fabricate-trust crux
 
 Load [`references/trust-discipline.md`](references/trust-discipline.md). binder
-stamps an honest `generated: binder/<ver>`, never *invents* an actor, and by
-default writes no `verified` at all — but a default **you set** in your global
+stamps an honest `generated: binder/<ver>` and writes a `verified` actor only when
+you pass `--verified-by` — by default it writes no `verified` at all, but a
+default **you set** in your global
 config will stamp one, and it discloses every stamp under `.result.verified`.
 Hold the line binder cannot hold for you:
 

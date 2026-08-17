@@ -1,16 +1,20 @@
 # Trust discipline — never fabricate trust
 
 This is the single overriding guardrail of the `okf-convert` skill. When you
-drive binder you hold the same line binder holds: **propose trust, never
-fabricate it; defer all stamping to the deterministic tool.**
+drive binder, **propose trust, never fabricate it; defer all stamping to the
+deterministic tool.** binder is built for that division of labour — it writes a
+`verified` actor or `sources` only from signals you point it at, and only when you
+pass `--verified-by` — so your job is to decide and its job is to stamp only what
+you decided.
 
 ## What binder does (and does not) stamp
 
 - binder stamps an **honest** `generated: binder/<version>` provenance mark on
   what it produces. That is a true statement about how the file was generated.
-- binder **never invents** a `verified` actor or `sources`. Trust mapping is off
-  by default — it only maps signals you explicitly point it at
-  (`--source-keys`, `--map-citations`), and only from real corpus content.
+- binder writes a `verified` actor or `sources` **only** from what you
+  explicitly point it at: trust mapping is off by default and maps only the
+  signals you name (`--source-keys`, `--map-citations`), from real corpus content;
+  a `verified` stamp is written only when you pass `--verified-by`.
 - **binder is safe by default (`binder/0.3.1`+): no flag and no default *you*
   set means no `verified` stamp.** A stamp is written without the flag only from
   `verified_by:` in your **global** config (`~/.config/binder/config.yaml`) — a
