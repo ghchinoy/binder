@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.3](https://github.com/ghchinoy/binder/compare/v0.3.2...v0.3.3) (2026-08-17)
+
+
+### Bug Fixes
+
+* correct block-scalar span undercount in frontmatter splice ([188372a](https://github.com/ghchinoy/binder/commit/188372ad1f83c4fa190be279950fd5775c85f56d))
+* preserve all keys when frontmatter contains a lone CR ([#129](https://github.com/ghchinoy/binder/issues/129)) ([c6d1241](https://github.com/ghchinoy/binder/commit/c6d12416b11893a2a7b64df72b7208378eddbfd9)), closes [#123](https://github.com/ghchinoy/binder/issues/123)
+
 ## [0.3.2](https://github.com/ghchinoy/binder/compare/v0.3.1...v0.3.2) (2026-08-17)
 
 
