@@ -145,9 +145,11 @@ Every command supports `-h`/`--help`. The root binary supports `-v`/`--version`.
 once with the precedence flag > env > file > default (see [`config`](#config)).
 
 `convert` and `enrich` are complementary and single-purpose: `convert` compiles a
-corpus into a **new bundle** out-of-place (and never touches the source);
-`enrich` brings a **source tree's frontmatter** up to spec **in place** and
-touches frontmatter only (no bodies, no links, no indexes). See [`enrich`](#enrich).
+corpus into a full **bundle** in the output directory — normally separate from the
+source, though the source is rewritten in place if `-o` resolves to it (see
+[`convert`](#convert)); `enrich` brings a **source tree's frontmatter** up to spec
+**in place** and touches frontmatter only (no bodies, no links, no indexes). See
+[`enrich`](#enrich).
 
 ### `convert`
 
@@ -155,8 +157,10 @@ touches frontmatter only (no bodies, no links, no indexes). See [`enrich`](#enri
 binder convert <src> [flags]
 ```
 
-Walks a plain-markdown corpus and writes a conformant OKF v0.2 bundle. It **never
-mutates the source**, is **deterministic**, and **never rejects** an input file.
+Walks a plain-markdown corpus and writes a conformant OKF v0.2 bundle. It is
+**deterministic** and **never rejects** an input file. `convert` writes into the
+output directory, and if the output path resolves to the source directory the
+source is rewritten in place.
 For each non-reserved `.md` it emits one concept with:
 
 - `type` ensured (precedence: existing frontmatter → `--type-map` per-directory →
@@ -324,8 +328,9 @@ their files without a convert-to-temp-and-copy-back dance.
 
 **enrich touches frontmatter ONLY.** Unlike `convert`, it does **no** link
 rewriting, **no** `index.md` generation, **no** `## Related` section, and **no**
-`#hashtag` merge — bodies are otherwise untouched. `binder convert` is unchanged
-(still strictly out-of-place; it never touches `<src>`). Enrichment per file:
+`#hashtag` merge — bodies are otherwise untouched. `binder convert` is unchanged —
+it still writes a full bundle to the output directory and rewrites `<src>` only if
+`-o` resolves to it (see [`convert`](#convert)). Enrichment per file:
 
 - `type` ensured (precedence: existing → `--type-map` per-directory →
   `--default-type`, default `Note`), set **only if absent**;

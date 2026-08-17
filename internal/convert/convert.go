@@ -90,9 +90,9 @@ type Options struct {
 	IncludeGraph     bool // annotate catalog entries with outbound resolved edges
 }
 
-// Convert runs the corpus→bundle conversion. It never mutates the source. With
-// DryRun set it writes nothing. Given identical input and the same Options.Now,
-// output is byte-identical (deterministic).
+// Convert runs the corpus→bundle conversion. With DryRun set it writes nothing.
+// Given identical input and the same Options.Now, output is byte-identical
+// (deterministic).
 //
 // Convert is Analyze followed by writeBundle: the in-memory pipeline (walk,
 // parse, default, resolve, tally) lives in Analyze so read-only consumers such as

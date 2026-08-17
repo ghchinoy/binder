@@ -59,12 +59,13 @@ Two habits make every run in this tutorial reproducible:
   (`generated.at`, a resolved `stale_after`, a `verified.at`) is byte-stable.
 - Read the structured `--json` output, not the prose, when you script or gate.
 
-Throughout, keep two guarantees in mind — two things binder always holds to.
-`binder convert` never mutates its
-source, and binder never fabricates trust: it derives trust tiers from
-frontmatter, stamps an honest `generated` provenance for content it produced, and
-never invents a source or auto-stamps `verified`. A `verified` attestation is
-always something you asked for — Part 2 shows exactly what counts as asking.
+Throughout, keep binder's central design goal in mind — the commitment its
+design is built to hold: not to fabricate trust. Binder derives trust tiers from
+the frontmatter you provide, stamps an honest `generated` provenance for content
+it produced, and requires an explicit `--verified-by` before it will write a
+`verified` attestation — it does not invent a source or auto-stamp one. A
+`verified` attestation is something you asked for, and Part 2 shows exactly what
+counts as asking.
 
 ## Part 1: brownfield, ingesting a corpus you already have
 
@@ -247,7 +248,9 @@ it is off unless you ask for it.
 
 ### Step 3: convert to a bundle
 
-`convert` never touches the source. Write the bundle to a separate directory:
+`convert` leaves the source untouched when the bundle goes elsewhere; an `-o` that
+resolves to the source would rewrite it in place. Write the bundle to a separate
+directory:
 
 ```bash
 SOURCE_DATE_EPOCH=1700000000 binder convert "$CORPUS" -o /tmp/tut-bundle
@@ -804,10 +807,10 @@ exit=2
 
 ### Never fabricate trust
 
-This is the guarantee everything else rests on: if binder ever stamped trust you
-had not asserted, none of the trust tiers it derives could be believed. binder
-derives a trust tier from the
-`verified` signals in the frontmatter (`human:` verification yields
+This is the design principle everything else rests on: if binder ever stamped
+trust you had not asserted, none of the trust tiers it derives could be believed.
+binder derives a trust tier from the `verified` signals in the frontmatter
+(`human:` verification yields
 `human-reviewed`, other verification yields `machine-confirmed`, none yields
 `unverified`); it never stores a credibility score. It stamps an honest
 `generated: binder/<version>` for content it produced, and it never auto-stamps
