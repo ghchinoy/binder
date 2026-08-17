@@ -975,3 +975,6 @@ whichever surface you reach for.
   pipeline with `--json` and the exit-code contract.
 - [Relationship extraction](user_guide.md#relationship-extraction) covers
   wikilinks, frontmatter refs, hashtags, and `file://` resolution in depth.
+- [Integrating with iwe](integrating-with-iwe.md) takes a converted bundle into
+  an outside markdown knowledge-graph tool, and is honest about what the trust
+  vocabulary does and does not survive at that seam.
