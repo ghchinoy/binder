@@ -248,7 +248,9 @@ it is off unless you ask for it.
 
 ### Step 3: convert to a bundle
 
-`convert` never touches the source. Write the bundle to a separate directory:
+`convert` leaves the source untouched when the bundle goes elsewhere; an `-o` that
+resolves to the source would rewrite it in place. Write the bundle to a separate
+directory:
 
 ```bash
 SOURCE_DATE_EPOCH=1700000000 binder convert "$CORPUS" -o /tmp/tut-bundle
