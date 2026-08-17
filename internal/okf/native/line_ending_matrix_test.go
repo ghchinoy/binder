@@ -157,7 +157,8 @@ func TestLineEndingShapeMatrix(t *testing.T) {
 // block-SCALAR shapes the REWRITTEN value's integrity is NOT asserted here: rewriting
 // a multi-line block scalar leaks its continuation lines into the new value via a
 // SEPARATE, line-ending-independent defect (the spliceFrontmatter maxNodeLine
-// undercount — a REGRESSION introduced by 427503e and shipped in 0.3.2, NOT #123 and
+// undercount — a REGRESSION introduced by 427503e, first shipped in v0.3.1 and still
+// present in v0.3.2, NOT #123 and
 // NOT pre-existing), which reproduces on pure LF and is therefore outside the #123
 // lone-CR scope. That assertion lives in the Skipped TestBlockScalarRewrite_ValueIntegrity.
 // The lone-CR properties for block-scalar shapes (accepted, re-parses, no key lost,
@@ -172,7 +173,8 @@ func TestLineEndingShapeMatrix_ValueShapes(t *testing.T) {
 		// valueIntegrityDeferred marks a value shape whose REWRITTEN value integrity is
 		// NOT asserted here because it is broken by a SEPARATE, line-ending-independent
 		// defect (the block-scalar maxNodeLine undercount — a REGRESSION from 427503e,
-		// shipped 0.3.2, not pre-existing — see TestBlockScalarRewrite_ValueIntegrity,
+		// first shipped in v0.3.1 and still present in v0.3.2, not pre-existing — see
+		// TestBlockScalarRewrite_ValueIntegrity,
 		// which is Skipped). The #123 lone-CR
 		// properties (accepted on read, re-parses, no key lost, no duplicate, surrounding
 		// scalars intact) ARE still asserted for these shapes — that is the coverage we
@@ -385,10 +387,12 @@ const newScalar = "REWRITTEN"
 
 // TestBlockScalarRewrite_ValueIntegrity isolates a SEPARATE defect that is NOT issue
 // #123 and — importantly — is NOT pre-existing: it is a REGRESSION introduced by commit
-// 427503e (the byte-faithfulness commit this release advertises) and shipped in 0.3.2.
-// It reproduces on the released 0.3.2 binary via `enrich --overwrite-keys` on a
-// block-scalar key, so users have it today. (git log -S on both spliceFrontmatter and
-// maxNodeLine returns 427503e and only 427503e.)
+// 427503e (the byte-faithfulness commit this release advertises), FIRST shipped in
+// v0.3.1 and still present in v0.3.2. It reproduces on the released 0.3.2 binary via
+// `enrich --overwrite-keys` on a block-scalar key, so users have it today. Provenance is
+// pinned three ways: git log -S on both spliceFrontmatter and maxNodeLine returns 427503e
+// and only 427503e; both functions are ABSENT from native.go at v0.3.0 and present from
+// v0.3.1; and git tag --contains 427503e is exactly {v0.3.1, v0.3.2}.
 //
 // When the key of a multi-line block SCALAR value is REWRITTEN, spliceFrontmatter's
 // maxNodeLine UNDER-COUNTS the block scalar's line span, so its continuation lines are
@@ -416,13 +420,14 @@ const newScalar = "REWRITTEN"
 // drop it into this skip reason and the comment above when it arrives.
 func TestBlockScalarRewrite_ValueIntegrity(t *testing.T) {
 	t.Skip("SEPARATE defect, NOT #123 and NOT pre-existing: a REGRESSION introduced by " +
-		"427503e (the byte-faithfulness commit) and shipped in 0.3.2. Rewriting a multi-line " +
-		"block-SCALAR key leaks its continuation lines into the new value (spliceFrontmatter " +
-		"maxNodeLine undercounts a CHANGED block scalar; before 427503e the changed-key path " +
-		"re-serialised through yaml.v3, which bounds it correctly). Reproduces on the released " +
-		"0.3.2 binary via `enrich --overwrite-keys` on a block-scalar key, on pure LF — " +
-		"line-ending-independent, unrelated to lone-CR. Standing marker for issue TBD " +
-		"(block-scalar undercount regression); unskip when fixed.")
+		"427503e (the byte-faithfulness commit), FIRST shipped in v0.3.1 and still present in " +
+		"v0.3.2 (both functions absent at v0.3.0; git tag --contains 427503e == {v0.3.1, " +
+		"v0.3.2}). Rewriting a multi-line block-SCALAR key leaks its continuation lines into " +
+		"the new value (spliceFrontmatter maxNodeLine undercounts a CHANGED block scalar; " +
+		"before 427503e the changed-key path re-serialised through yaml.v3, which bounds it " +
+		"correctly). Reproduces on the released 0.3.2 binary via `enrich --overwrite-keys` on " +
+		"a block-scalar key, on pure LF — line-ending-independent, unrelated to lone-CR. " +
+		"Standing marker for issue TBD (block-scalar undercount regression); unskip when fixed.")
 
 	cases := []struct{ name, fm string }{
 		{"lf", "lead: L\n" + "note: |\n  line1\n  line2\n" + "trail: T\n"},
