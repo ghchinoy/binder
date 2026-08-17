@@ -12,20 +12,8 @@ For the binder side on its own, see the [tutorial](tutorial.md) and the [user
 guide](user_guide.md). This document is about where provenance is preserved
 between them.
 
-**What was run to write this.** Every command and every block of output below
-was executed on 2026-08-17 in a Debian 12 container, against:
-
-| Tool | Version | Provenance of the artifact |
-|---|---|---|
-| binder | `binder/0.3.2-0.20260816233049-fc3c8c9bffdb` | `go build` of this repo at commit `fc3c8c9` (`v0.3.1-2-gfc3c8c9`) |
-| iwe | `iwe 0.19.1` | release `iwe-v0.19.1` (published 2026-08-15T02:18:02Z); tarball SHA-256 `b48035a05d58f3fe185056b7b3078d7b6f6bbee8cc44b29eb401f20fec046a97`, matching the published checksum |
-
-Claims about binder are grounded in that tree, naming the file and the function.
-Claims about iwe are grounded in either observed behaviour of that binary or
-iwe's own docs at `main`, fetched 2026-08-17 (`docs/okf.md`, `docs/mcp.md`,
-`docs/cli-normalize.md`, `docs/cli-retrieve.md`, `docs/query-language.md`).
-Anything not confirmed by one of those is marked **UNVERIFIED** and is not
-rounded up.
+Everything below was run against pinned builds of both tools; see [How this
+tutorial was verified](#how-this-tutorial-was-verified) at the end.
 
 ---
 
@@ -837,7 +825,26 @@ If you do let iwe write (Model B), add these to CI:
   guards would catch any of the provenance hazards above. They guard block
   content, not frontmatter validity.
 
-## Reproduction
+---
+
+## How this tutorial was verified
+
+**What was run to write this.** Every command and every block of output above
+was executed on 2026-08-17 in a Debian 12 container, against:
+
+| Tool | Version | Provenance of the artifact |
+|---|---|---|
+| binder | `binder/0.3.2-0.20260816233049-fc3c8c9bffdb` | `go build` of this repo at commit `fc3c8c9` (`v0.3.1-2-gfc3c8c9`) |
+| iwe | `iwe 0.19.1` | release `iwe-v0.19.1` (published 2026-08-15T02:18:02Z); tarball SHA-256 `b48035a05d58f3fe185056b7b3078d7b6f6bbee8cc44b29eb401f20fec046a97`, matching the published checksum |
+
+Claims about binder are grounded in that tree, naming the file and the function.
+Claims about iwe are grounded in either observed behaviour of that binary or
+iwe's own docs at `main`, fetched 2026-08-17 (`docs/okf.md`, `docs/mcp.md`,
+`docs/cli-normalize.md`, `docs/cli-retrieve.md`, `docs/query-language.md`).
+Anything not confirmed by one of those is marked **UNVERIFIED** and is not
+rounded up.
+
+### Reproduction
 
 ```text
 binder : this repo @ fc3c8c9, go build, self-reports
