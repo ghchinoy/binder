@@ -62,10 +62,11 @@ stamp at all. On any surface a stamp is written only when you supply one — by 
 every stamp is disclosed (`.result.verified` in `--json`). The remaining trap is a *default you
 set* silently applying to a corpus you did not mean it for:
 
-> A `verified` stamp is written only from one of three explicit routes: an
-> **explicit `--verified-by`**, a default **you set** in your **global** config
-> (`~/.config/binder/config.yaml`), or the **`verified_by` input to the MCP
-> `convert` tool** (the MCP analog of the flag). A global `verified_by:` counts as
+> A `verified` stamp is written only from one of three routes: two are
+> **explicit** — an **explicit `--verified-by`** and the **`verified_by` input to
+> the MCP `convert` tool** (the MCP analog of the flag) — and the third is a
+> **non-explicit** default **you set** in your **global** config
+> (`~/.config/binder/config.yaml`). A global `verified_by:` counts as
 > you having chosen a default and **will** stamp `convert` and `enrich` (which
 > writes into your **source tree**) without the flag. On the CLI, **neither
 > `BINDER_VERIFIED_BY` (env) nor a repo-local `./.binder.yaml` authorizes
