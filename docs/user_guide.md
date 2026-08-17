@@ -57,9 +57,18 @@ command and are the properties that make binder safe in a pipeline:
   Every package above `internal/okf` depends only on binder-owned interfaces
   (`Codec`, `LinkGraph`) — the **dependency rule** — so the codec is swappable
   without touching the converter, CLI, or validators.
-- **Byte-faithful round-trip.** Unmodified YAML frontmatter is passed through
-  verbatim — including nested-map and list key order and scalar quoting style —
-  so a round-trip changes nothing it did not have to change.
+- **Byte-faithful round-trip, on a recognised fence.** Unmodified YAML
+  frontmatter is passed through verbatim — including nested-map and list key
+  order and scalar quoting style — so a round-trip changes nothing it did not
+  have to change. This is scoped to files whose frontmatter binder recognises:
+  the file's first bytes must be `---` and then a newline, LF or CRLF, with
+  nothing before them and nothing in between. Recognising the fence is a
+  scanner, so a file binder reads as plain is one it will synthesize over,
+  leaving the original frontmatter — a `verified:` attestation included —
+  in the body as text, with exit `0`, nothing skipped, and no warning
+  ([#124](https://github.com/ghchinoy/binder/issues/124), open). For the bounds
+  known to remain even on a recognised fence, see *Residual bounds* under
+  [`enrich`](#enrich).
 - **Deterministic output.** Given identical input and the same clock,
   `convert` produces byte-identical output; `review` and `graph` sort their
   output. `convert` honours `SOURCE_DATE_EPOCH` for any synthesised timestamp.
@@ -67,14 +76,24 @@ command and are the properties that make binder safe in a pipeline:
   never rejects a bundle for missing optional fields, unknown keys, unknown type
   values, broken links, or absent trust families. Non-fatal issues are surfaced
   as **advisories**, never errors.
-- **Never fabricate trust.** binder never invents a source, a credibility score,
-  or provenance. Trust mapping is opt-in and additive; with no mapping flags,
-  frontmatter round-trips byte-for-byte. Trust tiers and staleness are *derived*
-  on demand from frontmatter, never stored. A `verified` attestation in
-  particular is written only for a verifier **you** supplied on this invocation
-  or set as your own default, it is never written **over** another identity's
-  attestation from a default, and every stamp-writing run discloses what it
-  wrote — see [Writing a `verified` stamp](#writing-a-verified-stamp).
+- **Never fabricate trust, on a recognised fence.** On a fence binder
+  recognises, binder never invents a source, a credibility score, or provenance.
+  Trust mapping is opt-in and additive; with no mapping flags, frontmatter on a
+  recognised fence round-trips byte-for-byte — bounded exactly as the round-trip
+  guarantee above. On a fence binder does **not** recognise this does not hold:
+  the file is treated as plain, so the original frontmatter — a `verified:`
+  attestation included — is left in the body as text while binder synthesizes
+  keys of its own, among them a `type`, a `title`, and a `generated` provenance
+  stamp, with exit `0`, nothing skipped, and no warning
+  ([#124](https://github.com/ghchinoy/binder/issues/124), open). `generated` is
+  a key binder itself protects: `--overwrite-keys generated` is refused as a
+  trust-provenance key. Trust tiers and staleness are *derived* on demand from
+  frontmatter, never stored. A `verified`
+  attestation in particular is written only for a verifier **you** supplied on
+  this invocation or set as your own default, it is never written **over**
+  another identity's attestation from a default, and every stamp-writing run
+  discloses what it wrote — see
+  [Writing a `verified` stamp](#writing-a-verified-stamp).
 
 ## Concepts and terminology
 
@@ -328,13 +347,15 @@ A plain-markdown file (no frontmatter fence) gets a fresh, valid block prepended
    which refreshes only the keys you name — trust keys are refused.
 2. **Idempotent.** A second run finds every key present → `unchanged` → **no
    write**. `generated.at` is stable across runs (set-when-absent).
-3. **Body + pre-existing keys byte-faithful (files that already have
-   frontmatter).** enrich reuses the codec's byte-faithful serializer, whose
-   frontmatter guarantee has **two kinds of preservation that are not the same
-   kind of true.** The first holds *by construction* and is unconditional; the
-   second holds *by a scanner* and is bounded, its limits found one case at a
-   time. They are stated separately rather than joined by *and*, because a reader
-   who reads them as one claim will over-trust the second.
+3. **Body + pre-existing keys byte-faithful (scoped to files whose frontmatter
+   binder recognises: the file's first bytes must be `---` and then a newline,
+   LF or CRLF, with nothing before them and nothing in between).** enrich reuses
+   the codec's byte-faithful serializer, whose frontmatter guarantee has **two
+   kinds of preservation that are not the same kind of true.** The first holds
+   *by construction* and is unconditional; the second holds *by a scanner* and
+   is bounded, its limits found one case at a time. They are stated separately
+   rather than joined by *and*, because a reader who reads them as one claim
+   will over-trust the second.
 
    **(a) An unchanged top-level key is byte-faithful by construction.** Every key
    enrich does **not** touch is re-emitted from its original source bytes, copied
@@ -390,8 +411,16 @@ A plain-markdown file (no frontmatter fence) gets a fresh, valid block prepended
    The **body** is re-emitted exactly, *including the original frontmatter/body
    separator*: a body that abutted the closing fence stays abutting it, and
    existing blank lines are neither added nor removed. This guarantee is scoped to
-   files that **already have frontmatter** — see *Residual bounds* below for the
-   byte-level cases it does **not** cover.
+   files whose frontmatter binder **recognises**: the file's first bytes must be
+   `---` and then a newline, LF or CRLF, with nothing before them and nothing in
+   between. See *Residual bounds* below for the byte-level cases it does **not**
+   cover on a recognised fence.
+
+   A file whose fence binder does **not** recognise is not covered here at all,
+   and is not one of those residual bounds: it is treated as plain and
+   synthesized over, leaving the original frontmatter — a `verified:` attestation
+   included — in the body as text, with exit `0`, nothing skipped, and no warning
+   ([#124](https://github.com/ghchinoy/binder/issues/124), open).
 4. **Skip-unchanged (no git churn).** A file that needs no key is **not written
    at all** — no spurious diffs, no mtime bumps. Critical for git-tracked trees.
 5. **Skip-unparseable.** A file whose frontmatter will not parse (invalid YAML or
@@ -408,8 +437,9 @@ A plain-markdown file (no frontmatter fence) gets a fresh, valid block prepended
    `SOURCE_DATE_EPOCH`.
 
 > **Residual bounds (the body guarantee is bounded, not unconditional).** Even on
-> a file enrich changes, four byte-level deviations remain that the body guarantee
-> above does **not** cover:
+> a file enrich changes, byte-level deviations remain that the body guarantee
+> above does **not** cover. These are the ones known as of this release; the list
+> is a floor rather than a total, so please report any other to the maintainers:
 > 1. **CRLF → LF.** Body line endings are normalized `\r\n`→`\n`, so a CRLF file
 >    round-tripped is not byte-identical.
 > 2. **Trailing newline.** A file whose content ends without a trailing newline
@@ -421,8 +451,8 @@ A plain-markdown file (no frontmatter fence) gets a fresh, valid block prepended
 >    frontmatter is not a round-trip: enrich **synthesizes** a header and inserts a
 >    single blank line between it and the body. Every body byte survives verbatim
 >    and in order, but a blank is prepended — which is why the byte-faithfulness
->    guarantee is scoped to files that already have frontmatter, and does not apply
->    here.
+>    guarantee is scoped to files whose frontmatter binder recognises, and does
+>    not apply here.
 >
 > A file that needs no key is never rewritten, so untouched files (including CRLF-
 > or spacing-only ones) are left exactly as-is. Because enrich mutates the source,
@@ -2562,9 +2592,20 @@ resolves, the body is left byte-identical.
 ## The trust vocabulary
 
 binder maps corpus-native provenance into the OKF v0.2 trust vocabulary,
-**preserves** existing trust frontmatter byte-for-byte, and **derives** trust
-tiers and staleness on demand. It never stores a credibility score and never
-fabricates provenance (spec §5.1).
+**preserves** existing trust frontmatter byte-for-byte on a recognised fence,
+and **derives** trust tiers and staleness on demand. It never stores a
+credibility score, and on a recognised fence it never fabricates provenance
+(spec §5.1).
+
+**That scoping is load-bearing if you rely on binder for provenance.**
+Preservation is scoped to files whose frontmatter binder recognises: the file's
+first bytes must be `---` and then a newline, LF or CRLF, with nothing before
+them and nothing in between. Recognising the fence is a scanner, so a file
+binder reads as plain is one it will synthesize over, leaving the original
+frontmatter — a `verified:` attestation with it — in the body as text, while
+binder synthesizes keys of its own, among them a `type`, a `title`, and a
+`generated` provenance stamp, with exit `0`, nothing skipped, and no warning
+([#124](https://github.com/ghchinoy/binder/issues/124), open).
 
 ### Vocabulary
 
