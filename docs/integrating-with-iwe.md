@@ -3,8 +3,8 @@
 A hands-on mini tutorial. You will take an existing plain-markdown corpus,
 convert it to an OKF v0.2 bundle with binder, and query that bundle as a
 knowledge graph with [iwe](https://github.com/iwe-org/iwe) — no adapter, no
-import step. Then you will walk the seam between the two tools honestly: what
-carries across, what does not, and the ways **provenance gets rewritten,
+import step. Then you will walk the seam between the two tools in plain terms:
+what carries across, what does not, and the ways **provenance gets rewritten,
 relocated, or quietly outlived** when iwe writes to a bundle binder produced.
 
 For the binder side on its own, see the [tutorial](tutorial.md) and the [user
@@ -57,7 +57,7 @@ rest of this tutorial earns. The composition is real: it ran out of the box, at
 zero build cost. But iwe supplies the **retrieval** answer, not the **trust**
 answer. OKF's trust vocabulary is *derived*, not stored, so a tool that filters
 raw frontmatter cannot produce it — and the derived values are the one thing
-binder contributes that iwe cannot. The honest one-line form of the composition
+binder contributes that iwe cannot. The precise one-line form of the composition
 is:
 
 > **binder onboards and derives trust; iwe queries and retrieves; the
@@ -333,7 +333,7 @@ you should build on it.
 
 ---
 
-## Part 2: gotchas — honestly
+## Part 2: gotchas — unvarnished
 
 Nothing below is a bug report against iwe. iwe is an *authoring and refactoring*
 tool and behaves correctly by its own contract. The losses happen **at the

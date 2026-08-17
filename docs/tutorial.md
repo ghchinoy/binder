@@ -976,5 +976,5 @@ whichever surface you reach for.
 - [Relationship extraction](user_guide.md#relationship-extraction) covers
   wikilinks, frontmatter refs, hashtags, and `file://` resolution in depth.
 - [Integrating with iwe](integrating-with-iwe.md) takes a converted bundle into
-  an outside markdown knowledge-graph tool, and is honest about what the trust
+  an outside markdown knowledge-graph tool, and spells out what the trust
   vocabulary does and does not survive at that seam.
