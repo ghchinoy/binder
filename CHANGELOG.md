@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.3.2](https://github.com/ghchinoy/binder/compare/v0.3.1...v0.3.2) (2026-08-17)
+
+
+### Bug Fixes
+
+* preserve flow/map append entries; fix multi-line flow ([#119](https://github.com/ghchinoy/binder/issues/119)) ([a8ba6f8](https://github.com/ghchinoy/binder/commit/a8ba6f8020b1d6dcd20142bcdc123f93b04afc50))
+* require explicit verifier to write verified stamp ([#118](https://github.com/ghchinoy/binder/issues/118)) ([fc3c8c9](https://github.com/ghchinoy/binder/commit/fc3c8c9bffdbff18bf391279807820c836ef0c13))
+
+
+### Documentation
+
+* bound preservation claims disproven by [#124](https://github.com/ghchinoy/binder/issues/124) ([#125](https://github.com/ghchinoy/binder/issues/125)) ([f3adcb8](https://github.com/ghchinoy/binder/commit/f3adcb8f840f5559d7d33e394b39efd53e37b19b))
+
 ## [0.3.1](https://github.com/ghchinoy/binder/compare/v0.3.0...v0.3.1) (2026-08-16)
 
 
