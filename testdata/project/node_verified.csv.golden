@@ -1,0 +1,3 @@
+node_key,seq,by,at,is_human
+node-alpha,0,human:reviewer@acme,2026-01-01T00:00:00Z,true
+node-beta,0,agent:bot,2026-01-02T00:00:00Z,false

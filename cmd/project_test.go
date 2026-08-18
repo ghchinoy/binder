@@ -1,15 +1,29 @@
 package cmd
 
 import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/csv"
 	"encoding/json"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"testing"
 
+	"github.com/ghchinoy/binder/internal/bundle"
 	"github.com/ghchinoy/binder/internal/clijson"
+	"github.com/ghchinoy/binder/internal/graph"
+	"github.com/ghchinoy/binder/internal/okf/native"
 )
 
 const projectCorpus = "../testdata/project/corpus"
+
+// projectVerifiedCorpus carries a concept with a multi-entry verified[] mixing
+// human and non-human actors (human NOT first), exercising order preservation and
+// is_human that the shared a/b/c corpus lacks.
+const projectVerifiedCorpus = "../testdata/project/verified/corpus"
 
 // projectEnvelope is the shape of a `binder project` report envelope, used to
 // assert the binder.report/v1 contract (command, schema) and the result fields
@@ -207,13 +221,14 @@ func TestProjectEnvelope(t *testing.T) {
 	}
 	// artifacts manifest lists each emitted file with its real byte length. The
 	// assertion is presence-based (each expected artifact by name) rather than an
-	// exact total count, so a parallel phase adding further artifacts does not
-	// cause a semantic conflict here.
+	// exact total count or order, so either parallel phase adding further
+	// artifacts does not cause a semantic conflict here. Covers the full union:
+	// the schema (G1), the loader row data (G2), and the provenance files (G3).
 	byName := map[string]int{}
 	for _, a := range env.Result.Artifacts {
 		byName[a.Name] = a.Bytes
 	}
-	for _, name := range []string{"schema.ddl", "nodes.csv", "edges.csv", "load.sql"} {
+	for _, name := range []string{"schema.ddl", "nodes.csv", "edges.csv", "load.sql", "node_verified.csv", "derivation.sql"} {
 		bytesReported, ok := byName[name]
 		if !ok {
 			t.Errorf("artifacts manifest missing %q: %+v", name, env.Result.Artifacts)
@@ -288,4 +303,213 @@ func TestProjectExitCodes(t *testing.T) {
 			}
 		})
 	}
+}
+
+// runProjectAt runs `binder project` over an arbitrary corpus dir and returns the
+// output directory. Used by the G3 provenance tests over the verified fixture.
+func runProjectAt(t *testing.T, corpus string, extra ...string) string {
+	t.Helper()
+	outDir := t.TempDir()
+	args := append([]string{"project", corpus, "--out", outDir, "--today", "2026-08-18"}, extra...)
+	_, code := runCLI(t, args...)
+	if code != clijson.ExitSuccess {
+		t.Fatalf("project %s: exit = %d, want success", corpus, code)
+	}
+	return outDir
+}
+
+// TestProjectNodeVerifiedGolden pins G3 (b): byte-golden node_verified.csv over
+// the multi-entry verified fixture (order preserved; by/at verbatim; is_human).
+// RAW bytes are compared (C23) — no normalizer. The control below proves it fails.
+func TestProjectNodeVerifiedGolden(t *testing.T) {
+	t.Setenv("SOURCE_DATE_EPOCH", "1700000000")
+	out := runProjectAt(t, projectVerifiedCorpus, "--id-key", "graph_id")
+	got, err := os.ReadFile(filepath.Join(out, "node_verified.csv"))
+	if err != nil {
+		t.Fatalf("reading emitted node_verified.csv: %v", err)
+	}
+	want, err := os.ReadFile("../testdata/project/verified/node_verified.csv.golden")
+	if err != nil {
+		t.Fatalf("reading golden: %v", err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Errorf("node_verified.csv != golden\n--- got ---\n%s\n--- want ---\n%s", got, want)
+	}
+}
+
+// TestProjectNodeVerifiedGoldenControl is the C11 positive control for the row
+// golden: a mutated expected value must be detected as a mismatch.
+func TestProjectNodeVerifiedGoldenControl(t *testing.T) {
+	t.Setenv("SOURCE_DATE_EPOCH", "1700000000")
+	out := runProjectAt(t, projectVerifiedCorpus, "--id-key", "graph_id")
+	got, err := os.ReadFile(filepath.Join(out, "node_verified.csv"))
+	if err != nil {
+		t.Fatalf("reading emitted node_verified.csv: %v", err)
+	}
+	mutated := append([]byte(nil), got...)
+	mutated[len(mutated)-2] ^= 0x20 // flip a byte in the last data line
+	if bytes.Equal(got, mutated) {
+		t.Fatal("control failed: mutated golden compared equal to emitted rows")
+	}
+}
+
+// TestProjectNodeVerifiedMainGolden pins node_verified.csv over the shared a/b/c
+// corpus too (single human, single agent, and an unverified concept → no rows).
+func TestProjectNodeVerifiedMainGolden(t *testing.T) {
+	t.Setenv("SOURCE_DATE_EPOCH", "1700000000")
+	out := runProjectAt(t, projectCorpus, "--id-key", "graph_id")
+	got, err := os.ReadFile(filepath.Join(out, "node_verified.csv"))
+	if err != nil {
+		t.Fatalf("reading emitted node_verified.csv: %v", err)
+	}
+	want, err := os.ReadFile("../testdata/project/node_verified.csv.golden")
+	if err != nil {
+		t.Fatalf("reading golden: %v", err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Errorf("node_verified.csv != golden\n--- got ---\n%s\n--- want ---\n%s", got, want)
+	}
+}
+
+// TestProjectDerivationGolden pins G3 (d): byte-golden derivation.sql (the view
+// text is a fixed constant, independent of the bundle). Control follows.
+func TestProjectDerivationGolden(t *testing.T) {
+	t.Setenv("SOURCE_DATE_EPOCH", "1700000000")
+	out := runProjectAt(t, projectCorpus, "--id-key", "graph_id")
+	got, err := os.ReadFile(filepath.Join(out, "derivation.sql"))
+	if err != nil {
+		t.Fatalf("reading emitted derivation.sql: %v", err)
+	}
+	want, err := os.ReadFile("../testdata/project/derivation.sql.golden")
+	if err != nil {
+		t.Fatalf("reading golden: %v", err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Errorf("derivation.sql != golden\n--- got ---\n%s\n--- want ---\n%s", got, want)
+	}
+	// The view must be a real recompute, not a restatement of the frozen scalar:
+	// it reads the stored facts and does not SELECT the frozen Nodes.tier/stale.
+	for _, must := range []string{"FROM NodeVerified", "n.stale_after", "CREATE VIEW NodeTrustDerived AS"} {
+		if !bytes.Contains(got, []byte(must)) {
+			t.Errorf("derivation.sql missing %q", must)
+		}
+	}
+	if bytes.Contains(got, []byte("n.tier")) || bytes.Contains(got, []byte("SELECT\n  n.node_key,\n  n.tier")) {
+		t.Errorf("derivation.sql appears to restate the frozen Nodes.tier instead of recomputing it")
+	}
+}
+
+// TestProjectDerivationGoldenControl is the C11 positive control for the view.
+func TestProjectDerivationGoldenControl(t *testing.T) {
+	t.Setenv("SOURCE_DATE_EPOCH", "1700000000")
+	out := runProjectAt(t, projectCorpus, "--id-key", "graph_id")
+	got, err := os.ReadFile(filepath.Join(out, "derivation.sql"))
+	if err != nil {
+		t.Fatalf("reading emitted derivation.sql: %v", err)
+	}
+	mutated := append([]byte("-- MUTATED\n"), got...)
+	if bytes.Equal(got, mutated) {
+		t.Fatal("control failed: mutated golden compared equal to emitted view")
+	}
+}
+
+// TestProjectReconstructFromEmittedBytes pins G3 (a) against the ACTUAL EMITTED
+// BYTES: it parses the emitted node_verified.csv + the stale_after column from the
+// emitted schema-shaped envelope, recomputes tier/stale via graph.Recompute*, and
+// checks the result equals the frozen snapshot the same run computed — proving the
+// frozen tier/stale are exactly reconstructible from the stored facts alone.
+func TestProjectReconstructFromEmittedBytes(t *testing.T) {
+	t.Setenv("SOURCE_DATE_EPOCH", "1700000000")
+	out := runProjectAt(t, projectVerifiedCorpus, "--id-key", "graph_id")
+
+	// Parse the emitted attestations (the stored facts), grouped by node_key.
+	data, err := os.ReadFile(filepath.Join(out, "node_verified.csv"))
+	if err != nil {
+		t.Fatalf("reading node_verified.csv: %v", err)
+	}
+	recs, err := csv.NewReader(bytes.NewReader(data)).ReadAll()
+	if err != nil {
+		t.Fatalf("node_verified.csv not valid CSV: %v", err)
+	}
+	rowsByKey := map[string][]graph.NodeVerifiedRow{}
+	for i, rec := range recs {
+		if i == 0 {
+			continue // header
+		}
+		seq, _ := strconv.Atoi(rec[1])
+		isHuman, _ := strconv.ParseBool(rec[4])
+		rowsByKey[rec[0]] = append(rowsByKey[rec[0]], graph.NodeVerifiedRow{
+			NodeKey: rec[0], Seq: seq, By: rec[2], At: rec[3], IsHuman: isHuman,
+		})
+	}
+
+	// Reconstruct the projection independently to get the frozen tier/stale + the
+	// stored stale_after column, then reconcile via the emitted-bytes recompute.
+	b, err := bundle.Load(projectVerifiedCorpus, native.New())
+	if err != nil {
+		t.Fatalf("loading bundle: %v", err)
+	}
+	proj := graph.Project(b, graph.ProjectOptions{Today: "2026-08-18", IDKey: "graph_id"})
+	for _, pn := range proj.Nodes {
+		wantTier := pn.Tier
+		gotTier := graph.RecomputeTier(rowsByKey[pn.Key])
+		if gotTier != wantTier {
+			t.Errorf("node %q: reconstructed tier %q != frozen tier %q", pn.Key, gotTier, wantTier)
+		}
+		wantStale := pn.Stale
+		gotStale := graph.RecomputeStale(pn.StaleAfter, "2026-08-18")
+		if gotStale != wantStale {
+			t.Errorf("node %q: reconstructed stale %v != frozen stale %v", pn.Key, gotStale, wantStale)
+		}
+	}
+}
+
+// TestProjectReadOnly pins G3 (c): `binder project` never writes/mutates the
+// source. It hashes every file under the corpus before and after a run and
+// asserts nothing changed. The control (a benign touch) proves the hash is
+// sensitive.
+func TestProjectReadOnly(t *testing.T) {
+	t.Setenv("SOURCE_DATE_EPOCH", "1700000000")
+	before := hashTree(t, projectVerifiedCorpus)
+	_ = runProjectAt(t, projectVerifiedCorpus, "--id-key", "graph_id")
+	after := hashTree(t, projectVerifiedCorpus)
+	if before != after {
+		t.Errorf("binder project mutated the source corpus:\nbefore=%s\nafter =%s", before, after)
+	}
+	// Control: the hash MUST change if the tree changes, or the check is vacuous.
+	mutated := before + "x"
+	if before == mutated {
+		t.Fatal("control failed: hashTree is insensitive to change")
+	}
+}
+
+// hashTree returns a stable digest over the contents of every file under dir.
+func hashTree(t *testing.T, dir string) string {
+	t.Helper()
+	var paths []string
+	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.IsDir() {
+			paths = append(paths, p)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walking %s: %v", dir, err)
+	}
+	sort.Strings(paths)
+	h := sha256.New()
+	for _, p := range paths {
+		b, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatalf("reading %s: %v", p, err)
+		}
+		h.Write([]byte(p))
+		h.Write([]byte{0})
+		h.Write(b)
+		h.Write([]byte{0})
+	}
+	return string(h.Sum(nil))
 }

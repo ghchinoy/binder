@@ -44,9 +44,10 @@ func newProjectCmd(codec okf.Codec) *cobra.Command {
 		Use:   "project <bundle> --out <dir>",
 		Short: "Project a bundle into offline property-graph DDL (Spanner SQL/PGQ)",
 		Long: "Project emits a deterministic, credential-free property-graph schema for a\n" +
-			"loaded OKF bundle. It writes schema.ddl (CREATE TABLE Nodes + Edges plus a\n" +
-			"CREATE PROPERTY GRAPH wrapper with a single LINKS edge label) to --out and\n" +
-			"prints a binder.report/v1 summary to stdout.\n\n" +
+			"loaded OKF bundle. It writes schema.ddl (CREATE TABLE Nodes, Edges and the\n" +
+			"NodeVerified attestation table plus a CREATE PROPERTY GRAPH wrapper with a\n" +
+			"single LINKS edge label) to --out and prints a binder.report/v1 summary to\n" +
+			"stdout.\n\n" +
 			"The projection reuses the same node/edge model as `binder graph`,\n" +
 			"`list_graphs`, and `query_graph`, so it stays in edge/identity parity by\n" +
 			"construction. Node identity (node_key) is the concept's authored frontmatter\n" +
@@ -54,8 +55,13 @@ func newProjectCmd(codec okf.Codec) *cobra.Command {
 			"concept id; binder NEVER mints a key. The tier/stale columns are the frozen\n" +
 			"projection-time snapshot as of --today (SOURCE_DATE_EPOCH-honoring); stale_after\n" +
 			"carries the raw authored input so stale stays re-derivable.\n\n" +
-			"G1 emits schema only (no row data). --target defaults to spanner and is the\n" +
-			"only accepted value in this release. No cloud credentials are used or needed.",
+			"Alongside schema.ddl it emits the loader row data (nodes.csv, edges.csv,\n" +
+			"load.sql) and the provenance artifacts node_verified.csv (the verified[]\n" +
+			"attestations, byte-faithful: order preserved, by/at verbatim, is_human = the\n" +
+			"human: prefix) and derivation.sql (a CREATE VIEW that recomputes tier/stale\n" +
+			"from stale_after and NodeVerified for any date). --target defaults to spanner\n" +
+			"and is the only accepted value in this release. No cloud credentials are used\n" +
+			"or needed.",
 		Args: exactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// --target: spanner is the only accepted value in v0.4.0 (usage/exit 2).
@@ -113,6 +119,23 @@ func newProjectCmd(codec okf.Codec) *cobra.Command {
 					return err
 				}
 			}
+
+			// --- G3 provenance-completeness artifacts (OQ-8 items 3–4) ---
+			// Self-contained append block: the NodeVerified rows and the tier/stale
+			// derivation view. Kept together (not interleaved with the G2 row
+			// emitters) so each phase's additions stay reviewable in isolation.
+			for _, a := range []struct {
+				name string
+				data []byte
+			}{
+				{"node_verified.csv", proj.NodeVerifiedCSV()},
+				{"derivation.sql", proj.DerivationView()},
+			} {
+				if err := emit(a.name, a.data); err != nil {
+					return err
+				}
+			}
+			// --- end G3 block ---
 
 			rep := projectReport{
 				Target:            string(proj.Target),

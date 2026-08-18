@@ -272,9 +272,18 @@ func parsesAny(s string, layouts []string) bool {
 	return false
 }
 
-func hasHumanPrefix(actor string) bool {
+// IsHumanActor reports whether actor carries the "human:" prefix that promotes a
+// verified stamp to the human-reviewed tier (spec §5.3). It is the SINGLE
+// predicate TrustTier and any downstream projection (e.g. the property-graph
+// NodeVerified.is_human column) share, so the frozen tier and the emitted
+// attestations can never disagree about what counts as human review.
+func IsHumanActor(actor string) bool {
 	const p = "human:"
 	return len(actor) >= len(p) && actor[:len(p)] == p
+}
+
+func hasHumanPrefix(actor string) bool {
+	return IsHumanActor(actor)
 }
 
 func mapGet(fm *OrderedMap, key string) any {
