@@ -49,8 +49,8 @@ adapter remains planned — see [Roadmap](#roadmap--planned-features).
 ## Invariants
 
 The guarantees below bound what binder does — but they are not unconditional.
-Several hold only on a recognised fence, and each states its own scope inline, so
-read each with its bound rather than as a blanket promise across every command:
+Each states its own scope, so read each with its stated bound rather than as a
+blanket promise across every command:
 
 - **Native codec.** binder parses and serializes OKF with a single owned codec
   ([`goldmark`](https://github.com/yuin/goldmark) for markdown +

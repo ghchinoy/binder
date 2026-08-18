@@ -44,9 +44,8 @@ func newEnrichCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 			"SOURCE_DATE_EPOCH; with a live verifier under a moving clock a rerun appends a\n" +
 			"fresh stamp, since stamps dedup on (by, at)), and atomic (temp file + rename, so\n" +
 			"an interrupted run leaves the source as it was rather than half-written).\n" +
-			"Files needing no key are not written at all. Files whose frontmatter will\n" +
-			"not parse, and reserved files\n" +
-			"(index.md/log.md), are skipped and never mutated.\n\n" +
+			"Files needing no key are not written at all. Files whose frontmatter will not\n" +
+			"parse, and reserved files (index.md/log.md), are skipped and never mutated.\n\n" +
 			"Additive/never-clobber is the DEFAULT. --overwrite-keys <k1,k2,...> is an\n" +
 			"opt-in exception that REFRESHES only the named keys in place even when they\n" +
 			"already exist (e.g. --overwrite-keys status,stale_after after a new\n" +
