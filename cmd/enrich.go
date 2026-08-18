@@ -35,15 +35,17 @@ func newEnrichCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 			"to the markdown files under <src>, IN PLACE. It touches FRONTMATTER ONLY:\n" +
 			"unlike `binder convert`, it does no link rewriting, no index generation, no\n" +
 			"\"## Related\" section, and no tag merge — bodies are otherwise untouched.\n\n" +
-			"It is safe on a git-tracked tree: additive/never-clobber (it adds only ABSENT\n" +
-			"keys and never overwrites an existing value; the sole exception is an authorized\n" +
+			"It operates on the YAML only, so its writes stay reviewable on a\n" +
+			"git-tracked tree: additive/never-clobber (it adds only ABSENT keys and\n" +
+			"never overwrites an existing value; the sole exception is an authorized\n" +
 			"`verified` stamp, which is APPENDED to any existing `verified` list, never\n" +
 			"replacing a prior attestation), idempotent unless a `verified` stamp advances\n" +
 			"(a rerun writes nothing when no verifier is set or the clock is pinned via\n" +
 			"SOURCE_DATE_EPOCH; with a live verifier under a moving clock a rerun appends a\n" +
 			"fresh stamp, since stamps dedup on (by, at)), and atomic (temp file + rename, so\n" +
-			"an interrupt never corrupts a source file). Files needing no key are not\n" +
-			"written at all. Files whose frontmatter will not parse, and reserved files\n" +
+			"an interrupted run leaves the source as it was rather than half-written).\n" +
+			"Files needing no key are not written at all. Files whose frontmatter will\n" +
+			"not parse, and reserved files\n" +
 			"(index.md/log.md), are skipped and never mutated.\n\n" +
 			"Additive/never-clobber is the DEFAULT. --overwrite-keys <k1,k2,...> is an\n" +
 			"opt-in exception that REFRESHES only the named keys in place even when they\n" +

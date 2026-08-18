@@ -48,8 +48,9 @@ adapter remains planned — see [Roadmap](#roadmap--planned-features).
 
 ## Invariants
 
-Everything binder does is bounded by these guarantees. They hold across every
-command and are the properties that make binder safe in a pipeline:
+The guarantees below bound what binder does — but they are not unconditional.
+Several hold only on a recognised fence, and each states its own scope inline, so
+read each with its bound rather than as a blanket promise across every command:
 
 - **Native codec.** binder parses and serializes OKF with a single owned codec
   ([`goldmark`](https://github.com/yuin/goldmark) for markdown +
@@ -350,8 +351,15 @@ A plain-markdown file (no frontmatter fence) gets a fresh, valid block prepended
    authored value (any key) is never overwritten. The **one** exception is the
    explicit, opt-in [`--overwrite-keys`](#opt-in-refresh---overwrite-keys) flag,
    which refreshes only the keys you name — trust keys are refused.
-2. **Idempotent.** A second run finds every key present → `unchanged` → **no
-   write**. `generated.at` is stable across runs (set-when-absent).
+2. **Idempotent unless a `verified` stamp advances.** With no verifier configured
+   (or the clock pinned via `SOURCE_DATE_EPOCH`), a second run finds every key
+   present → `unchanged` → **no write**; `generated.at` is stable across runs
+   (set-when-absent). With a verifier configured under a moving clock, a rerun
+   instead appends a fresh `verified` stamp and rewrites the file, because stamps
+   dedup on `(by, at)` — the same actor at a later second is a new key. This
+   describes today's bounded behaviour, not an invariant: making a repeat `enrich`
+   on an unchanged file a genuine no-op regardless of wall-clock time is tracked
+   for 0.4.0 in [#134](https://github.com/ghchinoy/binder/issues/134).
 3. **Body + pre-existing keys byte-faithful (scoped to files whose frontmatter
    binder recognises: the file's first bytes must be `---` and then a newline,
    LF or CRLF, with nothing before them and nothing in between).** enrich reuses
@@ -445,14 +453,20 @@ A plain-markdown file (no frontmatter fence) gets a fresh, valid block prepended
 > a file enrich changes, byte-level deviations remain that the body guarantee
 > above does **not** cover. These are the ones known as of this release; the list
 > is a floor rather than a total, so please report any other to the maintainers:
-> 1. **CRLF → LF.** Body line endings are normalized `\r\n`→`\n`, so a CRLF file
->    round-tripped is not byte-identical.
-> 2. **Trailing newline.** A file whose content ends without a trailing newline
+> 1. **CRLF → LF (body).** Body line endings are normalized `\r\n`→`\n`, so a CRLF
+>    file round-tripped is not byte-identical.
+> 2. **Lone CR → LF, inside recognised frontmatter only.** A bare `\r` (a carriage
+>    return that is not part of a `\r\n`) within a recognised frontmatter block is
+>    re-emitted as `\n`. The **body is not normalized** — its lone CRs survive
+>    verbatim — so this bound is confined to the frontmatter region; that body
+>    exemption is load-bearing, since without it the bound would read broader than
+>    the code is.
+> 3. **Trailing newline.** A file whose content ends without a trailing newline
 >    gains one on the closing `---` fence line.
-> 3. **Empty frontmatter re-emission.** A file whose frontmatter block is empty
+> 4. **Empty frontmatter re-emission.** A file whose frontmatter block is empty
 >    (`---` immediately followed by `---`) has that empty block re-emitted as
 >    `{}`. The body boundary is still preserved.
-> 4. **No frontmatter at all (synthesis, not round-trip).** A file with no
+> 5. **No frontmatter at all (synthesis, not round-trip).** A file with no
 >    frontmatter is not a round-trip: enrich **synthesizes** a header and inserts a
 >    single blank line between it and the body. Every body byte survives verbatim
 >    and in order, but a blank is prepended — which is why the byte-faithfulness
@@ -3387,8 +3401,8 @@ community-core codec adapter. This guide grows a full section for each as it lan
 
 - **In-place enrichment** — ✅ shipped: `binder enrich` injects the missing
   required frontmatter (`type`/`title`/`generated`) into a source tree **in
-  place** — frontmatter-only, additive/never-clobber, idempotent, and
-  byte-faithful. See [`enrich`](#enrich).
+  place** — frontmatter-only, additive/never-clobber, idempotent unless a
+  `verified` stamp advances, and byte-faithful. See [`enrich`](#enrich).
   [#5](https://github.com/ghchinoy/binder/issues/5)
 - **`file://` edge resolution** — ✅ shipped: workspace-relative `file://` URIs
   that point inside the workspace root now resolve to internal concept edges. See
