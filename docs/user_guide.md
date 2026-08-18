@@ -62,13 +62,16 @@ blanket promise across every command:
 - **Byte-faithful round-trip, on a recognised fence.** Unmodified YAML
   frontmatter is passed through verbatim — including nested-map and list key
   order and scalar quoting style — so a round-trip changes nothing it did not
-  have to change. This is scoped to files whose frontmatter binder recognises:
-  the file's first bytes must be `---` and then a newline, LF or CRLF, with
-  nothing before them and nothing in between. Recognising the fence is a
-  scanner, so a file binder reads as plain is one it will synthesize over,
-  leaving the original frontmatter — a `verified:` attestation included —
-  in the body as text, with exit `0`, nothing skipped, and no warning
-  ([#124](https://github.com/ghchinoy/binder/issues/124), open). For the bounds
+  have to change. This is scoped to files whose frontmatter binder recognises
+  **and that need no read-boundary normalization**: the fence must open with
+  `---` and then a newline, LF or CRLF, at the very start. A leading UTF-8 BOM
+  or a lone-CR (classic-Mac) fence is now recognised too, but is normalized
+  before recognition ([#124](https://github.com/ghchinoy/binder/issues/124)) —
+  the fence and any `verified:` block it guards are preserved, though the
+  round-trip is deliberately not byte-faithful and is disclosed (a `normalized`
+  signal plus a top-level advisory). A file with **no** recognisable fence at
+  all is still read as plain and synthesized over, leaving its content in the
+  body as text, with exit `0`, nothing skipped, and no warning. For the bounds
   known to remain even on a recognised fence, see *Residual bounds* under
   [`enrich`](#enrich).
 - **Deterministic output.** Given identical input and the same clock,
@@ -81,13 +84,17 @@ blanket promise across every command:
 - **Never fabricate trust, on a recognised fence.** On a fence binder
   recognises, binder never invents a source, a credibility score, or provenance.
   Trust mapping is opt-in and additive; with no mapping flags, frontmatter on a
-  recognised fence round-trips byte-for-byte — bounded exactly as the round-trip
-  guarantee above. On a fence binder does **not** recognise this does not hold:
-  the file is treated as plain, so the original frontmatter — a `verified:`
-  attestation included — is left in the body as text while binder synthesizes
-  keys of its own, among them a `type`, a `title`, and a `generated` provenance
-  stamp, with exit `0`, nothing skipped, and no warning
-  ([#124](https://github.com/ghchinoy/binder/issues/124), open). `generated` is
+  recognised fence that needed no read-boundary normalization round-trips
+  byte-for-byte — bounded exactly as the round-trip guarantee above. A leading
+  UTF-8 BOM or a lone-CR fence is now recognised via read-boundary normalization
+  ([#124](https://github.com/ghchinoy/binder/issues/124)), so its `verified:`
+  attestation is preserved rather than demoted — but because that normalization
+  is not byte-faithful it is disclosed (a `normalized` signal plus an advisory),
+  not a silent round-trip. On a file with **no** recognisable fence at all this
+  does not hold: the file is treated as plain, so its content is left in the
+  body as text while binder synthesizes keys of its own, among them a `type`, a
+  `title`, and a `generated` provenance stamp, with exit `0`, nothing skipped,
+  and no warning. `generated` is
   a key binder itself protects: `--overwrite-keys generated` is refused as a
   trust-provenance key. Trust tiers and staleness are *derived* on demand from
   frontmatter, never stored. A `verified`
@@ -363,8 +370,11 @@ A plain-markdown file (no frontmatter fence) gets a fresh, valid block prepended
    on an unchanged file a genuine no-op regardless of wall-clock time is tracked
    for 0.4.0 in [#134](https://github.com/ghchinoy/binder/issues/134).
 3. **Body + pre-existing keys byte-faithful (scoped to files whose frontmatter
-   binder recognises: the file's first bytes must be `---` and then a newline,
-   LF or CRLF, with nothing before them and nothing in between).** enrich reuses
+   binder recognises and that need no read-boundary normalization: the fence
+   opens with `---` and a newline, LF or CRLF, at the very start; a leading
+   UTF-8 BOM or lone-CR fence is recognised but normalized — disclosed rather
+   than byte-faithful, see [#124](https://github.com/ghchinoy/binder/issues/124)
+   and residual bound 6).** enrich reuses
    the codec's byte-faithful serializer, whose frontmatter guarantee has **two
    kinds of preservation that are not the same kind of true.** The first holds
    *by construction* and is unconditional; the second holds *by a scanner* and
@@ -426,16 +436,17 @@ A plain-markdown file (no frontmatter fence) gets a fresh, valid block prepended
    The **body** is re-emitted exactly, *including the original frontmatter/body
    separator*: a body that abutted the closing fence stays abutting it, and
    existing blank lines are neither added nor removed. This guarantee is scoped to
-   files whose frontmatter binder **recognises**: the file's first bytes must be
-   `---` and then a newline, LF or CRLF, with nothing before them and nothing in
-   between. See *Residual bounds* below for the byte-level cases it does **not**
-   cover on a recognised fence.
+   files whose frontmatter binder **recognises** and that need no read-boundary
+   normalization: the fence opens with `---` and a newline, LF or CRLF, at the
+   very start. A leading UTF-8 BOM or a lone-CR fence is recognised too, but is
+   normalized before recognition ([#124](https://github.com/ghchinoy/binder/issues/124),
+   residual bound 6 below) — disclosed, not byte-faithful. See *Residual bounds*
+   below for the byte-level cases it does **not** cover on a recognised fence.
 
-   A file whose fence binder does **not** recognise is not covered here at all,
-   and is not one of those residual bounds: it is treated as plain and
-   synthesized over, leaving the original frontmatter — a `verified:` attestation
-   included — in the body as text, with exit `0`, nothing skipped, and no warning
-   ([#124](https://github.com/ghchinoy/binder/issues/124), open).
+   A file with **no** recognisable fence at all is not covered here, and is not
+   one of those residual bounds: it is treated as plain and synthesized over,
+   leaving its content in the body as text, with exit `0`, nothing skipped, and
+   no warning (residual bound 5, *No frontmatter at all*).
 4. **Skip-unchanged (no git churn).** A file that needs no key is **not written
    at all** — no spurious diffs, no mtime bumps. Critical for git-tracked trees.
 5. **Skip-unparseable.** A file whose frontmatter will not parse (invalid YAML or
@@ -457,12 +468,17 @@ A plain-markdown file (no frontmatter fence) gets a fresh, valid block prepended
 > is a floor rather than a total, so please report any other to the maintainers:
 > 1. **CRLF → LF (body).** Body line endings are normalized `\r\n`→`\n`, so a CRLF
 >    file round-tripped is not byte-identical.
-> 2. **Lone CR → LF, inside recognised frontmatter only.** A bare `\r` (a carriage
->    return that is not part of a `\r\n`) within a recognised frontmatter block is
->    re-emitted as `\n`. The **body is not normalized** — its lone CRs survive
->    verbatim — so this bound is confined to the frontmatter region; that body
->    exemption is load-bearing, since without it the bound would read broader than
->    the code is.
+> 2. **Lone CR → LF, whole document, at the read boundary.** A file containing any
+>    bare `\r` (a carriage return that is not part of a `\r\n`) has **every** lone
+>    CR — in the frontmatter **and** the body — translated to `\n` before
+>    frontmatter is recognised (#124). This is deliberately wider than the codec's
+>    older frontmatter-only normalization: enrich now normalizes the whole input at
+>    the read boundary so a lone-CR-delimited (classic-Mac) frontmatter block, and
+>    any human `verified` block it guards, is **recognised** rather than demoted to
+>    body. Because the rewrite is not byte-faithful it is disclosed
+>    non-optionally — the file's result carries a `normalized: ["translated-lone-cr"]`
+>    signal and the run raises a top-level advisory (see bound 6). `\r\n` pairs are
+>    left untouched (that is bound 1's separate concern).
 > 3. **Trailing newline.** A file whose content ends without a trailing newline
 >    gains one on the closing `---` fence line.
 > 4. **Empty frontmatter re-emission.** A file whose frontmatter block is empty
@@ -474,6 +490,19 @@ A plain-markdown file (no frontmatter fence) gets a fresh, valid block prepended
 >    and in order, but a blank is prepended — which is why the byte-faithfulness
 >    guarantee is scoped to files whose frontmatter binder recognises, and does
 >    not apply here.
+> 6. **Leading UTF-8 BOM stripped, and boundary normalization is disclosed.** A file
+>    beginning with a UTF-8 byte-order mark (`EF BB BF`) has that single leading BOM
+>    removed before frontmatter is recognised (#124), so a BOM-prefixed `---` fence —
+>    and any human `verified` block it guards — is recognised rather than silently
+>    demoted to a synthetic `type: Note` body. Only a *single leading* BOM is
+>    stripped; a BOM elsewhere in the file is left untouched. Whenever this or the
+>    lone-CR translation of bound 2 fires on a file enrich rewrites, the output does
+>    **not** round-trip byte-for-byte against the source, so the change is disclosed
+>    non-optionally: the file's result carries a `normalized` signal
+>    (`["stripped-utf8-bom"]` and/or `["translated-lone-cr"]`) and the run raises a
+>    matching top-level advisory. A file enrich leaves unchanged is never rewritten,
+>    so its bytes — BOM and lone CRs included — are left exactly as-is and nothing is
+>    normalized or disclosed.
 >
 > A file that needs no key is never rewritten, so untouched files (including CRLF-
 > or spacing-only ones) are left exactly as-is. Because enrich mutates the source,
@@ -2663,14 +2692,19 @@ credibility score, and on a recognised fence it never fabricates provenance
 (spec §5.1).
 
 **That scoping is load-bearing if you rely on binder for provenance.**
-Preservation is scoped to files whose frontmatter binder recognises: the file's
-first bytes must be `---` and then a newline, LF or CRLF, with nothing before
-them and nothing in between. Recognising the fence is a scanner, so a file
-binder reads as plain is one it will synthesize over, leaving the original
-frontmatter — a `verified:` attestation with it — in the body as text, while
-binder synthesizes keys of its own, among them a `type`, a `title`, and a
-`generated` provenance stamp, with exit `0`, nothing skipped, and no warning
-([#124](https://github.com/ghchinoy/binder/issues/124), open).
+Byte-for-byte preservation is scoped to files whose frontmatter binder
+recognises and that need no read-boundary normalization: the fence opens with
+`---` and a newline, LF or CRLF, at the very start. A leading UTF-8 BOM or a
+lone-CR (classic-Mac) fence is now recognised via read-boundary normalization
+([#124](https://github.com/ghchinoy/binder/issues/124)), so the `verified:`
+attestation it guards is preserved rather than demoted to body — but because
+that normalization (BOM strip, lone-CR to LF) is not byte-faithful, it is
+disclosed non-optionally (a `normalized` signal plus a top-level advisory)
+rather than a silent round-trip. A file with **no** recognisable fence at all is
+still read as plain and synthesized over, leaving its content in the body as
+text while binder synthesizes keys of its own, among them a `type`, a `title`,
+and a `generated` provenance stamp, with exit `0`, nothing skipped, and no
+warning.
 
 ### Vocabulary
 

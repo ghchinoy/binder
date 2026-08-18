@@ -1,6 +1,7 @@
 package convert
 
 import (
+	"bytes"
 	"path"
 	"strings"
 	"time"
@@ -8,10 +9,73 @@ import (
 	"github.com/ghchinoy/binder/internal/okf"
 )
 
+// Normalization notes emitted by NormalizeInput. They are machine-readable and
+// stable so a headless pipeline can key on them; they are the vocabulary the
+// convert/enrich reports disclose in the per-file `normalized` signal (#124).
+const (
+	// NoteStrippedUTF8BOM is emitted when a single leading UTF-8 BOM was removed.
+	NoteStrippedUTF8BOM = "stripped-utf8-bom"
+	// NoteTranslatedLoneCR is emitted when one or more lone CRs (a "\r" that is
+	// NOT part of a "\r\n") were translated to "\n".
+	NoteTranslatedLoneCR = "translated-lone-cr"
+)
+
+// utf8BOM is the three-byte UTF-8 byte-order mark (U+FEFF encoded as UTF-8).
+var utf8BOM = []byte{0xEF, 0xBB, 0xBF}
+
+// NormalizeInput is the SINGLE normalization point at the convert/enrich read
+// boundary (#124, design §4.4). It strips a single leading UTF-8 BOM and
+// translates lone CRs ("\r" not part of a "\r\n") to "\n", returning the
+// normalized bytes and machine-readable notes describing what changed (empty
+// when nothing changed). Both the fence detectors below and the codec parser
+// receive its output, so recognition and parsing see the same bytes.
+//
+// It deliberately does NOT touch "\r\n": CRLF is already handled byte-faithfully
+// by the codec, and rewriting it here would change output for ordinary CRLF
+// files. The BOM strip mirrors internal/infer's precedent; lone-CR→LF mirrors
+// the existing "\r\n"→"\n" step. Normalization is not applied inside the codec
+// (design §4.4), so the codec still receives a clean, recognised fence and the
+// existing parse/skip contract is unchanged.
+func NormalizeInput(raw []byte) (norm []byte, notes []string) {
+	out := raw
+	if bytes.HasPrefix(out, utf8BOM) {
+		out = out[len(utf8BOM):]
+		notes = append(notes, NoteStrippedUTF8BOM)
+	}
+	if translated, changed := translateLoneCR(out); changed {
+		out = translated
+		notes = append(notes, NoteTranslatedLoneCR)
+	}
+	return out, notes
+}
+
+// translateLoneCR replaces every lone CR (a "\r" NOT immediately followed by a
+// "\n") with "\n", leaving "\r\n" pairs untouched. It reports whether any lone
+// CR was found so the caller can emit the disclosure note only when bytes
+// actually changed.
+func translateLoneCR(b []byte) (out []byte, changed bool) {
+	if bytes.IndexByte(b, '\r') < 0 {
+		return b, false
+	}
+	res := make([]byte, 0, len(b))
+	for i := 0; i < len(b); i++ {
+		if b[i] == '\r' && (i+1 >= len(b) || b[i+1] != '\n') {
+			res = append(res, '\n')
+			changed = true
+			continue
+		}
+		res = append(res, b[i])
+	}
+	return res, changed
+}
+
 // hasFrontmatter reports whether raw begins with a YAML frontmatter block
 // (a "---" line at the very start). Plain-markdown corpus files usually do not.
+// It operates on NormalizeInput's output so a leading BOM or a lone-CR-delimited
+// fence is recognised the same as any other (#124).
 func hasFrontmatter(raw []byte) bool {
-	s := strings.ReplaceAll(string(raw), "\r\n", "\n")
+	norm, _ := NormalizeInput(raw)
+	s := strings.ReplaceAll(string(norm), "\r\n", "\n")
 	if !strings.HasPrefix(s, "---\n") && s != "---" {
 		return false
 	}
@@ -31,8 +95,13 @@ func hasFrontmatter(raw []byte) bool {
 // than hasFrontmatter: an opened-but-unterminated fence and an opened-but-invalid
 // fence both qualify, so the converter routes both to the codec parser and lets
 // its error drive the never-reject recover-as-body path (design-v2 §4 robustness).
+//
+// It operates on NormalizeInput's output so a BOM-prefixed or lone-CR-delimited
+// fence opens the same as a plain one (#124); before this, such a fence never
+// opened and the file was silently demoted to body text.
 func opensFrontmatterFence(raw []byte) bool {
-	s := string(raw)
+	norm, _ := NormalizeInput(raw)
+	s := string(norm)
 	if strings.HasPrefix(s, "---\n") || strings.HasPrefix(s, "---\r\n") {
 		return true
 	}

@@ -124,6 +124,14 @@ type ConceptReport struct {
 	Title         string `json:"title"`
 	NumLinks      int    `json:"num_links"`
 	NumUnresolved int    `json:"num_unresolved"`
+	// Normalized lists the boundary-normalizations applied to this source file
+	// before frontmatter recognition (#124): "stripped-utf8-bom" and/or
+	// "translated-lone-cr". It is an ADDED optional field in binder.report/v1 —
+	// omitted (nil) when nothing was normalized, so consumers ignoring it and the
+	// default (no BOM/lone-CR) output are unaffected. A non-empty value means the
+	// converted output does NOT round-trip byte-for-byte against the source; the
+	// run also raises a top-level advisory so a headless pipeline sees it.
+	Normalized []string `json:"normalized,omitempty"`
 }
 
 func (r *Report) addWarning(format string, args ...any) {

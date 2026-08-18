@@ -226,9 +226,10 @@ func Analyze(src string, opts Options) (concepts []*okf.Concept, facts []SourceF
 	// identity. Titles must be resolved for ALL files before any body is rewritten
 	// because wikilinks resolve against the corpus's titles (design-v2 §4.2).
 	type staged struct {
-		src string // source-relative path (for relative link resolution)
-		out string // output-relative path
-		c   *okf.Concept
+		src        string // source-relative path (for relative link resolution)
+		out        string // output-relative path
+		c          *okf.Concept
+		normalized []string // #124 boundary-normalization notes (empty when none)
 	}
 	var items []staged
 	entries := make([]indexEntry, 0, len(files))
@@ -239,16 +240,17 @@ func Analyze(src string, opts Options) (concepts []*okf.Concept, facts []SourceF
 		if rerr != nil {
 			return nil, nil, nil, fmt.Errorf("convert: reading %q: %w", f.rel, rerr)
 		}
-		c, perr := toConcept(opts.Codec, outRel, raw)
+		c, norm, notes, perr := toConcept(opts.Codec, outRel, raw)
 		recovered := false
 		recoverErr := ""
 		if perr != nil {
 			// Never-reject (spec §11 / design-v2): a source file whose frontmatter
 			// will not parse must not abort the whole conversion, nor be dropped.
-			// Preserve it losslessly as a plain-markdown concept — its raw text
-			// (including the unparsed fence block) becomes the body — and report it,
-			// so the run completes and no content is lost.
-			c = plainConcept(opts.Codec, outRel, raw)
+			// Preserve it losslessly as a plain-markdown concept — the NORMALIZED
+			// text (BOM stripped, lone CR→LF; the same bytes the detector saw, #124)
+			// becomes the body — and report it, so the run completes and no content
+			// is lost.
+			c = plainConcept(opts.Codec, outRel, norm)
 			recovered = true
 			recoverErr = perr.Error()
 			report.NumRecovered++
@@ -278,7 +280,7 @@ func Analyze(src string, opts Options) (concepts []*okf.Concept, facts []SourceF
 			okf.MarkRecovered(c.Frontmatter, "unparseable-frontmatter")
 		}
 
-		items = append(items, staged{src: f.rel, out: outRel, c: c})
+		items = append(items, staged{src: f.rel, out: outRel, c: c, normalized: notes})
 		entries = append(entries, indexEntry{srcRel: f.rel, outRel: outRel, title: conceptTitle(c)})
 	}
 	index := buildCorpusIndex(entries)
@@ -342,7 +344,17 @@ func Analyze(src string, opts Options) (concepts []*okf.Concept, facts []SourceF
 		c.Trust = okf.ProjectTrust(c.Frontmatter, c.Type)
 
 		concepts = append(concepts, c)
-		report.Concepts = append(report.Concepts, conceptReport(c))
+		cr := conceptReport(c)
+		if len(it.normalized) > 0 {
+			// Disclose the boundary-normalization non-optionally (#124, design §4.4):
+			// a per-concept `normalized` signal AND a top-level advisory, so neither
+			// a structured consumer nor a headless one can miss that binder changed
+			// the input's bytes before recognising its frontmatter.
+			cr.Normalized = it.normalized
+			report.addWarning("%s: input normalized before frontmatter recognition (%s); output does not round-trip byte-for-byte against the source",
+				it.out, strings.Join(it.normalized, ", "))
+		}
+		report.Concepts = append(report.Concepts, cr)
 		report.addUnresolved(c)
 	}
 
@@ -376,11 +388,21 @@ func Analyze(src string, opts Options) (concepts []*okf.Concept, facts []SourceF
 // recovers from by preserving the file as plain markdown (never-reject). A file
 // with no opening fence is plain markdown and never errors here — so the only
 // error toConcept can return is a frontmatter-parse failure, never I/O.
-func toConcept(codec okf.Codec, outRel string, raw []byte) (*okf.Concept, error) {
-	if opensFrontmatterFence(raw) {
-		return codec.ParseConcept(outRel, raw)
+//
+// Input is normalized ONCE at this read boundary (#124, design §4.4): a leading
+// UTF-8 BOM is stripped and lone CRs translated to LF BEFORE fence detection, so
+// a BOM-prefixed or lone-CR-delimited frontmatter file is recognised and parsed
+// rather than silently demoted to body. toConcept returns the normalized bytes
+// (so the caller's never-reject fallback preserves the SAME bytes the detector
+// saw) and the machine-readable notes describing what changed (empty when
+// nothing did), which the caller discloses in the report.
+func toConcept(codec okf.Codec, outRel string, raw []byte) (c *okf.Concept, norm []byte, notes []string, err error) {
+	norm, notes = NormalizeInput(raw)
+	if opensFrontmatterFence(norm) {
+		c, err = codec.ParseConcept(outRel, norm)
+		return c, norm, notes, err
 	}
-	return plainConcept(codec, outRel, raw), nil
+	return plainConcept(codec, outRel, norm), norm, notes, nil
 }
 
 // plainConcept builds a concept from raw bytes treated as plain markdown: an

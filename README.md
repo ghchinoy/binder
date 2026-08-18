@@ -13,21 +13,29 @@ bundle, extracts every relationship signal (wikilinks, anchor links, frontmatter
 refs, hashtags), maps corpus-native provenance into the trust vocabulary,
 generates per-directory index navigation, validates bundles against the spec's
 §11 conformance rules, and preserves trust frontmatter byte-for-byte on
-round-trip — scoped to files whose frontmatter binder recognises: the file's
-first bytes must be `---` and then a newline, LF or CRLF, with nothing before
-them and nothing in between. It also reports and visualizes a bundle (`review`,
+round-trip — scoped to files whose frontmatter binder recognises **and that need
+no read-boundary normalization**: the fence must open with `---` and a newline
+(LF or CRLF) at the very start. A leading UTF-8 BOM or a lone-CR (classic-Mac)
+fence is now recognised too, but is normalized before recognition (#124) — a
+disclosed change that is deliberately not byte-faithful. It also reports and
+visualizes a bundle (`review`,
 `graph`), lints a source corpus before conversion (`lint`), declaratively stamps
 trust/lifecycle metadata (`--status-map`, `--stale-after-map`, `--verified-by`),
 is configurable via `binder config`, and supports `--strict` CI gating.
 
 **That scoping is load-bearing if you rely on binder for provenance.**
-Recognising the fence is a scanner, not a property of the file: frontmatter
-binder does not recognise leaves the file looking plain, so `convert` and
-`enrich` synthesize a fresh block and leave the original — any `verified:`
-attestation with it — in the body as text, exiting `0` with nothing skipped and
-no warning ([#124](https://github.com/ghchinoy/binder/issues/124), open). For
-the bounds known to remain even on a recognised fence, see *Residual bounds*
-under [`enrich`](docs/user_guide.md#enrich).
+Recognising the fence is a scanner, not a property of the file. A leading UTF-8
+BOM or a lone-CR-delimited fence used to leave the file looking plain, so
+`convert` and `enrich` synthesized a fresh block and left the original — any
+`verified:` attestation with it — in the body as text, exiting `0` with nothing
+skipped and no warning. As of
+[#124](https://github.com/ghchinoy/binder/issues/124) that input is normalized
+at the read boundary before recognition, so the fence — and the attestation it
+guards — is recognised; because the normalization (BOM strip, lone-CR → LF) is
+not byte-faithful it is disclosed non-optionally via a per-file `normalized`
+signal and a top-level advisory. For the bounds known to remain even on a
+recognised fence, see *Residual bounds* under
+[`enrich`](docs/user_guide.md#enrich).
 
 ## Table of Contents
 
@@ -91,14 +99,15 @@ Two properties make it trustworthy for pipelines:
 - **Byte-faithful frontmatter round-trip, on a recognised fence.** Unmodified
   YAML frontmatter is passed through verbatim — including nested-map and list
   key order — so a round-trip changes nothing it did not have to change. This is
-  scoped to files whose frontmatter binder recognises: the file's first bytes
-  must be `---` and then a newline, LF or CRLF, with nothing before them and
-  nothing in between. Recognising the fence is a scanner, so a file binder
-  reads as plain is one it will synthesize over, leaving the original
-  frontmatter in the body
-  ([#124](https://github.com/ghchinoy/binder/issues/124), open). For the bounds
-  known to remain even on a recognised fence, see *Residual bounds* under
-  [`enrich`](docs/user_guide.md#enrich).
+  scoped to files whose frontmatter binder recognises **and that need no
+  read-boundary normalization**: the fence must open with `---` and a newline
+  (LF or CRLF) at the very start. A leading UTF-8 BOM or a lone-CR (classic-Mac)
+  fence is now recognised too, but is first normalized at the read boundary
+  ([#124](https://github.com/ghchinoy/binder/issues/124)) — the fence and any
+  `verified:` block it guards are preserved, but the round-trip is intentionally
+  not byte-faithful and is disclosed via a `normalized` signal and a top-level
+  advisory. For the bounds known to remain even on a recognised fence, see
+  *Residual bounds* under [`enrich`](docs/user_guide.md#enrich).
 
 ## Installation
 
