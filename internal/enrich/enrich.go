@@ -98,6 +98,16 @@ type FileResult struct {
 	Added       []string `json:"added,omitempty"`
 	Overwritten []string `json:"overwritten,omitempty"`
 	Reason      string   `json:"reason,omitempty"` // for skipped, e.g. "unparseable frontmatter: <err>"
+	// Normalized lists the boundary-normalizations binder applied to this file
+	// before frontmatter recognition (#124): "stripped-utf8-bom" and/or
+	// "translated-lone-cr". It is set ONLY when the file was actually written
+	// (enriched, or would-enrich under --dry-run) — i.e. when the normalized bytes
+	// were persisted — so it never claims a change that did not reach disk. It is
+	// an ADDED optional field in binder.report/v1, omitted (nil) when nothing was
+	// normalized; consumers ignoring it and the default (no BOM/lone-CR) output are
+	// unaffected. A non-empty value means the written file does NOT round-trip
+	// byte-for-byte against the source; the run also raises a top-level advisory.
+	Normalized []string `json:"normalized,omitempty"`
 }
 
 // Report summarizes an enrichment run. Slices are always initialized so --json
@@ -236,6 +246,15 @@ func Enrich(src string, opts Options) (*Report, error) {
 			return nil, werr
 		}
 		rep.Files = append(rep.Files, res)
+		if len(res.Normalized) > 0 {
+			// Non-optional disclosure (#124, design §9 AC5): a written file whose
+			// bytes were normalized raises a top-level advisory in addition to its
+			// per-file `normalized` signal, so a "silent-success" enrich of a
+			// normalized file is impossible.
+			rep.Warnings = append(rep.Warnings, fmt.Sprintf(
+				"%s: input normalized before frontmatter recognition (%s); written file does not round-trip byte-for-byte against the source",
+				f.Rel, strings.Join(res.Normalized, ", ")))
+		}
 		if vres.Advisory != "" {
 			rep.Warnings = append(rep.Warnings, fmt.Sprintf("%s: %s", f.Rel, vres.Advisory))
 		}
@@ -272,11 +291,21 @@ func Enrich(src string, opts Options) (*Report, error) {
 // advisory message (else ""), and an error. A parse failure yields a skipped
 // result (never mutated); an IO write failure returns an error (exit 3).
 func enrichFile(codec okf.Codec, f convert.SourceFile, raw []byte, opts Options) (FileResult, convert.VerifiedResult, error) {
+	// Normalize ONCE at the read boundary (#124, design §4.4): strip a leading
+	// UTF-8 BOM and translate lone CR→LF BEFORE fence detection, then route on and
+	// parse the SAME normalized bytes. Before this, a BOM-prefixed or lone-CR-fenced
+	// file failed recognition, fell into the else branch, and had its real (often
+	// human-verified) frontmatter silently demoted to body under a synthetic block.
+	norm, notes := convert.NormalizeInput(raw)
+
 	var c *okf.Concept
-	if convert.OpensFrontmatterFence(raw) {
-		parsed, perr := codec.ParseConcept(f.Rel, raw)
+	if convert.OpensFrontmatterFence(norm) {
+		parsed, perr := codec.ParseConcept(f.Rel, norm)
 		if perr != nil {
-			// Never mutate what we cannot safely parse — skip and report.
+			// Never mutate what we cannot safely parse — skip and report. After
+			// normalization a BOM/lone-CR fence now OPENS, so a genuinely-broken one
+			// reaches this existing skip-and-disclose path instead of being demoted
+			// (the transition #124's remedy depends on; design §9 AC3).
 			return FileResult{
 				Path:   f.Rel,
 				Status: StatusSkipped,
@@ -286,7 +315,7 @@ func enrichFile(codec okf.Codec, f convert.SourceFile, raw []byte, opts Options)
 		c = parsed
 	} else {
 		// No frontmatter: a fresh valid block will be injected.
-		c = convert.PlainConcept(codec, f.Rel, raw)
+		c = convert.PlainConcept(codec, f.Rel, norm)
 	}
 
 	// Snapshot the frontmatter (keys + deep-copied values) BEFORE injection so
@@ -330,8 +359,12 @@ func enrichFile(codec okf.Codec, f convert.SourceFile, raw []byte, opts Options)
 
 	added, overwritten := splitChanged(before, changed, opts.OverwriteKeys)
 
+	// Disclose boundary-normalization ONLY on a written result: the normalized
+	// bytes reach disk exactly when the file is (or, under --dry-run, would be)
+	// rewritten. A StatusUnchanged/StatusSkipped file is left byte-identical, so
+	// no normalization is persisted and none is claimed (#124, design §9 AC5).
 	if opts.DryRun {
-		return FileResult{Path: f.Rel, Status: StatusWouldEnrich, Added: added, Overwritten: overwritten}, vres, nil
+		return FileResult{Path: f.Rel, Status: StatusWouldEnrich, Added: added, Overwritten: overwritten, Normalized: notes}, vres, nil
 	}
 
 	out, serr := codec.Serialize(c)
@@ -341,7 +374,7 @@ func enrichFile(codec okf.Codec, f convert.SourceFile, raw []byte, opts Options)
 	if err := atomicWrite(f.Abs, out); err != nil {
 		return FileResult{}, convert.VerifiedResult{}, fmt.Errorf("enrich: writing %q: %w", f.Rel, err)
 	}
-	return FileResult{Path: f.Rel, Status: StatusEnriched, Added: added, Overwritten: overwritten}, vres, nil
+	return FileResult{Path: f.Rel, Status: StatusEnriched, Added: added, Overwritten: overwritten, Normalized: notes}, vres, nil
 }
 
 // applyOverwrites refreshes the frontmatter keys named in opts.OverwriteKeys with

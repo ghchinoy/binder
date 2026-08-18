@@ -455,12 +455,17 @@ A plain-markdown file (no frontmatter fence) gets a fresh, valid block prepended
 > is a floor rather than a total, so please report any other to the maintainers:
 > 1. **CRLF → LF (body).** Body line endings are normalized `\r\n`→`\n`, so a CRLF
 >    file round-tripped is not byte-identical.
-> 2. **Lone CR → LF, inside recognised frontmatter only.** A bare `\r` (a carriage
->    return that is not part of a `\r\n`) within a recognised frontmatter block is
->    re-emitted as `\n`. The **body is not normalized** — its lone CRs survive
->    verbatim — so this bound is confined to the frontmatter region; that body
->    exemption is load-bearing, since without it the bound would read broader than
->    the code is.
+> 2. **Lone CR → LF, whole document, at the read boundary.** A file containing any
+>    bare `\r` (a carriage return that is not part of a `\r\n`) has **every** lone
+>    CR — in the frontmatter **and** the body — translated to `\n` before
+>    frontmatter is recognised (#124). This is deliberately wider than the codec's
+>    older frontmatter-only normalization: enrich now normalizes the whole input at
+>    the read boundary so a lone-CR-delimited (classic-Mac) frontmatter block, and
+>    any human `verified` block it guards, is **recognised** rather than demoted to
+>    body. Because the rewrite is not byte-faithful it is disclosed
+>    non-optionally — the file's result carries a `normalized: ["translated-lone-cr"]`
+>    signal and the run raises a top-level advisory (see bound 6). `\r\n` pairs are
+>    left untouched (that is bound 1's separate concern).
 > 3. **Trailing newline.** A file whose content ends without a trailing newline
 >    gains one on the closing `---` fence line.
 > 4. **Empty frontmatter re-emission.** A file whose frontmatter block is empty
@@ -472,6 +477,19 @@ A plain-markdown file (no frontmatter fence) gets a fresh, valid block prepended
 >    and in order, but a blank is prepended — which is why the byte-faithfulness
 >    guarantee is scoped to files whose frontmatter binder recognises, and does
 >    not apply here.
+> 6. **Leading UTF-8 BOM stripped, and boundary normalization is disclosed.** A file
+>    beginning with a UTF-8 byte-order mark (`EF BB BF`) has that single leading BOM
+>    removed before frontmatter is recognised (#124), so a BOM-prefixed `---` fence —
+>    and any human `verified` block it guards — is recognised rather than silently
+>    demoted to a synthetic `type: Note` body. Only a *single leading* BOM is
+>    stripped; a BOM elsewhere in the file is left untouched. Whenever this or the
+>    lone-CR translation of bound 2 fires on a file enrich rewrites, the output does
+>    **not** round-trip byte-for-byte against the source, so the change is disclosed
+>    non-optionally: the file's result carries a `normalized` signal
+>    (`["stripped-utf8-bom"]` and/or `["translated-lone-cr"]`) and the run raises a
+>    matching top-level advisory. A file enrich leaves unchanged is never rewritten,
+>    so its bytes — BOM and lone CRs included — are left exactly as-is and nothing is
+>    normalized or disclosed.
 >
 > A file that needs no key is never rewritten, so untouched files (including CRLF-
 > or spacing-only ones) are left exactly as-is. Because enrich mutates the source,
