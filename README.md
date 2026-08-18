@@ -52,8 +52,9 @@ under [`enrich`](docs/user_guide.md#enrich).
   generated provenance stamp.
 - **`enrich`** adds the missing required frontmatter (`type`, `title`,
   `generated`) to a source markdown tree **in place** — frontmatter only, no body
-  changes. It is additive/never-clobber, idempotent, atomic, and safe on a
-  git-tracked repo (see [`enrich`](docs/user_guide.md#enrich)).
+  changes. It is additive/never-clobber, atomic, and safe on a git-tracked repo,
+  and idempotent unless a `verified` stamp advances (see
+  [`enrich`](docs/user_guide.md#enrich)).
 - **`validate`** checks a bundle against the OKF v0.2 §11 conformance rules and
   reports trust/lifecycle well-formedness as advisories.
 - **`index`** (re)generates per-directory `index.md` navigation for a bundle, and

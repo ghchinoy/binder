@@ -62,8 +62,9 @@ Two habits make every run in this tutorial reproducible:
 Throughout, keep binder's central design goal in mind — the commitment its
 design is built to hold: not to fabricate trust. Binder derives trust tiers from
 the frontmatter you provide, stamps an honest `generated` provenance for content
-it produced, and requires an explicit `--verified-by` before it will write a
-`verified` attestation — it does not invent a source or auto-stamp one. A
+it produced, and requires an explicit verifier you supply — the `--verified-by`
+flag or a `verified_by` default in your own global config — before it will write a
+`verified` attestation, so it never auto-stamps one and never invents a source. A
 `verified` attestation is something you asked for, and Part 2 shows exactly what
 counts as asking.
 
@@ -814,7 +815,9 @@ binder derives a trust tier from the `verified` signals in the frontmatter
 `human-reviewed`, other verification yields `machine-confirmed`, none yields
 `unverified`); it never stores a credibility score. It stamps an honest
 `generated: binder/<version>` for content it produced, and it never auto-stamps
-`verified`. Steps 5 and 6 are that rule in three parts:
+`verified`: a `verified` stamp is written only from an explicit verifier you
+supply, never on binder's own initiative. Steps 5 and 6 are that rule in three
+parts:
 
 - **No flag, no stamp.** A `verified` stamp needs `--verified-by` on the run, or
   a `verified_by` default in your own global config.
