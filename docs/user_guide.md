@@ -30,6 +30,7 @@ adapter remains planned — see [Roadmap](#roadmap--planned-features).
   - [`review`](#review)
   - [`lint`](#lint)
   - [`graph`](#graph)
+  - [`project`](#project)
   - [`infer`](#infer)
   - [`config`](#config)
 - [JSON output (`--json`) and the exit-code contract](#json-output---json-and-the-exit-code-contract)
@@ -110,9 +111,9 @@ blanket promise across every command:
 
 ## Commands
 
-The binary exposes ten commands. All bundle-reading commands
-(`validate`/`index`/`review`/`graph`) load a bundle through the same codec, so
-their views of concepts, links, and trust always agree. `lint`, `enrich`, and
+The binary exposes eleven commands. All bundle-reading commands
+(`validate`/`index`/`review`/`graph`/`project`) load a bundle through the same
+codec, so their views of concepts, links, and trust always agree. `lint`, `enrich`, and
 `infer` are the exceptions: they read (and, for `enrich`, mutate) a **source
 corpus** rather than a bundle; `lint` and `enrich` do so through the same
 converter machinery, and `infer` never writes at all. `mcp` is a transport rather than a
@@ -130,6 +131,7 @@ binder index      (Re)generate the per-directory index.md nav tree (spec §8)
 binder review     Summarize a bundle: concepts, links, orphans, trust tiers, stale
 binder lint       Report source-corpus health before conversion (writes nothing)
 binder graph      Export the bundle's concept graph (dot|json|graphml|html)
+binder project    Project a bundle into offline property-graph DDL (Spanner SQL/PGQ)
 binder infer      Inspect a source markdown corpus and propose a --type-map
 binder config     Show the resolved effective configuration and each value's source; get/set/unset to persist
 binder mcp        Run binder as a stdio MCP server (convert/validate/review/lint/graph/list_graphs/query_graph)
@@ -987,6 +989,50 @@ digraph okf {
   "overview" -> "metrics/revenue" [label="revenue metric"];
 }
 ```
+
+### `project`
+
+```text
+binder project <bundle> --out <dir> [flags]
+```
+
+Projects a loaded bundle into a **deterministic, credential-free** property-graph
+schema and writes it to `--out`. It emits `schema.ddl` — `CREATE TABLE Nodes`,
+`CREATE TABLE Edges`, and a `CREATE PROPERTY GRAPH` wrapper with a single `LINKS`
+edge label — and prints a `binder.report/v1` summary (command `project`) to
+stdout. It uses **no cloud credentials** and contacts no service.
+
+The projection reuses the same node/edge model as [`graph`](#graph),
+`list_graphs`, and `query_graph`, so the emitted edge set and node identity stay
+in parity by construction. No graph is created or populated remotely — this
+command emits offline DDL text only.
+
+| Flag | Default | Purpose |
+|---|---|---|
+| `--out` | *(required)* | Output directory for emitted artifacts (`schema.ddl`). |
+| `--target` | `spanner` | Projection target dialect. `spanner` (Spanner Graph, GoogleSQL SQL/PGQ) is the only accepted value in this release; any other value is a usage error (exit 2). |
+| `--id-key` | *(none)* | Authored frontmatter key to use as the node identity (`node_key`). When a concept carries this key as a non-empty string, that value is the key (`strategy: frontmatter`); otherwise it falls back to the path-derived concept id (`strategy: path`). binder **never mints** a key. |
+| `--today` | now | Date (`YYYY-MM-DD`) used for the frozen `tier`/`stale` snapshot and echoed as `projected_as_of`. Honors `SOURCE_DATE_EPOCH`. |
+
+The `Nodes` table carries `node_key`, `title`, `type`, `tier`, `stale`, and
+`stale_after`. `tier` and `stale` are the **projection-time snapshot** as of
+`--today` (identical to what `graph`/`review` derive for the same date);
+`stale_after` is the raw authored date input, so `stale` stays re-derivable. The
+`Edges` table carries `from_key`, `to_key`, and the nullable `rel` (the link
+text; labels are **not** derived from it). The DDL is byte-deterministic: fixed
+column order and deterministic identifier sanitization.
+
+The summary envelope carries `node_key.strategy` (`path` | `frontmatter`),
+`identity_stability` (`re_rooting_stable`, `path_fallback_count`), `counts`
+(`nodes`, `edges`), `projected_as_of`, `target`, and an `artifacts` manifest
+listing the emitted files with their byte lengths. `re_rooting_stable` is `true`
+only when an authored `--id-key` resolved on **every** node (a path fallback
+anywhere means a moved corpus root would change those keys).
+
+> **Note (v0.4.0):** `binder project` currently emits **schema only** — no row
+> data and no attestation (`NodeVerified`) table. Loader row-data emission and the
+> provenance-completeness table are planned follow-ups; the complete `project`
+> user-guide section covering them lands with those phases.
 
 ### `infer`
 
