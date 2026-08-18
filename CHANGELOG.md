@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.4.0](https://github.com/ghchinoy/binder/compare/v0.3.3...v0.4.0) (2026-08-18)
+
+
+### Features
+
+* add binder project offline property-graph DDL command ([#138](https://github.com/ghchinoy/binder/issues/138)) ([87f4779](https://github.com/ghchinoy/binder/commit/87f4779d6abbb14ceb87aa9fa1a584dc3b94d333)), closes [#35](https://github.com/ghchinoy/binder/issues/35)
+* add NodeVerified provenance table and derivation view ([0d760ce](https://github.com/ghchinoy/binder/commit/0d760ce85436258294d0b670fb776f3adb341a8c))
+* emit binder project loader row data + LOAD statements ([2ecd871](https://github.com/ghchinoy/binder/commit/2ecd871d0b284c86e43243a6c03a20cea1b274af))
+
+
+### Bug Fixes
+
+* recognise BOM/lone-CR frontmatter fences ([#124](https://github.com/ghchinoy/binder/issues/124)) ([769baf0](https://github.com/ghchinoy/binder/commit/769baf057b6eaca08805590567474b8176e34a6d))
+
+
+### Documentation
+
+* ground absolute safety and idempotence claims, add fifth residual bound ([#136](https://github.com/ghchinoy/binder/issues/136)) ([06ff510](https://github.com/ghchinoy/binder/commit/06ff5105d1ab302a2faebd618c0de9e59ac2e8c8))
+
 ## [0.3.3](https://github.com/ghchinoy/binder/compare/v0.3.2...v0.3.3) (2026-08-17)
 
 
