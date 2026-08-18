@@ -1,0 +1,6 @@
+node_key,seq,by,at,is_human
+node-gen,0,agent:bot,2025-01-02T00:00:00Z,false
+node-human,0,human:bob@corp,2025-05-05T05:05:05Z,true
+node-multi,0,agent:etl,2025-03-01T12:00:00Z,false
+node-multi,1,human:alice@corp,2025-04-02T09:30:00Z,true
+node-multi,2,process:nightly-refresh,,false

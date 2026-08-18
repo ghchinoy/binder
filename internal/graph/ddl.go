@@ -7,9 +7,11 @@
 // path. It is additive and read-only: it never writes to a bundle, never mutates
 // frontmatter, and NEVER mints an identity (design v0.4.0 §4.1–§4.5).
 //
-// G1 emits schema only (CREATE TABLE Nodes + Edges + CREATE PROPERTY GRAPH). The
-// Projection's Nodes/Edges slices are the seam a later phase reads to emit row
-// data additively, so row emission is an extension of this file, not a rewrite.
+// DDL renders the schema text (CREATE TABLE Nodes/Edges/NodeVerified + CREATE
+// PROPERTY GRAPH); the Projection's Nodes/Edges/verified slices are the seam the
+// companion emitters read to produce the row data (nodes.csv, edges.csv,
+// node_verified.csv), the DML loader (load.sql) and the derivation view
+// (derivation.sql). Each emitter is a pure read over the same in-memory model.
 package graph
 
 import (
@@ -51,6 +53,12 @@ type ProjectedNode struct {
 	Tier       okf.Tier // = Node.Tier (frozen snapshot as of AsOf)
 	Stale      bool     // = Node.Stale (frozen snapshot as of AsOf)
 	StaleAfter string   // raw authored stale_after (spec §5.5); "" if absent
+
+	// Verified is the concept's verified[] attestations projected VERBATIM
+	// (okf.ProjectTrust order-preserving; see projectActorstamps). It is the
+	// lossless source the frozen Tier derives from and the byte-faithful input to
+	// the NodeVerified child table (OQ-8 item 3). Copied, never re-derived.
+	Verified []okf.Actorstamp
 }
 
 // IdentityStability is the graph-level re-rooting signal (OQ-6). The projection
@@ -112,9 +120,11 @@ func Project(b *okf.Bundle, opts ProjectOptions) *Projection {
 		// practice — Build's nodes come from b.Concepts) is never minted a key.
 		key, strategy := n.ID, "path"
 		staleAfter := ""
+		var verified []okf.Actorstamp
 		if c := byID[n.ID]; c != nil {
 			key, strategy = NodeKeyFor(c, opts.IDKey)
 			staleAfter = c.Trust.StaleAfter
+			verified = c.Trust.Verified
 		}
 		if strategy != "frontmatter" {
 			pathFallback++
@@ -128,6 +138,7 @@ func Project(b *okf.Bundle, opts ProjectOptions) *Projection {
 			Tier:       n.Tier,
 			Stale:      n.Stale,
 			StaleAfter: staleAfter,
+			Verified:   verified,
 		})
 	}
 
@@ -189,8 +200,13 @@ var edgeColumns = []ddlColumn{
 const ddlHeader = `-- schema.ddl — offline OKF property-graph projection (binder project).
 -- Target: Spanner (GoogleSQL SQL/PGQ). The relational schema (tables/columns/
 -- keys) is target-neutral; only CREATE PROPERTY GRAPH is Spanner-dialect.
--- Deterministic; identifier sanitization and column order are fixed. G1 emits
--- schema only — no row data.
+-- Deterministic; identifier sanitization and column order are fixed.
+--
+-- This file declares the tables (Nodes, Edges, and the NodeVerified attestation
+-- child table) and the property graph. binder project emits it alongside the
+-- companion row files nodes.csv / edges.csv / node_verified.csv, the DML loader
+-- load.sql that populates Nodes and Edges, and derivation.sql (a view that
+-- recomputes tier/stale from stale_after + NodeVerified).
 `
 
 // propertyGraphDDL is the Spanner (GoogleSQL SQL/PGQ) CREATE PROPERTY GRAPH
@@ -208,9 +224,10 @@ const propertyGraphDDL = `CREATE PROPERTY GRAPH OkfGraph
 `
 
 // DDL renders the deterministic schema.ddl bytes: CREATE TABLE Nodes, CREATE
-// TABLE Edges, then the CREATE PROPERTY GRAPH wrapper. In G1 the DDL is a pure
-// function of the fixed column definitions (it carries no row data and no
-// bundle-derived identifiers), so it is byte-identical run-to-run.
+// TABLE Edges, CREATE TABLE NodeVerified, then the CREATE PROPERTY GRAPH wrapper.
+// The DDL is a pure function of the fixed column definitions (it carries no row
+// data and no bundle-derived identifiers), so it is byte-identical run-to-run;
+// the row data lives in the companion CSV/loader artifacts.
 func (p *Projection) DDL() []byte {
 	var b strings.Builder
 	b.WriteString(ddlHeader)
@@ -218,6 +235,11 @@ func (p *Projection) DDL() []byte {
 	writeCreateTable(&b, "Nodes", nodeColumns, "node_key")
 	b.WriteString("\n")
 	writeCreateTable(&b, "Edges", edgeColumns, "from_key, to_key, rel")
+	b.WriteString("\n")
+	// OQ-8 item 3: the NodeVerified child table (byte-faithful verified[]). It is
+	// a relational detail table keyed under Nodes, NOT a graph node/edge, so it
+	// does not appear in CREATE PROPERTY GRAPH below.
+	writeCreateTable(&b, "NodeVerified", nodeVerifiedColumns, "node_key, seq")
 	b.WriteString("\n")
 	b.WriteString(propertyGraphDDL)
 	return []byte(b.String())
