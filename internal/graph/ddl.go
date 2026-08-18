@@ -13,6 +13,10 @@
 package graph
 
 import (
+	"bytes"
+	"encoding/csv"
+	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/ghchinoy/binder/internal/okf"
@@ -71,6 +75,11 @@ type Projection struct {
 	Identity IdentityStability
 	Counts   Counts
 	AsOf     string // projected_as_of: the `today` the frozen snapshot reflects
+
+	// keyByID maps concept path-ID → emitted node_key, used only by row emission
+	// (edges reference node_key). Unexported: it is a derivation of the Nodes
+	// slice, not part of the report contract.
+	keyByID map[string]string
 }
 
 // Project builds the deterministic projection. tier/stale are read from Build's
@@ -93,8 +102,11 @@ func Project(b *okf.Bundle, opts ProjectOptions) *Projection {
 	}
 
 	nodes := make([]ProjectedNode, 0, len(m.Nodes))
+	// keyByID maps a concept's path-derived ID (the Edge.From/To vocabulary) to its
+	// emitted node_key, so edge row emission can carry referential integrity to the
+	// Nodes table without a second identity path (row data, G2).
+	keyByID := make(map[string]string, len(m.Nodes))
 	pathFallback := 0
-	frontmatterCount := 0
 	for _, n := range m.Nodes {
 		// Default to the path identity so a node missing from byID (impossible in
 		// practice — Build's nodes come from b.Concepts) is never minted a key.
@@ -104,11 +116,10 @@ func Project(b *okf.Bundle, opts ProjectOptions) *Projection {
 			key, strategy = NodeKeyFor(c, opts.IDKey)
 			staleAfter = c.Trust.StaleAfter
 		}
-		if strategy == "frontmatter" {
-			frontmatterCount++
-		} else {
+		if strategy != "frontmatter" {
 			pathFallback++
 		}
+		keyByID[n.ID] = key
 		nodes = append(nodes, ProjectedNode{
 			Key:        key,
 			Strategy:   strategy,
@@ -120,29 +131,24 @@ func Project(b *okf.Bundle, opts ProjectOptions) *Projection {
 		})
 	}
 
-	// Graph-level strategy echoes the list_graphs vocabulary (schema.go Describe):
-	// "frontmatter" only when an id_key was requested AND resolved on ≥1 concept;
-	// the requested key is echoed back regardless so a caller sees what was asked.
-	strategy := "path"
-	key := ""
-	if opts.IDKey != "" {
-		key = opts.IDKey
-		if frontmatterCount > 0 {
-			strategy = "frontmatter"
-		}
-	}
+	// Graph-level node-key descriptor: shared with schema.go's Describe via
+	// aggregateNodeKey so the list_graphs and `binder project` surfaces cannot
+	// drift (one definition of the graph-level strategy, as there is one
+	// NodeKeyFor per node).
+	nk := aggregateNodeKey(b.Concepts, opts.IDKey)
 
 	return &Projection{
 		Target:  target,
 		Nodes:   nodes,
 		Edges:   EdgesFromConcepts(b.Concepts),
-		NodeKey: NodeKey{Strategy: strategy, Key: key},
+		NodeKey: nk,
 		Identity: IdentityStability{
-			ReRootingStable:   strategy == "frontmatter" && pathFallback == 0,
+			ReRootingStable:   nk.Strategy == "frontmatter" && pathFallback == 0,
 			PathFallbackCount: pathFallback,
 		},
-		Counts: Counts{Nodes: len(nodes), Edges: len(m.Edges)},
-		AsOf:   opts.Today,
+		Counts:  Counts{Nodes: len(nodes), Edges: len(m.Edges)},
+		AsOf:    opts.Today,
+		keyByID: keyByID,
 	}
 }
 
@@ -288,6 +294,242 @@ func sanitizeIdentifier(s string) string {
 			b.WriteRune(r)
 		default:
 			b.WriteByte('_')
+		}
+	}
+	return b.String()
+}
+
+// ---------------------------------------------------------------------------
+// G2 — loader row data (nodes.csv / edges.csv) + DML load statements.
+//
+// Row emission is additive over the G1 Projection: it reuses the SAME node
+// identity (node_key) and edge set the schema was declared from — there is no
+// second projection path — so the emitted rows and the schema.ddl columns cannot
+// disagree. CSV column order and the DML column lists are BOTH driven by the same
+// nodeColumns/edgeColumns slices that drive schema.ddl, and round-trip
+// consistency is asserted by test (TestRowsRoundTripWithSchema). Ordering is
+// deterministic: nodes by node_key, edges in EdgesFromConcepts order. Emission is
+// a pure function of the Projection, so it is byte-identical run-to-run and uses
+// no cloud credentials.
+// ---------------------------------------------------------------------------
+
+// columnNames returns the sanitized identifier for each column, in declaration
+// order. Sanitizing here (as the DDL does) keeps the CSV header, the DML column
+// list, and the CREATE TABLE column names byte-identical.
+func columnNames(cols []ddlColumn) []string {
+	names := make([]string, len(cols))
+	for i, c := range cols {
+		names[i] = sanitizeIdentifier(c.name)
+	}
+	return names
+}
+
+// sortedNodes returns the projected nodes ordered by node_key, without mutating
+// the Projection's Nodes slice (which stays in Build order for parity). The sort
+// is stable so a corpus with a duplicated node_key still emits deterministically.
+func (p *Projection) sortedNodes() []ProjectedNode {
+	out := append([]ProjectedNode(nil), p.Nodes...)
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Key < out[j].Key })
+	return out
+}
+
+// nodeKeyFor maps a concept path-ID (the Edge.From/To vocabulary) to its emitted
+// node_key. It NEVER mints: a resolved edge always targets a bundle concept, so
+// the map hit is the normal path; the fallback returns the path id verbatim.
+func (p *Projection) nodeKeyFor(id string) string {
+	if k, ok := p.keyByID[id]; ok {
+		return k
+	}
+	return id
+}
+
+// writeCSV renders a header + rows deterministically: comma-delimited, LF line
+// terminator (encoding/csv default), fields quoted only when they contain a
+// comma, quote, or newline. bytes.Buffer never errors, so the writes cannot fail.
+func writeCSV(header []string, rows [][]string) []byte {
+	var buf bytes.Buffer
+	w := csv.NewWriter(&buf)
+	_ = w.Write(header)
+	for _, r := range rows {
+		_ = w.Write(r)
+	}
+	w.Flush()
+	return buf.Bytes()
+}
+
+// NodesCSV emits the Nodes row data: a header naming the columns in schema.ddl
+// order, then one row per node ordered by node_key. tier/stale are the frozen
+// snapshot (as of AsOf); an empty optional value is an empty CSV field.
+func (p *Projection) NodesCSV() []byte {
+	rows := make([][]string, 0, len(p.Nodes))
+	for _, n := range p.sortedNodes() {
+		rows = append(rows, []string{
+			n.Key,
+			n.Title,
+			n.Type,
+			string(n.Tier),
+			strconv.FormatBool(n.Stale),
+			n.StaleAfter,
+		})
+	}
+	return writeCSV(columnNames(nodeColumns), rows)
+}
+
+// EdgesCSV emits the Edges row data in EdgesFromConcepts order. from_key/to_key
+// are mapped from the edge's path IDs to the emitted node_key so the rows carry
+// referential integrity to the Nodes table; rel is the raw link text.
+func (p *Projection) EdgesCSV() []byte {
+	rows := make([][]string, 0, len(p.Edges))
+	for _, e := range p.Edges {
+		rows = append(rows, []string{
+			p.nodeKeyFor(e.From),
+			p.nodeKeyFor(e.To),
+			e.Text,
+		})
+	}
+	return writeCSV(columnNames(edgeColumns), rows)
+}
+
+// loadHeader documents the loader artifact honestly: GoogleSQL (Spanner) has no
+// SQL statement that bulk-loads a CSV, so the loader is emitted as DML INSERTs
+// carrying the same rows as the sibling CSVs (which are the bulk-import
+// representation for tooling such as `gcloud spanner databases import`). It
+// carries no version/timestamp so it stays a stable byte-golden.
+const loadHeader = `-- load.sql — deterministic loader for the OKF property-graph projection.
+-- Populates the Nodes and Edges tables declared in schema.ddl. GoogleSQL
+-- (Spanner) has no SQL statement that bulk-loads a CSV file, so this loader is
+-- emitted as DML INSERT statements carrying the same rows, in the same fixed
+-- column order, as the sibling nodes.csv / edges.csv (the bulk-import
+-- representation for tooling such as ` + "`gcloud spanner databases import`" + `). Rows
+-- are deterministically ordered: nodes by node_key, edges in resolved-link order.
+-- No cloud credentials are used to emit this file.
+`
+
+// LoadSQL emits the DML loader: an INSERT for Nodes (rows ordered by node_key)
+// and an INSERT for Edges (EdgesFromConcepts order), populating the tables
+// declared in schema.ddl. The rows are identical to the CSV rows; only the
+// serialization differs (SQL literals vs CSV fields).
+func (p *Projection) LoadSQL() []byte {
+	var b strings.Builder
+	b.WriteString(loadHeader)
+	b.WriteString("\n")
+	writeInsert(&b, "Nodes", columnNames(nodeColumns), p.nodeValueTuples())
+	b.WriteString("\n")
+	writeInsert(&b, "Edges", columnNames(edgeColumns), p.edgeValueTuples())
+	return []byte(b.String())
+}
+
+// nodeValueTuples renders each node (node_key order) as a GoogleSQL VALUES tuple.
+// node_key/tier are NOT NULL; title/type/stale_after are nullable; stale is BOOL;
+// stale_after, when present, is a DATE literal from the raw authored input.
+func (p *Projection) nodeValueTuples() []string {
+	tuples := make([]string, 0, len(p.Nodes))
+	for _, n := range p.sortedNodes() {
+		vals := []string{
+			sqlString(n.Key),
+			sqlNullableString(n.Title),
+			sqlNullableString(n.Type),
+			sqlString(string(n.Tier)),
+			sqlBool(n.Stale),
+			sqlNullableDate(n.StaleAfter),
+		}
+		tuples = append(tuples, "("+strings.Join(vals, ", ")+")")
+	}
+	return tuples
+}
+
+// edgeValueTuples renders each edge (EdgesFromConcepts order) as a VALUES tuple.
+// from_key/to_key are NOT NULL (mapped to node_key); rel is nullable link text.
+func (p *Projection) edgeValueTuples() []string {
+	tuples := make([]string, 0, len(p.Edges))
+	for _, e := range p.Edges {
+		vals := []string{
+			sqlString(p.nodeKeyFor(e.From)),
+			sqlString(p.nodeKeyFor(e.To)),
+			sqlNullableString(e.Text),
+		}
+		tuples = append(tuples, "("+strings.Join(vals, ", ")+")")
+	}
+	return tuples
+}
+
+// writeInsert renders one INSERT ... VALUES statement (one tuple per line,
+// trailing semicolon). With no rows it emits a comment instead of an invalid
+// empty INSERT, so an edge-free corpus still produces valid SQL.
+func writeInsert(b *strings.Builder, table string, cols, tuples []string) {
+	name := sanitizeIdentifier(table)
+	if len(tuples) == 0 {
+		b.WriteString("-- no rows for ")
+		b.WriteString(name)
+		b.WriteString(".\n")
+		return
+	}
+	b.WriteString("INSERT INTO ")
+	b.WriteString(name)
+	b.WriteString(" (")
+	b.WriteString(strings.Join(cols, ", "))
+	b.WriteString(") VALUES\n")
+	for i, t := range tuples {
+		b.WriteString("  ")
+		b.WriteString(t)
+		if i == len(tuples)-1 {
+			b.WriteString(";\n")
+		} else {
+			b.WriteString(",\n")
+		}
+	}
+}
+
+// sqlString renders s as a single-quoted GoogleSQL string literal, escaping so
+// no input can break out of the literal (injection-safe, deterministic).
+func sqlString(s string) string { return "'" + escapeSQL(s) + "'" }
+
+// sqlNullableString renders "" as the NULL keyword and any other value as a
+// quoted string literal.
+func sqlNullableString(s string) string {
+	if s == "" {
+		return "NULL"
+	}
+	return sqlString(s)
+}
+
+// sqlBool renders a GoogleSQL BOOL literal.
+func sqlBool(v bool) string {
+	if v {
+		return "true"
+	}
+	return "false"
+}
+
+// sqlNullableDate renders "" as NULL and any other value as a DATE literal from
+// the raw authored input (validity is the author's concern and is reported
+// separately by `binder validate`; the projection emits what was authored).
+func sqlNullableDate(s string) string {
+	if s == "" {
+		return "NULL"
+	}
+	return "DATE " + sqlString(s)
+}
+
+// escapeSQL escapes the characters that are significant inside a single-quoted
+// GoogleSQL string literal, using backslash escapes (the GoogleSQL convention).
+func escapeSQL(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		switch r {
+		case '\\':
+			b.WriteString(`\\`)
+		case '\'':
+			b.WriteString(`\'`)
+		case '\n':
+			b.WriteString(`\n`)
+		case '\r':
+			b.WriteString(`\r`)
+		case '\t':
+			b.WriteString(`\t`)
+		default:
+			b.WriteRune(r)
 		}
 	}
 	return b.String()

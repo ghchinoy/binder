@@ -1,0 +1,3 @@
+from_key,to_key,rel
+node-alpha,node-beta,Beta
+node-beta,node-gamma,Gamma

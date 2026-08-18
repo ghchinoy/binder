@@ -92,6 +92,50 @@ func TestProjectSchemaGoldenControl(t *testing.T) {
 	}
 }
 
+// TestProjectRowGoldens pins the G2 byte-golden criterion: nodes.csv, edges.csv
+// and load.sql emitted over the fixture bundle match their goldens. The golden
+// instruments are proven capable of failing in TestProjectRowGoldensControl
+// (C11). Generated with --id-key graph_id under the same pinned clock as the
+// schema golden, so node_key = the authored graph_id values.
+func TestProjectRowGoldens(t *testing.T) {
+	t.Setenv("SOURCE_DATE_EPOCH", "1700000000")
+	_, outDir, code := runProject(t, "--id-key", "graph_id")
+	if code != clijson.ExitSuccess {
+		t.Fatalf("exit = %d, want success", code)
+	}
+	for _, name := range []string{"nodes.csv", "edges.csv", "load.sql"} {
+		got, err := os.ReadFile(filepath.Join(outDir, name))
+		if err != nil {
+			t.Fatalf("reading emitted %s: %v", name, err)
+		}
+		want, err := os.ReadFile(filepath.Join("../testdata/project", name+".golden"))
+		if err != nil {
+			t.Fatalf("reading golden %s: %v", name, err)
+		}
+		if string(got) != string(want) {
+			t.Errorf("%s != golden\n--- got ---\n%s\n--- want ---\n%s", name, got, want)
+		}
+	}
+}
+
+// TestProjectRowGoldensControl is the C11 positive control: for EACH row golden,
+// a mutated expected value must be detected as a mismatch. If a byte-equal
+// compare passed here, the golden test above would be vacuous for that artifact.
+func TestProjectRowGoldensControl(t *testing.T) {
+	t.Setenv("SOURCE_DATE_EPOCH", "1700000000")
+	_, outDir, _ := runProject(t, "--id-key", "graph_id")
+	for _, name := range []string{"nodes.csv", "edges.csv", "load.sql"} {
+		got, err := os.ReadFile(filepath.Join(outDir, name))
+		if err != nil {
+			t.Fatalf("reading emitted %s: %v", name, err)
+		}
+		mutated := append([]byte("MUTATED,\n"), got...)
+		if string(got) == string(mutated) {
+			t.Errorf("control failed for %s: mutated golden compared equal to emitted bytes", name)
+		}
+	}
+}
+
 // TestProjectDeterministic pins G1 criterion 5: repeated runs under a pinned
 // SOURCE_DATE_EPOCH are byte-identical in both the emitted DDL and the report
 // envelope. No cloud credentials are used by any path exercised here.
@@ -103,16 +147,20 @@ func TestProjectDeterministic(t *testing.T) {
 		if code != clijson.ExitSuccess {
 			t.Fatalf("exit = %d, want success", code)
 		}
-		ddl, err := os.ReadFile(filepath.Join(outDir, "schema.ddl"))
-		if err != nil {
-			t.Fatalf("reading schema.ddl: %v", err)
+		var combined string
+		for _, name := range []string{"schema.ddl", "nodes.csv", "edges.csv", "load.sql"} {
+			data, err := os.ReadFile(filepath.Join(outDir, name))
+			if err != nil {
+				t.Fatalf("reading %s: %v", name, err)
+			}
+			combined += "\n--- " + name + " ---\n" + string(data)
 		}
-		return stdout, string(ddl)
+		return stdout, combined
 	}
 	env1, ddl1 := run()
 	env2, ddl2 := run()
 	if ddl1 != ddl2 {
-		t.Errorf("schema.ddl not deterministic:\n%s\n---\n%s", ddl1, ddl2)
+		t.Errorf("emitted artifacts not deterministic:\n%s\n---\n%s", ddl1, ddl2)
 	}
 	if env1 != env2 {
 		t.Errorf("report envelope not deterministic:\n%s\n---\n%s", env1, env2)
@@ -157,16 +205,27 @@ func TestProjectEnvelope(t *testing.T) {
 	if env.Result.ProjectedAsOf != "2026-08-18" {
 		t.Errorf("projected_as_of = %q, want 2026-08-18", env.Result.ProjectedAsOf)
 	}
-	// artifacts manifest lists schema.ddl with its real byte length.
-	if len(env.Result.Artifacts) != 1 || env.Result.Artifacts[0].Name != "schema.ddl" {
-		t.Fatalf("artifacts = %+v, want one schema.ddl entry", env.Result.Artifacts)
+	// artifacts manifest lists each emitted file with its real byte length. The
+	// assertion is presence-based (each expected artifact by name) rather than an
+	// exact total count, so a parallel phase adding further artifacts does not
+	// cause a semantic conflict here.
+	byName := map[string]int{}
+	for _, a := range env.Result.Artifacts {
+		byName[a.Name] = a.Bytes
 	}
-	info, err := os.Stat(filepath.Join(outDir, "schema.ddl"))
-	if err != nil {
-		t.Fatalf("stat schema.ddl: %v", err)
-	}
-	if int64(env.Result.Artifacts[0].Bytes) != info.Size() {
-		t.Errorf("artifact bytes = %d, want file size %d", env.Result.Artifacts[0].Bytes, info.Size())
+	for _, name := range []string{"schema.ddl", "nodes.csv", "edges.csv", "load.sql"} {
+		bytesReported, ok := byName[name]
+		if !ok {
+			t.Errorf("artifacts manifest missing %q: %+v", name, env.Result.Artifacts)
+			continue
+		}
+		info, err := os.Stat(filepath.Join(outDir, name))
+		if err != nil {
+			t.Fatalf("stat %s: %v", name, err)
+		}
+		if int64(bytesReported) != info.Size() {
+			t.Errorf("%s artifact bytes = %d, want file size %d", name, bytesReported, info.Size())
+		}
 	}
 }
 

@@ -86,9 +86,32 @@ func newProjectCmd(codec okf.Codec) *cobra.Command {
 			if err := os.MkdirAll(out, 0o755); err != nil {
 				return fmt.Errorf("creating output dir: %w", err)
 			}
-			ddl := proj.DDL()
-			if err := os.WriteFile(filepath.Join(out, "schema.ddl"), ddl, 0o644); err != nil {
-				return fmt.Errorf("writing schema.ddl: %w", err)
+
+			// Emit each artifact and record it in the manifest with its byte length.
+			// The emitted set is: schema.ddl (G1) + the loader row data (G2). Order
+			// is fixed for determinism.
+			var artifacts []projectArtifact
+			emit := func(name string, data []byte) error {
+				if err := os.WriteFile(filepath.Join(out, name), data, 0o644); err != nil {
+					return fmt.Errorf("writing %s: %w", name, err)
+				}
+				artifacts = append(artifacts, projectArtifact{Name: name, Bytes: len(data)})
+				return nil
+			}
+			// G2 artifact block (self-contained): the schema plus the loader row data
+			// and the DML load statements that populate Nodes/Edges from those rows.
+			for _, a := range []struct {
+				name string
+				data []byte
+			}{
+				{"schema.ddl", proj.DDL()},
+				{"nodes.csv", proj.NodesCSV()},
+				{"edges.csv", proj.EdgesCSV()},
+				{"load.sql", proj.LoadSQL()},
+			} {
+				if err := emit(a.name, a.data); err != nil {
+					return err
+				}
 			}
 
 			rep := projectReport{
@@ -97,7 +120,7 @@ func newProjectCmd(codec okf.Codec) *cobra.Command {
 				IdentityStability: proj.Identity,
 				Counts:            proj.Counts,
 				ProjectedAsOf:     proj.AsOf,
-				Artifacts:         []projectArtifact{{Name: "schema.ddl", Bytes: len(ddl)}},
+				Artifacts:         artifacts,
 			}
 			if err := clijson.Encode(cmd.OutOrStdout(), Version, "project", rep); err != nil {
 				return fmt.Errorf("encoding json report: %w", err)

@@ -1,0 +1,4 @@
+node_key,title,type,tier,stale,stale_after
+node-alpha,Alpha,Guide,human-reviewed,true,2020-01-01
+node-beta,Beta,Note,machine-confirmed,false,
+node-gamma,Gamma,Guide,unverified,false,2099-01-01

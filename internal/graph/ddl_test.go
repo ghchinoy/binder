@@ -2,7 +2,9 @@ package graph
 
 import (
 	"bytes"
+	"encoding/csv"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/ghchinoy/binder/internal/okf"
@@ -233,6 +235,226 @@ func TestSanitizeIdentifier(t *testing.T) {
 	for in, want := range cases {
 		if got := sanitizeIdentifier(in); got != want {
 			t.Errorf("sanitizeIdentifier(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// --- G2: loader row-data tests. ---
+
+// ddlTableColumns parses the (name, type) pairs of a CREATE TABLE block out of
+// the emitted schema.ddl text, in declaration order. It reads the emitted bytes
+// (not the internal column slices), so comparing its output to the CSV header and
+// the DML column list is a genuine cross-artifact round-trip, not a tautology.
+func ddlTableColumns(t *testing.T, ddl, table string) (names, types []string) {
+	t.Helper()
+	lines := strings.Split(ddl, "\n")
+	in := false
+	for _, ln := range lines {
+		if strings.HasPrefix(ln, "CREATE TABLE "+table+" (") {
+			in = true
+			continue
+		}
+		if in {
+			if strings.HasPrefix(ln, ")") {
+				break
+			}
+			fields := strings.Fields(ln)
+			if len(fields) < 2 {
+				continue
+			}
+			names = append(names, fields[0])
+			types = append(types, strings.TrimRight(fields[1], ","))
+		}
+	}
+	return names, types
+}
+
+// csvHeaderCols returns the header (first line) of a CSV artifact, split on ",".
+func csvHeaderCols(t *testing.T, csv []byte) []string {
+	t.Helper()
+	s := string(csv)
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		s = s[:i]
+	}
+	return strings.Split(s, ",")
+}
+
+// insertCols returns the column list of the "INSERT INTO <table> ( ... ) VALUES"
+// statement in the emitted load.sql, in order.
+func insertCols(t *testing.T, sql, table string) []string {
+	t.Helper()
+	marker := "INSERT INTO " + table + " ("
+	i := strings.Index(sql, marker)
+	if i < 0 {
+		t.Fatalf("load.sql has no INSERT for %q\n%s", table, sql)
+	}
+	rest := sql[i+len(marker):]
+	j := strings.Index(rest, ")")
+	if j < 0 {
+		t.Fatalf("load.sql INSERT for %q is malformed\n%s", table, sql)
+	}
+	cols := strings.Split(rest[:j], ", ")
+	return cols
+}
+
+func sameCols(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// TestRowsRoundTripWithSchema pins the G2 round-trip criterion: the CSV header
+// and the DML column list are byte-consistent with schema.ddl's declared columns
+// (names and order), for BOTH tables — asserted by parsing the emitted artifacts,
+// not by eyeballing. It also checks the declared column TYPES are the frozen set.
+func TestRowsRoundTripWithSchema(t *testing.T) {
+	p := Project(projBundle(), ProjectOptions{Today: projToday, IDKey: "graph_id"})
+	ddl := string(p.DDL())
+
+	nodeNames, nodeTypes := ddlTableColumns(t, ddl, "Nodes")
+	if got := csvHeaderCols(t, p.NodesCSV()); !sameCols(got, nodeNames) {
+		t.Errorf("nodes.csv header %v != schema.ddl Nodes columns %v", got, nodeNames)
+	}
+	if got := insertCols(t, string(p.LoadSQL()), "Nodes"); !sameCols(got, nodeNames) {
+		t.Errorf("load.sql Nodes columns %v != schema.ddl Nodes columns %v", got, nodeNames)
+	}
+	if want := []string{"node_key", "title", "type", "tier", "stale", "stale_after"}; !sameCols(nodeNames, want) {
+		t.Errorf("Nodes column names = %v, want %v", nodeNames, want)
+	}
+	if want := []string{"STRING(MAX)", "STRING(MAX)", "STRING(MAX)", "STRING(MAX)", "BOOL", "DATE"}; !sameCols(nodeTypes, want) {
+		t.Errorf("Nodes column types = %v, want %v", nodeTypes, want)
+	}
+
+	edgeNames, edgeTypes := ddlTableColumns(t, ddl, "Edges")
+	if got := csvHeaderCols(t, p.EdgesCSV()); !sameCols(got, edgeNames) {
+		t.Errorf("edges.csv header %v != schema.ddl Edges columns %v", got, edgeNames)
+	}
+	if got := insertCols(t, string(p.LoadSQL()), "Edges"); !sameCols(got, edgeNames) {
+		t.Errorf("load.sql Edges columns %v != schema.ddl Edges columns %v", got, edgeNames)
+	}
+	if want := []string{"from_key", "to_key", "rel"}; !sameCols(edgeNames, want) {
+		t.Errorf("Edges column names = %v, want %v", edgeNames, want)
+	}
+	if want := []string{"STRING(MAX)", "STRING(MAX)", "STRING(MAX)"}; !sameCols(edgeTypes, want) {
+		t.Errorf("Edges column types = %v, want %v", edgeTypes, want)
+	}
+
+	// C11 control: the round-trip comparison must REDDEN under a real mismatch. A
+	// mutated column list must not compare equal, or the assertions above are
+	// vacuous.
+	mutated := append([]string(nil), nodeNames...)
+	mutated[0] = "not_node_key"
+	if sameCols(mutated, nodeNames) {
+		t.Fatal("C11 control failed: sameCols accepted a mutated column list")
+	}
+}
+
+// TestRowCountsMatchCounts pins the G2 criterion that row count == counts: the
+// number of CSV data rows (excluding the header) equals the projection's counts.
+func TestRowCountsMatchCounts(t *testing.T) {
+	p := Project(projBundle(), ProjectOptions{Today: projToday, IDKey: "graph_id"})
+	dataRows := func(csv []byte) int {
+		lines := strings.Split(strings.TrimRight(string(csv), "\n"), "\n")
+		return len(lines) - 1 // minus the header
+	}
+	if got := dataRows(p.NodesCSV()); got != p.Counts.Nodes {
+		t.Errorf("nodes.csv data rows = %d, want counts.nodes %d", got, p.Counts.Nodes)
+	}
+	if got := dataRows(p.EdgesCSV()); got != p.Counts.Edges {
+		t.Errorf("edges.csv data rows = %d, want counts.edges %d", got, p.Counts.Edges)
+	}
+}
+
+// TestRowsDeterministic pins G2 determinism at the unit level: repeated emission
+// of the same projection is byte-identical for every row artifact.
+func TestRowsDeterministic(t *testing.T) {
+	mk := func() (n, e, l []byte) {
+		p := Project(projBundle(), ProjectOptions{Today: projToday, IDKey: "graph_id"})
+		return p.NodesCSV(), p.EdgesCSV(), p.LoadSQL()
+	}
+	n1, e1, l1 := mk()
+	n2, e2, l2 := mk()
+	if !bytes.Equal(n1, n2) || !bytes.Equal(e1, e2) || !bytes.Equal(l1, l2) {
+		t.Fatal("row artifacts not deterministic across repeated projections")
+	}
+}
+
+// TestRowsNodesSortedByKey pins the deterministic node ordering (by node_key),
+// independent of the Build/Concept.ID order the Projection.Nodes slice carries.
+func TestRowsNodesSortedByKey(t *testing.T) {
+	p := Project(projBundle(), ProjectOptions{Today: projToday, IDKey: "graph_id"})
+	lines := strings.Split(strings.TrimRight(string(p.NodesCSV()), "\n"), "\n")[1:]
+	var keys []string
+	for _, ln := range lines {
+		keys = append(keys, strings.SplitN(ln, ",", 2)[0])
+	}
+	for i := 1; i < len(keys); i++ {
+		if keys[i-1] > keys[i] {
+			t.Errorf("nodes.csv not sorted by node_key: %v", keys)
+			break
+		}
+	}
+}
+
+// TestRowsCSVAndDMLEscaping proves CSV quoting and SQL-literal escaping handle
+// values that would otherwise break the format: a comma/quote/newline in a title
+// (CSV must quote it) and a single quote/backslash in link text (DML must escape
+// it). This is the injection-safety seam for row data.
+func TestRowsCSVAndDMLEscaping(t *testing.T) {
+	a := projConcept("a", "Guide", "has, \"comma\" and\nnewline",
+		[]okf.Link{{TargetID: "b", RawTarget: "./b.md", Text: "O'Brien \\ backslash", Resolved: true}},
+		okf.TrustSignals{}, map[string]string{"graph_id": "k-a"})
+	b := projConcept("b", "Note", "Beta", nil, okf.TrustSignals{}, map[string]string{"graph_id": "k-b"})
+	bundle := &okf.Bundle{Root: "/corpus", Concepts: []*okf.Concept{a, b}}
+	p := Project(bundle, ProjectOptions{Today: projToday, IDKey: "graph_id"})
+
+	// CSV: the awkward title must be wrapped in quotes with the inner quote doubled
+	// (encoding/csv), and the whole record must round-trip back through a CSV reader.
+	nodesCSV := string(p.NodesCSV())
+	if !strings.Contains(nodesCSV, "\"has, \"\"comma\"\" and\nnewline\"") {
+		t.Errorf("nodes.csv did not quote/escape the awkward title:\n%s", nodesCSV)
+	}
+	r := csv.NewReader(strings.NewReader(nodesCSV))
+	recs, err := r.ReadAll()
+	if err != nil {
+		t.Fatalf("emitted nodes.csv is not parseable CSV: %v", err)
+	}
+	if len(recs) != 3 { // header + 2 nodes
+		t.Fatalf("nodes.csv parsed to %d records, want 3", len(recs))
+	}
+	if recs[1][1] != "has, \"comma\" and\nnewline" {
+		t.Errorf("round-tripped title = %q, want the original awkward value", recs[1][1])
+	}
+
+	// DML: the link text's single quote and backslash must be backslash-escaped so
+	// the literal cannot break out.
+	loadSQL := string(p.LoadSQL())
+	if !strings.Contains(loadSQL, `'O\'Brien \\ backslash'`) {
+		t.Errorf("load.sql did not escape the awkward rel value:\n%s", loadSQL)
+	}
+}
+
+// TestAggregateNodeKeyParity is the dedup regression guard folded in from the G1
+// [Consider]: the graph-level node-key aggregation now has a SINGLE definition
+// (aggregateNodeKey), and both callers — Describe (list_graphs) and Project
+// (binder project) — must produce identical NodeKey values for every id-key case.
+func TestAggregateNodeKeyParity(t *testing.T) {
+	b := projBundle()
+	for _, idKey := range []string{"", "graph_id", "partial_id", "no_such_key"} {
+		describe := Describe(b, projToday, idKey).Graphs[0].NodeKey
+		project := Project(b, ProjectOptions{Today: projToday, IDKey: idKey}).NodeKey
+		if describe != project {
+			t.Errorf("idKey=%q: Describe NodeKey %+v != Project NodeKey %+v", idKey, describe, project)
+		}
+		// And both equal the shared helper directly.
+		if want := aggregateNodeKey(b.Concepts, idKey); describe != want || project != want {
+			t.Errorf("idKey=%q: helper %+v, describe %+v, project %+v", idKey, want, describe, project)
 		}
 	}
 }

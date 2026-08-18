@@ -1,0 +1,17 @@
+-- load.sql — deterministic loader for the OKF property-graph projection.
+-- Populates the Nodes and Edges tables declared in schema.ddl. GoogleSQL
+-- (Spanner) has no SQL statement that bulk-loads a CSV file, so this loader is
+-- emitted as DML INSERT statements carrying the same rows, in the same fixed
+-- column order, as the sibling nodes.csv / edges.csv (the bulk-import
+-- representation for tooling such as `gcloud spanner databases import`). Rows
+-- are deterministically ordered: nodes by node_key, edges in resolved-link order.
+-- No cloud credentials are used to emit this file.
+
+INSERT INTO Nodes (node_key, title, type, tier, stale, stale_after) VALUES
+  ('node-alpha', 'Alpha', 'Guide', 'human-reviewed', true, DATE '2020-01-01'),
+  ('node-beta', 'Beta', 'Note', 'machine-confirmed', false, NULL),
+  ('node-gamma', 'Gamma', 'Guide', 'unverified', false, DATE '2099-01-01');
+
+INSERT INTO Edges (from_key, to_key, rel) VALUES
+  ('node-alpha', 'node-beta', 'Beta'),
+  ('node-beta', 'node-gamma', 'Gamma');
