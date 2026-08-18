@@ -116,6 +116,29 @@ func NodeKeyFor(c *okf.Concept, idKey string) (key, strategy string) {
 	return c.ID, "path"
 }
 
+// aggregateNodeKey computes the graph-level node-key descriptor for a corpus: the
+// strategy is "frontmatter" only when idKey is set AND resolves on at least one
+// concept (individual concepts missing the key fall back to path identity, see
+// NodeKeyFor); otherwise "path". The requested key is echoed back regardless so
+// callers can see what was asked for. This is the SINGLE definition of the
+// graph-level strategy — both Describe (list_graphs) and Project (binder project)
+// call it, so the two surfaces cannot drift, exactly as they already share the
+// per-node NodeKeyFor.
+func aggregateNodeKey(concepts []*okf.Concept, idKey string) NodeKey {
+	strategy := "path"
+	key := ""
+	if idKey != "" {
+		key = idKey
+		for _, c := range concepts {
+			if _, s := NodeKeyFor(c, idKey); s == "frontmatter" {
+				strategy = "frontmatter"
+				break
+			}
+		}
+	}
+	return NodeKey{Strategy: strategy, Key: key}
+}
+
 // Describe builds the deterministic LPG schema descriptor for a loaded bundle as
 // of `today` (for staleness). It reuses the existing Build projection and
 // aggregates its Node/Edge sets — no new parsing, no new edge logic. When idKey
@@ -146,25 +169,10 @@ func Describe(b *okf.Bundle, today, idKey string) *SchemaSet {
 		})
 	}
 
-	// Node-key strategy: "frontmatter" only when idKey is set AND resolves on at
-	// least one concept; the requested key is echoed back regardless so callers
-	// can see what was asked for.
-	strategy := "path"
-	key := ""
-	if idKey != "" {
-		key = idKey
-		for _, c := range b.Concepts {
-			if _, s := NodeKeyFor(c, idKey); s == "frontmatter" {
-				strategy = "frontmatter"
-				break
-			}
-		}
-	}
-
 	g := Schema{
 		Name:       filepath.Base(b.Root),
 		Source:     Source{Kind: "okf-bundle", Root: b.Root},
-		NodeKey:    NodeKey{Strategy: strategy, Key: key},
+		NodeKey:    aggregateNodeKey(b.Concepts, idKey),
 		Counts:     Counts{Nodes: len(m.Nodes), Edges: len(m.Edges)},
 		NodeLabels: nodeLabels,
 		EdgeLabels: []EdgeLabel{{

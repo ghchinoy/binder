@@ -1026,10 +1026,19 @@ binder project <bundle> --out <dir> [flags]
 ```
 
 Projects a loaded bundle into a **deterministic, credential-free** property-graph
-schema and writes it to `--out`. It emits `schema.ddl` — `CREATE TABLE Nodes`,
-`CREATE TABLE Edges`, and a `CREATE PROPERTY GRAPH` wrapper with a single `LINKS`
-edge label — and prints a `binder.report/v1` summary (command `project`) to
-stdout. It uses **no cloud credentials** and contacts no service.
+schema **and its loader row data**, writing both to `--out`. It emits:
+
+- `schema.ddl` — `CREATE TABLE Nodes`, `CREATE TABLE Edges`, and a
+  `CREATE PROPERTY GRAPH` wrapper with a single `LINKS` edge label;
+- `nodes.csv` and `edges.csv` — the row data for the two tables, one header row
+  naming the columns in `schema.ddl` order followed by one row per node/edge;
+- `load.sql` — DML `INSERT` statements that populate `Nodes` and `Edges` with the
+  same rows (GoogleSQL has no SQL statement that bulk-loads a CSV, so the CSVs are
+  the bulk-import representation for tooling such as `gcloud spanner databases
+  import` and `load.sql` is the credential-free, tool-free loader).
+
+It also prints a `binder.report/v1` summary (command `project`) to stdout, uses
+**no cloud credentials**, and contacts no service.
 
 The projection reuses the same node/edge model as [`graph`](#graph),
 `list_graphs`, and `query_graph`, so the emitted edge set and node identity stay
@@ -1038,7 +1047,7 @@ command emits offline DDL text only.
 
 | Flag | Default | Purpose |
 |---|---|---|
-| `--out` | *(required)* | Output directory for emitted artifacts (`schema.ddl`). |
+| `--out` | *(required)* | Output directory for emitted artifacts (`schema.ddl`, `nodes.csv`, `edges.csv`, `load.sql`). |
 | `--target` | `spanner` | Projection target dialect. `spanner` (Spanner Graph, GoogleSQL SQL/PGQ) is the only accepted value in this release; any other value is a usage error (exit 2). |
 | `--id-key` | *(none)* | Authored frontmatter key to use as the node identity (`node_key`). When a concept carries this key as a non-empty string, that value is the key (`strategy: frontmatter`); otherwise it falls back to the path-derived concept id (`strategy: path`). binder **never mints** a key. |
 | `--today` | now | Date (`YYYY-MM-DD`) used for the frozen `tier`/`stale` snapshot and echoed as `projected_as_of`. Honors `SOURCE_DATE_EPOCH`. |
@@ -1051,6 +1060,16 @@ The `Nodes` table carries `node_key`, `title`, `type`, `tier`, `stale`, and
 text; labels are **not** derived from it). The DDL is byte-deterministic: fixed
 column order and deterministic identifier sanitization.
 
+The row files match `schema.ddl` exactly: `nodes.csv`/`edges.csv` and the
+`load.sql` `INSERT` column lists carry the same column names in the same order as
+the declared tables. Rows are deterministically ordered — nodes by `node_key`,
+edges in resolved-link order — so repeated runs are byte-identical. `edges.csv`
+maps each edge's endpoints to the corresponding `node_key`, so the row data
+carries referential integrity to `Nodes`. In `load.sql`, an empty optional value
+is rendered as `NULL` and `stale_after` as a `DATE` literal; string literals are
+escaped so no value can break out of a statement. `binder project` never mints a
+key and never writes back to the source bundle — it only reads and emits.
+
 The summary envelope carries `node_key.strategy` (`path` | `frontmatter`),
 `identity_stability` (`re_rooting_stable`, `path_fallback_count`), `counts`
 (`nodes`, `edges`), `projected_as_of`, `target`, and an `artifacts` manifest
@@ -1058,10 +1077,10 @@ listing the emitted files with their byte lengths. `re_rooting_stable` is `true`
 only when an authored `--id-key` resolved on **every** node (a path fallback
 anywhere means a moved corpus root would change those keys).
 
-> **Note (v0.4.0):** `binder project` currently emits **schema only** — no row
-> data and no attestation (`NodeVerified`) table. Loader row-data emission and the
-> provenance-completeness table are planned follow-ups; the complete `project`
-> user-guide section covering them lands with those phases.
+> **Note (v0.4.0):** `binder project` emits the `Nodes`/`Edges` schema and their
+> loader row data (`nodes.csv`, `edges.csv`, `load.sql`). The attestation
+> (`NodeVerified`) provenance table and its derivation view are a planned
+> follow-up; the `project` section is extended when that phase lands.
 
 ### `infer`
 
