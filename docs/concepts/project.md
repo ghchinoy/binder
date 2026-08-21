@@ -17,8 +17,8 @@ to `--out`. It emits:
   same rows (GoogleSQL has no SQL statement that bulk-loads a CSV, so the CSVs are
   the bulk-import representation for tooling such as `gcloud spanner databases
   import` and `load.sql` is the credential-free, tool-free loader);
-- `node_verified.csv` — one row per `verified[]` attestation, byte-faithful to the
-  source (see below);
+- `node_verified.csv` — one row per `verified[]` attestation, copied losslessly
+  from the source (see below);
 - `derivation.sql` — a `CREATE VIEW` that recomputes `tier`/`stale` from the
   stored facts, so no consumer is stuck with the frozen snapshot.
 
@@ -54,8 +54,8 @@ concept's `verified[]` list. So the projection also emits that list losslessly.
 `node_verified.csv` (and the matching `CREATE TABLE NodeVerified`, keyed
 `(node_key, seq)`) carries one row per attestation: `node_key`, `seq` (the stable
 index within the concept's `verified[]`), `by`, `at`, and `is_human`. The rows are
-**byte-faithful** to the source: authored order is preserved, `by`/`at` are copied
-verbatim, and `is_human` is exactly the `human:` actor-prefix test that drives the
+copied **losslessly**: authored order is preserved, `by`/`at` are verbatim as
+authored, and `is_human` is exactly the `human:` actor-prefix test that drives the
 trust tier (a node is `human-reviewed` when any attestation is human, else
 `machine-confirmed`, else `unverified` — see [Trust model & tiers](trust.md)).
 

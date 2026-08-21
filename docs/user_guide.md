@@ -59,22 +59,24 @@ blanket promise across every command:
   Every package above `internal/okf` depends only on binder-owned interfaces
   (`Codec`, `LinkGraph`) — the **dependency rule** — so the codec is swappable
   without touching the converter, CLI, or validators.
-- **Byte-faithful frontmatter round-trip, where binder recognises the fence.**
-  Unmodified YAML frontmatter is passed through verbatim — including nested-map
-  and list key order and scalar quoting style — so a round-trip changes nothing
-  it did not have to change. This is scoped to files whose frontmatter binder
-  recognises **and that need no read-boundary normalization**: the fence must
-  open with `---` and then a newline, LF or CRLF, at the very start. A leading
-  UTF-8 BOM or a lone-CR (classic-Mac) fence is now recognised too, but is
-  normalized before recognition
-  ([#124](https://github.com/ghchinoy/binder/issues/124)) — the fence and any
-  `verified:` block it guards are preserved, though the round-trip is
-  deliberately not byte-faithful and is disclosed (a `normalized` signal plus a
-  top-level advisory). A file with **no** frontmatter fence at all is still read
-  as plain and synthesized over, leaving its content in the body as text, with
-  exit `0`, nothing skipped, and no warning. Recognition still leaves byte-level
-  bounds; for the ones known today, see *Residual bounds* under
-  [`enrich`](#enrich).
+- **Lossless frontmatter round-trip, where binder recognises the fence.**
+  Unmodified YAML frontmatter is re-emitted verbatim — including nested-map
+  and list key order and scalar quoting style — so every authored key and value
+  survives untouched and a round-trip changes nothing it did not have to
+  change. This is scoped to files whose frontmatter binder recognises **and that
+  need no read-boundary normalization**: the fence must open with `---` and then
+  a newline, LF or CRLF, at the very start. A leading UTF-8 BOM or a lone-CR
+  (classic-Mac) fence is now recognised too, but is normalized before
+  recognition ([#124](https://github.com/ghchinoy/binder/issues/124)) — the
+  fence and any `verified:` block it guards are preserved, though the round-trip
+  does not preserve the original encoding and is disclosed (a `normalized`
+  signal plus a top-level advisory). A file with **no** frontmatter fence at all
+  is still read as plain and synthesized over, leaving its content in the body
+  as text, with exit `0`, nothing skipped, and no warning. Recognition still
+  leaves byte-level bounds; for the ones known today, see *Residual bounds*
+  under [`enrich`](#enrich). Scoped to the frontmatter: `convert` also pipelines
+  the body and synthesises `index.md`, so the guarantee does not extend to a
+  whole-file comparison.
 - **Deterministic output.** Given identical input and the same clock,
   `convert` produces byte-identical output; `review` and `graph` sort their
   output. `convert` honours `SOURCE_DATE_EPOCH` for any synthesised timestamp.
@@ -86,17 +88,17 @@ blanket promise across every command:
   binder recognises, binder never invents a source, a credibility score, or
   provenance. Trust mapping is opt-in and additive; with no mapping flags,
   frontmatter that binder recognised and that needed no read-boundary
-  normalization round-trips byte-for-byte — bounded exactly as the round-trip
+  normalization round-trips losslessly — bounded exactly as the round-trip
   guarantee above. A leading UTF-8 BOM or a lone-CR fence is now recognised via
   read-boundary normalization
   ([#124](https://github.com/ghchinoy/binder/issues/124)), so its `verified:`
   attestation is preserved rather than demoted — but because that normalization
-  is not byte-faithful it is disclosed (a `normalized` signal plus an advisory),
-  not a silent round-trip. On a file with **no** frontmatter fence at all this
-  does not hold: the file is treated as plain, so its content is left in the
-  body as text while binder synthesizes keys of its own, among them a `type`, a
-  `title`, and a `generated` provenance stamp, with exit `0`, nothing skipped,
-  and no warning. `generated` is a key binder itself protects:
+  does not preserve the original encoding it is disclosed (a `normalized` signal
+  plus an advisory), not a silent round-trip. On a file with **no** frontmatter
+  fence at all this does not hold: the file is treated as plain, so its content
+  is left in the body as text while binder synthesizes keys of its own, among
+  them a `type`, a `title`, and a `generated` provenance stamp, with exit `0`,
+  nothing skipped, and no warning. `generated` is a key binder itself protects:
   `--overwrite-keys generated` is refused as a trust-provenance key. Trust tiers
   and staleness are *derived* on demand from frontmatter, never stored. A
   `verified` attestation in particular is written only for a verifier **you**
@@ -371,26 +373,29 @@ A plain-markdown file (no frontmatter fence) gets a fresh, valid block prepended
    describes today's bounded behaviour, not an invariant: making a repeat `enrich`
    on an unchanged file a genuine no-op regardless of wall-clock time is tracked
    for 0.4.0 in [#134](https://github.com/ghchinoy/binder/issues/134).
-3. **Body + pre-existing keys byte-faithful (scoped to files whose frontmatter
+3. **Body + pre-existing keys preserved losslessly: what the author wrote is
+   re-emitted, never re-derived or dropped (scoped to files whose frontmatter
    binder recognises and that need no read-boundary normalization: the fence
    opens with `---` and a newline, LF or CRLF, at the very start; a leading
    UTF-8 BOM or lone-CR fence is recognised but normalized — disclosed rather
-   than byte-faithful, see [#124](https://github.com/ghchinoy/binder/issues/124)
-   and residual bound 6).** enrich reuses
-   the codec's byte-faithful serializer, whose frontmatter guarantee has **two
-   kinds of preservation that are not the same kind of true.** The first holds
-   *by construction* and is unconditional; the second holds *by a scanner* and
-   is bounded, its limits found one case at a time. They are stated separately
-   rather than joined by *and*, because a reader who reads them as one claim
-   will over-trust the second.
+   than silent, see [#124](https://github.com/ghchinoy/binder/issues/124)
+   and residual bound 6).** enrich reuses the codec's serializer, which
+   re-emits the source verbatim as its internal mechanism for staying lossless.
+   That serializer's frontmatter guarantee has **two kinds of preservation that
+   are not the same kind of true.** The first holds *by construction* and is
+   unconditional; the second holds *by a scanner* and is bounded, its limits
+   found one case at a time. They are stated separately rather than joined by
+   *and*, because a reader who reads them as one claim will over-trust the
+   second.
 
-   **(a) An unchanged top-level key is byte-faithful by construction.** Every key
-   enrich does **not** touch is re-emitted from its original source bytes, copied
-   verbatim line-for-line; nothing re-parses or re-scans those lines, so nothing
-   can misformat them. Nested-map and list order, flow-vs-block style, interior
-   spacing, scalar quoting/folding, YAML tags (an `!!timestamp` never silently
-   becomes an `!!str`), **and comments** are all preserved — unconditionally.
-   Only the **added or changed** keys are encoded fresh.
+   **(a) An unchanged top-level key is preserved by a verbatim line copy.**
+   Every key enrich does **not** touch is re-emitted from its original source
+   bytes, copied verbatim line-for-line; nothing re-parses or re-scans those
+   lines, so nothing can misformat them. Nested-map and list order,
+   flow-vs-block style, interior spacing, scalar quoting/folding, YAML tags (an
+   `!!timestamp` never silently becomes an `!!str`), **and comments** are all
+   preserved — unconditionally. Only the **added or changed** keys are encoded
+   fresh.
 
    **(b) A pre-existing entry inside a *changed* container is preserved by a
    scanner.** When a container itself changes (e.g. a stamp appended to
@@ -442,8 +447,9 @@ A plain-markdown file (no frontmatter fence) gets a fresh, valid block prepended
    normalization: the fence opens with `---` and a newline, LF or CRLF, at the
    very start. A leading UTF-8 BOM or a lone-CR fence is recognised too, but is
    normalized before recognition ([#124](https://github.com/ghchinoy/binder/issues/124),
-   residual bound 6 below) — disclosed, not byte-faithful. See *Residual bounds*
-   below for the byte-level cases it does **not** cover even within that scope.
+   residual bound 6 below) — disclosed, and the original encoding is not
+   preserved. See *Residual bounds* below for the byte-level cases it does
+   **not** cover even within that scope.
 
    A file with **no** frontmatter fence at all is not covered here, and is not
    one of those residual bounds: it is treated as plain and synthesized over,
@@ -477,7 +483,7 @@ A plain-markdown file (no frontmatter fence) gets a fresh, valid block prepended
 >    older frontmatter-only normalization: enrich now normalizes the whole input at
 >    the read boundary so a lone-CR-delimited (classic-Mac) frontmatter block, and
 >    any human `verified` block it guards, is **recognised** rather than demoted to
->    body. Because the rewrite is not byte-faithful it is disclosed
+>    body. Because the rewrite does not preserve the source encoding it is disclosed
 >    non-optionally — the file's result carries a `normalized: ["translated-lone-cr"]`
 >    signal and the run raises a top-level advisory (see bound 6). `\r\n` pairs are
 >    left untouched (that is bound 1's separate concern).
@@ -489,9 +495,9 @@ A plain-markdown file (no frontmatter fence) gets a fresh, valid block prepended
 > 5. **No frontmatter at all (synthesis, not round-trip).** A file with no
 >    frontmatter is not a round-trip: enrich **synthesizes** a header and inserts a
 >    single blank line between it and the body. Every body byte survives verbatim
->    and in order, but a blank is prepended — which is why the byte-faithfulness
->    guarantee is scoped to files whose frontmatter binder recognises, and does
->    not apply here.
+>    and in order, but a blank is prepended — which is why the lossless
+>    round-trip guarantee is scoped to files whose frontmatter binder
+>    recognises, and does not apply here.
 > 6. **Leading UTF-8 BOM stripped, and boundary normalization is disclosed.** A file
 >    beginning with a UTF-8 byte-order mark (`EF BB BF`) has that single leading BOM
 >    removed before frontmatter is recognised (#124), so a BOM-prefixed `---` fence —
@@ -499,7 +505,7 @@ A plain-markdown file (no frontmatter fence) gets a fresh, valid block prepended
 >    demoted to a synthetic `type: Note` body. Only a *single leading* BOM is
 >    stripped; a BOM elsewhere in the file is left untouched. Whenever this or the
 >    lone-CR translation of bound 2 fires on a file enrich rewrites, the output does
->    **not** round-trip byte-for-byte against the source, so the change is disclosed
+>    **not** preserve the source encoding, so the change is disclosed
 >    non-optionally: the file's result carries a `normalized` signal
 >    (`["stripped-utf8-bom"]` and/or `["translated-lone-cr"]`) and the run raises a
 >    matching top-level advisory. A file enrich leaves unchanged is never rewritten,
@@ -571,8 +577,9 @@ binder enrich <src> \
 Rules that make it safe to run on a git-tracked tree:
 
 - **Scoped strictly to the named keys.** Every other pre-existing key, custom
-  frontmatter, **key order**, and surrounding bytes are untouched and
-  byte-faithful. A named key is refreshed **in place** (its position is kept).
+  frontmatter, **key order**, and the surrounding frontmatter and body text are
+  untouched and preserved losslessly. A named key is refreshed **in place** (its
+  position is kept).
 - **Only when a value source exists.** A key is refreshed only if the run
   actually produces a value for it (e.g. `status` needs `--status-map`/
   `--default-type`; `stale_after` needs `--stale-after-map`). Naming a key with
@@ -1039,8 +1046,8 @@ schema **and its loader row data**, writing them to `--out`. It emits:
   same rows (GoogleSQL has no SQL statement that bulk-loads a CSV, so the CSVs are
   the bulk-import representation for tooling such as `gcloud spanner databases
   import` and `load.sql` is the credential-free, tool-free loader);
-- `node_verified.csv` — one row per `verified[]` attestation, byte-faithful to the
-  source (see below);
+- `node_verified.csv` — one row per `verified[]` attestation, copied losslessly
+  from the source (see below);
 - `derivation.sql` — a `CREATE VIEW` that recomputes `tier`/`stale` from the
   stored facts, so no consumer is stuck with the frozen snapshot.
 
@@ -1092,8 +1099,8 @@ concept's `verified[]` list. So the projection also emits that list losslessly.
 `node_verified.csv` (and the matching `CREATE TABLE NodeVerified`, keyed
 `(node_key, seq)`) carries one row per attestation: `node_key`, `seq` (the stable
 index within the concept's `verified[]`), `by`, `at`, and `is_human`. The rows are
-**byte-faithful** to the source: authored order is preserved, `by`/`at` are copied
-verbatim, and `is_human` is exactly the `human:` actor-prefix test that drives the
+copied **losslessly**: authored order is preserved, `by`/`at` are verbatim as
+authored, and `is_human` is exactly the `human:` actor-prefix test that drives the
 trust tier (a node is `human-reviewed` when any attestation is human, else
 `machine-confirmed`, else `unverified`). For example, a concept whose `verified[]`
 is `[agent:etl, human:alice@corp, process:nightly-refresh]` emits three rows at
@@ -2730,25 +2737,25 @@ resolves, the body is left byte-identical.
 ## The trust vocabulary
 
 binder maps corpus-native provenance into the OKF v0.2 trust vocabulary,
-**preserves** existing trust frontmatter byte-for-byte where it recognises the
+**preserves** existing trust frontmatter losslessly where it recognises the
 fence, and **derives** trust tiers and staleness on demand. It never stores a
 credibility score, and where the fence is recognised it never fabricates
 provenance (spec §5.1).
 
 **That scoping is load-bearing if you rely on binder for provenance.**
-Byte-for-byte preservation is scoped to files whose frontmatter binder
+Lossless preservation is scoped to files whose frontmatter binder
 recognises and that need no read-boundary normalization: the fence opens with
 `---` and a newline, LF or CRLF, at the very start. A leading UTF-8 BOM or a
 lone-CR (classic-Mac) fence is now recognised via read-boundary normalization
 ([#124](https://github.com/ghchinoy/binder/issues/124)), so the `verified:`
 attestation it guards is preserved rather than demoted to body — but because
-that normalization (BOM strip, lone-CR to LF) is not byte-faithful, it is
-disclosed non-optionally (a `normalized` signal plus a top-level advisory)
-rather than a silent round-trip. A file with **no** frontmatter fence at all is
-still read as plain and synthesized over, leaving its content in the body as
-text while binder synthesizes keys of its own, among them a `type`, a `title`,
-and a `generated` provenance stamp, with exit `0`, nothing skipped, and no
-warning.
+that normalization (BOM strip, lone-CR to LF) does not preserve the original
+encoding, it is disclosed non-optionally (a `normalized` signal plus a top-level
+advisory) rather than a silent round-trip. A file with **no** frontmatter fence
+at all is still read as plain and synthesized over, leaving its content in the
+body as text while binder synthesizes keys of its own, among them a `type`, a
+`title`, and a `generated` provenance stamp, with exit `0`, nothing skipped, and
+no warning.
 
 ### Vocabulary
 
@@ -2847,7 +2854,7 @@ the same discipline as the trust-mapping flags: deterministic, additive, and
   other flag here**; see [Writing a `verified` stamp](#writing-a-verified-stamp).
 
 These flags leave `binder validate` conformant: stamped output round-trips
-byte-faithfully and never introduces a hard violation.
+losslessly and never introduces a hard violation.
 
 ### Writing a `verified` stamp
 
@@ -3032,7 +3039,7 @@ required to reach the global file.)
 **A skip is not a rejection** — never-reject still holds. The run exits `0`, the
 concept is converted (or enriched) like any other, and the existing attestation
 is neither dropped nor reshaped: `metrics/revenue.md` keeps the authored bare
-mapping it came in with, byte-for-byte.
+mapping it came in with, verbatim.
 
 ```text
 verified:
@@ -3526,7 +3533,7 @@ community-core codec adapter. This guide grows a full section for each as it lan
 - **In-place enrichment** — ✅ shipped: `binder enrich` injects the missing
   required frontmatter (`type`/`title`/`generated`) into a source tree **in
   place** — frontmatter-only, additive/never-clobber, idempotent unless a
-  `verified` stamp advances, and byte-faithful. See [`enrich`](#enrich).
+  `verified` stamp advances, and lossless. See [`enrich`](#enrich).
   [#5](https://github.com/ghchinoy/binder/issues/5)
 - **`file://` edge resolution** — ✅ shipped: workspace-relative `file://` URIs
   that point inside the workspace root now resolve to internal concept edges. See

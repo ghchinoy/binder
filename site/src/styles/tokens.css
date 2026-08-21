@@ -10,9 +10,9 @@
  * RESTRAINED v1 (owner scope lock): a tasteful, legible palette and type in
  * both light and dark. NO glassmorphism, NO heavy effects, NO interactive
  * signature widgets — those are deferred. The only motif carried through is
- * binder's own: the byte-faithful round-trip (input bytes -> bundle -> the same
- * bytes back), expressed with a calm, trustworthy teal accent (verification /
- * faithfulness) over cool-slate neutrals.
+ * binder's own: the lossless round-trip (input -> bundle -> every unmodified
+ * frontmatter key back), expressed with a calm, trustworthy teal accent
+ * (verification / provenance) over cool-slate neutrals.
  *
  * Fonts are a system stack on purpose: no external font fetch keeps the build
  * deterministic and offline-friendly, in the spirit of binder's own ethos.
@@ -81,7 +81,7 @@
   border-bottom: 1px solid var(--binder-hairline);
 }
 
-/* Inline code reads as "bytes" — a hint of the faithfulness motif, kept quiet. */
+/* Inline code reads as source text — a hint of the preservation motif, kept quiet. */
 .sl-markdown-content :not(pre) > code {
   border: 1px solid var(--binder-hairline);
 }

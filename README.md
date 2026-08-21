@@ -12,13 +12,13 @@ into a conformant [OKF v0.2](https://github.com/GoogleCloudPlatform/knowledge-ca
 bundle, extracts every relationship signal (wikilinks, anchor links, frontmatter
 refs, hashtags), maps corpus-native provenance into the trust vocabulary,
 generates per-directory index navigation, validates bundles against the spec's
-§11 conformance rules, and preserves trust frontmatter byte-for-byte on
+§11 conformance rules, and preserves trust frontmatter losslessly on
 round-trip — scoped to files whose frontmatter binder recognises **and that need
 no read-boundary normalization**: the fence must open with `---` and a newline
 (LF or CRLF) at the very start. A leading UTF-8 BOM or a lone-CR (classic-Mac)
 fence is now recognised too, but is normalized before recognition (#124) — a
-disclosed change that is deliberately not byte-faithful. It also reports and
-visualizes a bundle (`review`,
+disclosed change that deliberately does not preserve the original encoding. It
+also reports and visualizes a bundle (`review`,
 `graph`), lints a source corpus before conversion (`lint`), declaratively stamps
 trust/lifecycle metadata (`--status-map`, `--stale-after-map`, `--verified-by`),
 is configurable via `binder config`, and supports `--strict` CI gating.
@@ -31,10 +31,10 @@ BOM or a lone-CR-delimited fence used to leave the file looking plain, so
 skipped and no warning. As of
 [#124](https://github.com/ghchinoy/binder/issues/124) that input is normalized
 at the read boundary before recognition, so the fence — and the attestation it
-guards — is recognised; because the normalization (BOM strip, lone-CR → LF) is
-not byte-faithful it is disclosed non-optionally via a per-file `normalized`
-signal and a top-level advisory. Recognition still leaves byte-level bounds;
-for the ones known today, see *Residual bounds* under
+guards — is recognised; because the normalization (BOM strip, lone-CR → LF)
+does not preserve the original encoding it is disclosed non-optionally via a
+per-file `normalized` signal and a top-level advisory. Recognition still leaves
+byte-level bounds; for the ones known today, see *Residual bounds* under
 [`enrich`](docs/user_guide.md#enrich).
 
 ## Table of Contents
@@ -96,19 +96,21 @@ Two properties make it trustworthy for pipelines:
 
 - **Deterministic output.** `convert` honours `SOURCE_DATE_EPOCH` for any
   synthesised timestamps, so identical input yields byte-identical output.
-- **Byte-faithful frontmatter round-trip, where binder recognises the fence.**
-  Unmodified YAML frontmatter is passed through verbatim — including nested-map
-  and list key order — so a round-trip changes nothing it did not have to
-  change. This is scoped to files whose frontmatter binder recognises **and that
-  need no read-boundary normalization**: the fence must open with `---` and a
-  newline (LF or CRLF) at the very start. A leading UTF-8 BOM or a lone-CR
-  (classic-Mac) fence is now recognised too, but is first normalized at the read
-  boundary ([#124](https://github.com/ghchinoy/binder/issues/124)) — the fence
-  and any `verified:` block it guards are preserved, but the round-trip is
-  intentionally not byte-faithful and is disclosed via a `normalized` signal and
+- **Lossless frontmatter round-trip, where binder recognises the fence.**
+  Unmodified YAML frontmatter is re-emitted verbatim — including nested-map
+  and list key order — so every authored key and value survives untouched and
+  a round-trip changes nothing it did not have to change. This is scoped to
+  files whose frontmatter binder recognises **and that need no read-boundary
+  normalization**: the fence must open with `---` and a newline (LF or CRLF) at
+  the very start. A leading UTF-8 BOM or a lone-CR (classic-Mac) fence is now
+  recognised too, but is first normalized at the read boundary
+  ([#124](https://github.com/ghchinoy/binder/issues/124)) — the fence and any
+  `verified:` block it guards are preserved, but the round-trip does not
+  preserve the original encoding and is disclosed via a `normalized` signal and
   a top-level advisory. Recognition still leaves byte-level bounds; for the ones
-  known today, see *Residual bounds* under
-  [`enrich`](docs/user_guide.md#enrich).
+  known today, see *Residual bounds* under [`enrich`](docs/user_guide.md#enrich).
+  Scoped to the frontmatter: `convert` also pipelines the body and synthesises
+  `index.md`, so the guarantee does not extend to a whole-file comparison.
 
 ## Installation
 
@@ -369,7 +371,7 @@ cd plugins/okf-convert/skills/okf-convert/assets/sample-corpus
 binder convert . --dry-run --json | jq '.result | {num_concepts, num_unresolved, num_recovered}'
 binder lint . --json | jq '.result | {broken_links, missing_titles, schema_violations}'
 
-# 4. Remediate the source frontmatter (additive, byte-faithful; preview first)
+# 4. Remediate the source frontmatter (additive, lossless; preview first)
 binder enrich . --dry-run --json | jq '.result.files'
 
 # 5. Convert and validate for §11 conformance
@@ -466,8 +468,11 @@ schemas and examples.
   staleness, and the Attested flag are *derived* from frontmatter, never stored.
 - `internal/okf/native` — the sole codec: [`goldmark`](https://github.com/yuin/goldmark)
   for markdown/link extraction and [`gopkg.in/yaml.v3`](https://gopkg.in/yaml.v3)
-  (`yaml.Node`) for order-preserving frontmatter. Unmodified frontmatter is passed
-  through verbatim so round-trips are byte-faithful, including nested-map key order.
+  (`yaml.Node`) for order-preserving frontmatter. Unmodified frontmatter is
+  re-emitted from the original source verbatim, which is how this codec stays
+  lossless over the trust and Attested-Computation families it does not model
+  well enough to re-encode; nested-map key order survives with it. Losslessness
+  is the bar; byte-identity is an internal property of this codec.
 - `internal/convert` — the converter: concept discovery, link/wikilink rewriting,
   frontmatter-ref edges, hashtag/tag merge, per-directory index generation, and
   corpus-native trust mapping.
