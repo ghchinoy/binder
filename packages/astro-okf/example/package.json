@@ -1,0 +1,11 @@
+{
+  "name": "astro-okf-example",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Minimal Astro host that renders binder's testdata/expected-rich OKF bundle through astro-okf. Not a workspace member and never published: it exists so the loader is proven end to end by a real Astro build, not just by unit tests.",
+  "scripts": {
+    "build": "astro build",
+    "dev": "astro dev"
+  }
+}

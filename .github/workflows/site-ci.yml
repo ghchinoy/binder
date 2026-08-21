@@ -6,10 +6,19 @@ name: site-ci
 # capability, no hand-typed version). This does NOT deploy — deployment stays in
 # docs.yml (publish-on-version); this only proves the site builds and passes its
 # invariants before a change lands.
+#
+# Install is WORKSPACE-ROOTED. The repo's JavaScript side is one npm workspace
+# (root package.json over packages/* and site/), so there is a single root
+# package-lock.json and `npm ci` runs at the root. That is also what links the
+# in-tree astro-okf package into site/node_modules, which site/tests/
+# workspace-dep.test.mjs asserts on. The Go build is untouched by any of this.
 on:
   pull_request:
     paths:
       - 'site/**'
+      - 'packages/**'
+      - 'package.json'
+      - 'package-lock.json'
       - 'docs/**'
       - 'README.md'
       - 'CONTRIBUTING.md'
@@ -18,6 +27,9 @@ on:
     branches: [main]
     paths:
       - 'site/**'
+      - 'packages/**'
+      - 'package.json'
+      - 'package-lock.json'
       - 'docs/**'
       - 'README.md'
       - 'CONTRIBUTING.md'
@@ -44,15 +56,16 @@ jobs:
           # undici, transitively via Astro, wants >=22.19).
           node-version: 22
           cache: npm
-          cache-dependency-path: site/package-lock.json
+          cache-dependency-path: package-lock.json
       - run: npm ci
-        working-directory: site
-      - run: npm run build
-        working-directory: site
+      # The loader must be compiled before the site installs-and-tests against
+      # it: site/package.json depends on `astro-okf: "*"`, and that dependency
+      # resolves to packages/astro-okf/dist, which only exists after this step.
+      - run: npm run build --workspace astro-okf
+      - run: npm run build --workspace binder-site
         # Passed to the build ONLY, to raise the version-API rate limit. The
         # build degrades gracefully without it (src/lib/version.ts), so CI never
         # hard-fails on a rate-limited or unreachable Releases API.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - run: npm test
-        working-directory: site
+      - run: npm test --workspace binder-site

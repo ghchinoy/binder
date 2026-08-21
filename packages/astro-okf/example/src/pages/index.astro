@@ -1,0 +1,28 @@
+---
+import { getCollection } from "astro:content";
+
+const entries = (await getCollection("kb")).sort((a, b) => a.id.localeCompare(b.id));
+---
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>astro-okf example bundle</title>
+  </head>
+  <body>
+    <h1>Concepts in this bundle</h1>
+    <ul>
+      {
+        entries.map((entry) => (
+          <li>
+            <a href={`/kb/${entry.id}/`}>{entry.data.title ?? entry.id}</a>
+            {" — "}
+            <span data-okf-tier-derived="true" data-okf-tier={entry.data._okf.tier}>
+              {entry.data._okf.tier} (derived)
+            </span>
+          </li>
+        ))
+      }
+    </ul>
+  </body>
+</html>

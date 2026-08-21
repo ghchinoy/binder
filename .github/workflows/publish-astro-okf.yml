@@ -1,0 +1,96 @@
+name: publish-astro-okf
+
+# Publishes the astro-okf npm package. INERT UNTIL BOOTSTRAPPED — see below.
+#
+# TAG NAMESPACE (the load-bearing safety property). This fires only on tags
+# matching 'astro-okf-v*'. binder's Go release (release.yml -> goreleaser) fires
+# only on the glob 'v*'. A tag named astro-okf-v0.1.0 starts with 'a', so it
+# cannot match 'v*' and can never trigger a Go release; equally, a binder
+# vX.Y.Z tag can never trigger this. The two release lines are provably
+# disjoint, and nothing in release-please's config, the release manifest,
+# .goreleaser.yaml or release.yml is touched by this file.
+#
+# AUTHENTICATION: npm TRUSTED PUBLISHING (OIDC). There is deliberately NO
+# NPM_TOKEN secret anywhere in this workflow. npm mints a short-lived,
+# workflow-scoped credential from the GitHub OIDC token granted by
+# `id-token: write`, so there is no long-lived publish token to leak, rotate, or
+# scope wrongly. `--provenance` records a signed attestation tying the published
+# tarball to this repository, this workflow and this commit.
+#
+# BOOTSTRAP (why this workflow does nothing yet). npm's trusted publishing is
+# configured per PACKAGE, and a package must already exist on the registry
+# before a trusted publisher can be attached to it. So the first publish is a
+# one-time manual step by the repo owner, after which the GitHub Actions trusted
+# publisher is added in the package's npm settings (repository ghchinoy/binder,
+# workflow filename publish-astro-okf.yml). Until that is done this workflow is
+# inert: it is tag-gated, so it does not run on pull requests or on pushes to
+# main, and no tag will be cut before the bootstrap. The exact owner steps are
+# written up in packages/astro-okf/README.md under "Publishing".
+on:
+  push:
+    tags:
+      - 'astro-okf-v*'
+  # Lets the owner re-run a publish from a tag without cutting a new one.
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  # Required for OIDC trusted publishing and for npm provenance. This is the
+  # ONLY credential this workflow uses.
+  id-token: write
+
+concurrency:
+  group: publish-astro-okf
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          # No registry-url here on purpose: setup-node's registry-url writes an
+          # .npmrc that expects NODE_AUTH_TOKEN, which is exactly the stored-token
+          # path trusted publishing replaces. npm defaults to registry.npmjs.org.
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      # Trusted publishing (OIDC) requires a newer npm than the one bundled with
+      # Node 22. Upgrading the CLI in-job keeps the Node version aligned with the
+      # rest of CI while still getting an npm that can exchange the OIDC token.
+      - name: Use an npm that supports trusted publishing
+        run: npm install -g npm@latest
+
+      - run: npm ci
+
+      - name: Build the package
+        run: npm run build --workspace astro-okf
+
+      # The same gates the PR CI runs, re-run against the exact tagged tree, so
+      # a release can never ship something that was not proven at this commit.
+      - name: Test the package
+        run: npm test --workspace astro-okf
+
+      - name: Build the example host and check the acceptance assertions
+        run: |
+          npm run build:example --workspace astro-okf
+          npm run test:example --workspace astro-okf
+
+      # Refuses to publish a tarball whose version does not match the tag, so a
+      # forgotten version bump fails loudly instead of republishing the old one.
+      - name: Tag and package version must agree
+        if: github.event_name == 'push'
+        env:
+          GIT_TAG: ${{ github.ref_name }}
+        run: |
+          PKG_VERSION="$(node -p "require('./packages/astro-okf/package.json').version")"
+          EXPECTED="astro-okf-v${PKG_VERSION}"
+          if [ "$GIT_TAG" != "$EXPECTED" ]; then
+            echo "Tag $GIT_TAG does not match packages/astro-okf/package.json version $PKG_VERSION (expected $EXPECTED)" >&2
+            exit 1
+          fi
+
+      - name: Publish to npm (trusted publishing, no stored token)
+        run: npm publish --workspace astro-okf --access public --provenance

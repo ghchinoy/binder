@@ -17,6 +17,7 @@
   "dependencies": {
     "@astrojs/starlight": "0.41.7",
     "astro": "7.2.4",
+    "astro-okf": "*",
     "sharp": "^0.35.3"
   }
 }
