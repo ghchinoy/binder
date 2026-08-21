@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.5.0](https://github.com/ghchinoy/binder/compare/v0.4.0...v0.5.0) (2026-08-21)
+
+
+### Features
+
+* **docs:** generate command reference from Cobra with drift gate ([#145](https://github.com/ghchinoy/binder/issues/145)) ([f7d6d01](https://github.com/ghchinoy/binder/commit/f7d6d01885545971ffc6014dff50f3b320627662))
+* **site:** brand theme, homepage, and command reference nav ([#147](https://github.com/ghchinoy/binder/issues/147)) ([fe0ae1c](https://github.com/ghchinoy/binder/commit/fe0ae1c502038763970097a9bc5c4fb24d2bd64a))
+* **site:** build-time version display and guardrail tests ([85c5e08](https://github.com/ghchinoy/binder/commit/85c5e0838060bceacd073b3357a09eaeb17dc8c7))
+* **site:** full docs IA, concept pages, and asset sync ([#146](https://github.com/ghchinoy/binder/issues/146)) ([c110cc4](https://github.com/ghchinoy/binder/commit/c110cc43c5e710f99663259e70adbf6dd81019e7))
+* **site:** scaffold Starlight site with one-doc vertical slice ([#143](https://github.com/ghchinoy/binder/issues/143)) ([ed91e68](https://github.com/ghchinoy/binder/commit/ed91e6813f2bb3b22703a5af6512e3157918981d))
+
+
+### Bug Fixes
+
+* **site:** resolve cross-page anchors and tighten fabrication gate ([4d22250](https://github.com/ghchinoy/binder/commit/4d222500ef624fe90d2549414e432b5ba24e6fc7))
+
+
+### Continuous Integration
+
+* **docs:** self-enable Pages via configure-pages enablement ([81e07db](https://github.com/ghchinoy/binder/commit/81e07db385b6890acf4795c865ff61a670ba14f7))
+
 ## [0.4.0](https://github.com/ghchinoy/binder/compare/v0.3.3...v0.4.0) (2026-08-18)
 
 
