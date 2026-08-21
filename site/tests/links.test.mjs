@@ -50,32 +50,6 @@ function pageFileFor(p) {
   return join(dist, `${clean}.html`);
 }
 
-// KNOWN, PRE-EXISTING doc-body cross-reference debt (NOT introduced by Phase 5).
-// When the monolithic docs (README.md, user_guide.md) were split into per-page
-// routes in Phase 2, some intra-doc "#heading" links kept pointing at headings
-// that now live on a DIFFERENT published page (e.g. a section page linking to
-// "#strict-mode", whose heading is on /reference/user-guide/). Rewriting that
-// cross-page-anchor graph is a content-pipeline change, out of Phase 5's scope
-// (version display + guardrails + CI + two nits). These are baselined here so
-// the gate stays STRICT for any NEW dangling link/anchor while being transparent
-// about the existing debt (reported to the EM for a content follow-up). This set
-// holds the exact "<page> -> <href>" offender signatures.
-const KNOWN_BROKEN_ANCHORS = new Set([
-  "agent/mcp/index.html -> #agent-skill--plugin",
-  "agent/plugin/index.html -> #installation",
-  "guides/ci/index.html -> #strict-mode",
-  "guides/ci/index.html -> #exit-code-contract",
-  "guides/ci/index.html -> #validate",
-  "guides/strict-mode/index.html -> #status-vocabulary-and---canonicalize-status",
-  "overview/index.html -> #mcp-server-binder-mcp",
-  "project/contributing/index.html -> /binder/overview/#roadmap",
-  "project/contributing/index.html -> /binder/overview/#agent-skill--plugin",
-  "project/contributing/index.html -> /binder/overview/#mcp-server-binder-mcp",
-  "reference/user-guide/index.html -> /binder/overview/#agent-skill--plugin",
-  "tutorial/index.html -> /binder/overview/#agent-skill--plugin",
-  "tutorial/index.html -> /binder/overview/#mcp-server-binder-mcp",
-]);
-
 // Cache of anchors per resolved file so we parse each target once.
 const anchorCache = new Map();
 async function anchorsForFile(file) {
@@ -117,12 +91,11 @@ test("every internal link resolves to a page/asset (no dangling /binder/ target)
   assert.deepEqual(broken, [], `dangling internal targets:\n  ${broken.join("\n  ")}`);
 });
 
-test("internal anchors resolve (new dangling anchors fail; known debt baselined)", async () => {
-  // Cross-page + same-page heading anchors must resolve. Pre-existing doc-body
-  // cross-references (KNOWN_BROKEN_ANCHORS) are baselined so this gate catches
-  // any NEW dangling anchor without silently swallowing the existing debt.
-  const brokenNew = [];
-  const baselineSeen = new Set();
+test("internal anchors resolve (FULLY STRICT — no baseline)", async () => {
+  // Cross-page + same-page heading anchors must ALL resolve. The Phase-5
+  // KNOWN_BROKEN_ANCHORS baseline has been deleted (Phase 6): every dangling
+  // internal anchor — new or old — is now a hard failure with no exceptions.
+  const broken = [];
 
   for (const file of await distHtmlFiles()) {
     const rel = relative(dist, file);
@@ -138,8 +111,7 @@ test("internal anchors resolve (new dangling anchors fail; known debt baselined)
       if (raw.startsWith("#")) {
         const frag = decodeURIComponent(raw.slice(1));
         if (selfAnchors.has(frag)) continue;
-        if (KNOWN_BROKEN_ANCHORS.has(sig)) baselineSeen.add(sig);
-        else brokenNew.push(`${sig} (missing #${frag})`);
+        broken.push(`${sig} (missing #${frag})`);
         continue;
       }
 
@@ -153,22 +125,13 @@ test("internal anchors resolve (new dangling anchors fail; known debt baselined)
       const set = await anchorsForFile(target);
       const frag = decodeURIComponent(fragRaw);
       if (set && set.has(frag)) continue;
-      if (KNOWN_BROKEN_ANCHORS.has(sig)) baselineSeen.add(sig);
-      else brokenNew.push(`${sig} (missing #${frag} in target)`);
+      broken.push(`${sig} (missing #${frag} in target)`);
     }
   }
 
   assert.deepEqual(
-    brokenNew,
+    broken,
     [],
-    `NEW dangling anchors (fix these):\n  ${brokenNew.join("\n  ")}`,
-  );
-  // The baseline must not rot: every listed entry must still be a real,
-  // still-present offender. A stale entry means the debt was fixed — remove it.
-  const stale = [...KNOWN_BROKEN_ANCHORS].filter((s) => !baselineSeen.has(s));
-  assert.deepEqual(
-    stale,
-    [],
-    `stale KNOWN_BROKEN_ANCHORS entries (debt fixed — delete them):\n  ${stale.join("\n  ")}`,
+    `dangling internal anchors (fix these):\n  ${broken.join("\n  ")}`,
   );
 });

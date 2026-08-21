@@ -84,7 +84,7 @@ recognised fence, see *Residual bounds* under
   additive verbs (`convert`/`validate`/`review`/`lint`/`graph`) plus the two
   read-only graph tools `list_graphs` (schema introspection) and `query_graph`
   (bounded traversal). They return the same `binder.report/v1` payloads as
-  `--json` (see [MCP server](#mcp-server-binder-mcp)).
+  `--json` (see [MCP server](/binder/agent/mcp/)).
 
 `convert` can also declaratively stamp trust and lifecycle metadata across
 directory sections — `--status-map`, `--stale-after-map`, and `--verified-by`
@@ -353,7 +353,7 @@ standalone-installable.
 This resolves binder's self-hosted marketplace
 ([`.claude-plugin/marketplace.json`](.claude-plugin/marketplace.json)) and the
 `okf-convert` skill. The plugin **assumes the `binder` binary is installed** (see
-[Installation](#installation)) — it drives the CLI, it does not embed it.
+[Installation](/binder/install/)) — it drives the CLI, it does not embed it.
 
 **Usage walkthrough.** A tiny sample corpus ships at
 [`plugins/okf-convert/skills/okf-convert/assets/sample-corpus/`](plugins/okf-convert/skills/okf-convert/assets/sample-corpus/)
@@ -449,7 +449,7 @@ payload (a tool with findings is not an MCP error), `verified_by` is applied
 **only** when explicitly passed (never auto-stamped; an invalid actor is a
 usage error), and payloads honor `SOURCE_DATE_EPOCH`/`today` for determinism.
 
-The [`okf-convert` plugin](#agent-skill--plugin) also ships a
+The [`okf-convert` plugin](/binder/agent/plugin/) also ships a
 [`.mcp.json`](plugins/okf-convert/.mcp.json) that registers this server, so a
 plugin-aware host wires up `binder mcp` on install (the `binder` binary must be
 on `PATH`).

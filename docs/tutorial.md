@@ -956,7 +956,7 @@ you want.
   conversion flags, reading the trust-extraction review. Install it from binder's
   self-hosted marketplace: `/plugin marketplace add ghchinoy/binder`, then
   `/plugin install okf-convert`. It assumes the `binder` binary is on your `PATH`.
-  See [Agent Skill / Plugin](../README.md#agent-skill--plugin).
+  See [Agent Skill / Plugin](/binder/agent/plugin/).
 - **MCP server (`binder mcp`).** Runs binder as a stdio MCP server. It registers
   **seven** tools: the additive verbs `convert`, `validate`, `review`, `lint` and
   `graph`, which return the same payloads as `binder <cmd> --json`, plus the two
@@ -967,7 +967,7 @@ you want.
   model. Wire it into a host with
   `claude mcp add binder -- binder mcp`, or let the `okf-convert` plugin's bundled
   `.mcp.json` register it on install. See
-  [MCP server](../README.md#mcp-server-binder-mcp).
+  [MCP server](/binder/agent/mcp/).
 
 The through-line: binder keeps the mechanical, reproducible work in a tool you can
 audit, and leaves the semantics to you or your agent. That boundary holds

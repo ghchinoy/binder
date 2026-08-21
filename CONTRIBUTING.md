@@ -64,13 +64,13 @@ canonical stamp has no leading `v`.
 ## Feature history and sequencing
 
 What is planned but not yet shipped, and today's shipped surface, are stated in
-the [README](README.md#roadmap). This section records how that surface was
+the [user guide roadmap](docs/user_guide.md#roadmap--planned-features). This section records how that surface was
 sequenced and which issue each feature came from.
 
 **Shipped, layered over the settled CLI contract:** the
-[Agent Skill and Agent-Plugin bundle](README.md#agent-skill--plugin)
+[Agent Skill and Agent-Plugin bundle](/binder/agent/plugin/)
 (`okf-convert`, #14), then the
-[MCP server mode](README.md#mcp-server-binder-mcp) (`binder mcp`, #15) — the
+[MCP server mode](/binder/agent/mcp/) (`binder mcp`, #15) — the
 additive convert/validate/review/lint/graph tools over the same OKF core, since
 joined by the read-only graph tools `list_graphs`
 ([#32](https://github.com/ghchinoy/binder/pull/32)) and `query_graph`

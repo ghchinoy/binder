@@ -1941,7 +1941,7 @@ The `--status-map` vocabulary gate is the one that fires **before** anything is
 written: `convert --strict` exits `1` without creating the output directory, and
 `enrich --strict` exits `1` without touching a single source file. Adding
 `--canonicalize-status` resolves a known alias and the run returns to exit `0`.
-See [Status vocabulary and `--canonicalize-status`](#status-vocabulary-and---canonicalize-status).
+See [Status vocabulary and `--canonicalize-status`](/binder/reference/user-guide/#status-vocabulary-and---canonicalize-status).
 
 `--strict` is available on `validate`, `review`, `lint`, `convert`, `enrich`, and
 `infer`. A clean run stays exit `0` even with `--strict` set, so the flag is safe
@@ -3340,10 +3340,10 @@ The same variable seeds the default `--today` used by `review`, `lint`, and
 ## CI usage
 
 `validate` is the CI gate: on a well-formed run it exits non-zero only on a
-hard conformance violation, and under [`--strict`](#strict-mode) also on
-advisories (see the [exit-code contract](#exit-code-contract)). The gate covers
+hard conformance violation, and under [`--strict`](/binder/guides/strict-mode/) also on
+advisories (see the [exit-code contract](/binder/reference/user-guide/#exit-code-contract)). The gate covers
 concept files; reserved-file structure is outside its scope — see
-[`validate`](#validate). A typical pipeline converts, then validates:
+[`validate`](/binder/reference/user-guide/#validate). A typical pipeline converts, then validates:
 
 ```bash
 set -euo pipefail
@@ -3382,7 +3382,7 @@ binder review  build/bundle --strict            # fail on orphans / stale / unre
 
 By default `review` and `graph` never fail the build (they always exit `0`); use
 them for reporting and artifacts. To fail a build on unresolved links, orphans,
-or staleness, pass [`--strict`](#strict-mode) to `convert`, `review`, `lint`, or
+or staleness, pass [`--strict`](/binder/guides/strict-mode/) to `convert`, `review`, `lint`, or
 `validate` — it promotes those advisories to gating findings (exit `1`) for that
 run only. `binder lint` gates on **source-corpus** health before conversion; the
 others gate on the emitted bundle.
@@ -3590,7 +3590,7 @@ on already-settled `--json` payloads rather than the reverse.
   ([#14](https://github.com/ghchinoy/binder/issues/14)). An isolated, optional
   plugin (plugin manifest + skill) driving the convert → validate → review
   workflow; deleting it leaves binder fully functional. See
-  [Agent Skill / Plugin](../README.md#agent-skill--plugin).
+  [Agent Skill / Plugin](/binder/agent/plugin/).
 - **MCP server mode** (`binder mcp`): — ✅ shipped
   ([#15](https://github.com/ghchinoy/binder/issues/15)). binder's *additive*
   `convert`/`validate`/`review`/`lint`/`graph`/`list_graphs`/`query_graph` tools
