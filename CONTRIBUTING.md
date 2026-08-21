@@ -29,6 +29,28 @@ external cross-check, described under
 [Differential-validation exit gate](docs/RELEASING.md#differential-validation-exit-gate).
 The release process itself is [docs/RELEASING.md](docs/RELEASING.md).
 
+## Command reference (generated, drift-gated)
+
+The CLI command reference under [`docs/commands/`](docs/commands/) is **generated
+from binder's own Cobra command tree** — never hand-edited — so it cannot assert
+a flag the binary does not have. The generator is `cmd/gendocs` (it walks the
+live command tree via `github.com/spf13/cobra/doc` and writes deterministic
+markdown), and the generation logic is shared with the drift test in
+`internal/gendocs`.
+
+After you add or change a command or flag, regenerate and commit the reference:
+
+```bash
+make docs         # regenerates docs/commands/ from the command tree
+git add docs/commands
+```
+
+`make check` runs `internal/gendocs`'s **drift test**, which regenerates into a
+temp dir and asserts byte-equality with the committed `docs/commands/`. If you
+add a flag without running `make docs`, the drift test — and therefore CI —
+fails until you regenerate and commit. `make docs` is deterministic (no
+timestamps, no host paths, sorted), so running it twice yields no diff.
+
 `make build` is a plain `go build` and passes no `-ldflags`, so the binary it
 produces reports a Go module pseudo-version rather than a release version — which
 matters, because that string is stamped into every converted concept's

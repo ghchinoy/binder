@@ -8,7 +8,7 @@ BIN     := bin/binder
 OKF_VER := v0.3.0
 OKF_PKG := github.com/okfcli/okf/cmd/okf@$(OKF_VER)
 
-.PHONY: all build test vet fmt-check check gate interop okf-install golden-update clean
+.PHONY: all build test vet fmt-check check gate interop okf-install golden-update docs clean
 
 all: build
 
@@ -31,6 +31,13 @@ fmt-check:
 # Verification gate: everything that needs only the Go toolchain (deps pinned
 # via go.mod/go.sum, fetched from the module proxy).
 check: fmt-check vet test
+
+# Regenerate the CLI command reference (docs/commands/) from binder's own Cobra
+# command tree. Deterministic and idempotent; run after adding/changing a
+# command or flag. The internal/gendocs drift test (part of `make check`) fails
+# if the committed reference falls out of sync with the command tree.
+docs:
+	$(GO) run ./cmd/gendocs
 
 # Regenerate the byte-stable golden fixture after an intentional change.
 golden-update:
