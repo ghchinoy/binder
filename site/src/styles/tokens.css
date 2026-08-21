@@ -1,0 +1,87 @@
+/*
+ * binder brand tokens — the design-token seam for the site.
+ *
+ * This file maps Starlight's own `--sl-*` CSS custom properties (palette, type,
+ * accents) so the site is visibly binder's OWN — a clean, welcoming, modern
+ * tech feel — rather than stock Starlight or a reskin of any peer. It is wired
+ * in via Starlight's `customCss` (see astro.config.mjs), so every Starlight
+ * page inherits the palette from ONE place.
+ *
+ * RESTRAINED v1 (owner scope lock): a tasteful, legible palette and type in
+ * both light and dark. NO glassmorphism, NO heavy effects, NO interactive
+ * signature widgets — those are deferred. The only motif carried through is
+ * binder's own: the byte-faithful round-trip (input bytes -> bundle -> the same
+ * bytes back), expressed with a calm, trustworthy teal accent (verification /
+ * faithfulness) over cool-slate neutrals.
+ *
+ * Fonts are a system stack on purpose: no external font fetch keeps the build
+ * deterministic and offline-friendly, in the spirit of binder's own ethos.
+ */
+
+:root {
+  /* Type — a refined system stack (no network fetch; deterministic). */
+  --sl-font:
+    "Inter var", "Inter", ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --sl-font-mono:
+    ui-monospace, "SFMono-Regular", "SF Mono", "JetBrains Mono", "Menlo",
+    "Consolas", "Liberation Mono", monospace;
+
+  /* binder teal — the brand accent (dark theme is Starlight's default root). */
+  --sl-color-accent-low: #0d3b37;
+  --sl-color-accent: #14b8a6;
+  --sl-color-accent-high: #99f6e4;
+
+  /* Cool-slate neutrals — a subtle teal-leaning tint distinguishes the surface
+   * from stock Starlight's pure grays while staying quiet and legible. */
+  --sl-color-white: #f4f7f8;
+  --sl-color-gray-1: #e2e8ea;
+  --sl-color-gray-2: #b6c0c4;
+  --sl-color-gray-3: #7c8a90;
+  --sl-color-gray-4: #4b585e;
+  --sl-color-gray-5: #2d383d;
+  --sl-color-gray-6: #1c262b;
+  --sl-color-black: #10171b;
+
+  /* A hairline accent for surfaces that want a touch of brand without noise. */
+  --binder-hairline: color-mix(in srgb, var(--sl-color-accent) 22%, transparent);
+}
+
+/* Light theme — Starlight sets data-theme="light"; give it its own ramp so the
+ * accent stays legible on a bright surface (darker teal on white). */
+:root[data-theme="light"] {
+  --sl-color-accent-low: #ccfbf1;
+  --sl-color-accent: #0d9488;
+  --sl-color-accent-high: #134e4a;
+
+  --sl-color-white: #14211f;
+  --sl-color-gray-1: #1d2b29;
+  --sl-color-gray-2: #35474a;
+  --sl-color-gray-3: #5d6f73;
+  --sl-color-gray-4: #8a999d;
+  --sl-color-gray-5: #c3cfd1;
+  --sl-color-gray-6: #e6edee;
+  --sl-color-gray-7: #f2f6f6;
+  --sl-color-black: #ffffff;
+}
+
+/* A few quiet, restrained refinements — no effects, just a little polish so the
+ * site reads as binder's own. */
+
+/* Give the site title a touch of brand weight. */
+.site-title {
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+/* Section headings in the docs get a subtle brand-tinted rule so long reference
+ * pages have gentle rhythm — legible, not decorative. */
+.sl-markdown-content h2 {
+  padding-bottom: 0.25rem;
+  border-bottom: 1px solid var(--binder-hairline);
+}
+
+/* Inline code reads as "bytes" — a hint of the faithfulness motif, kept quiet. */
+.sl-markdown-content :not(pre) > code {
+  border: 1px solid var(--binder-hairline);
+}
