@@ -43,13 +43,13 @@ const pillars = [
   },
   {
     kicker: "Trust",
-    title: "Byte-faithful round-trip, trust never fabricated",
-    // README: "Byte-faithful frontmatter round-trip, where binder recognises
-    // the fence"; "Trust tiers, staleness, and the Attested flag are derived
+    title: "Lossless frontmatter round-trip, trust never fabricated",
+    // README: "Lossless frontmatter round-trip, where binder recognises the
+    // fence"; "Trust tiers, staleness, and the Attested flag are derived
     // from frontmatter, never stored"; verified_by applied only when passed;
     // the #124 read-boundary normalization is disclosed, not papered over.
     body:
-      "Unmodified YAML frontmatter is passed through verbatim — including nested-map and list key order — so, where binder recognises the frontmatter, a round-trip changes nothing it did not have to. Trust tiers, staleness, and the attested flag are derived from frontmatter, never stored, and an attestation is stamped only when you pass --verified-by. Where an input must be normalized at the read boundary, binder discloses it rather than claiming a faithfulness it did not deliver.",
+      "Unmodified frontmatter is preserved losslessly — every authored key and value survives untouched, including nested-map and list key order — so, where binder recognises the frontmatter, a round-trip changes nothing it did not have to. Trust tiers, staleness, and the attested flag are derived from frontmatter, never stored, and an attestation is stamped only when you pass --verified-by. Where an input must be normalized at the read boundary, binder discloses it rather than claiming a preservation it did not deliver.",
     href: `${base}concepts/byte-faithfulness/`,
     cta: "The round-trip",
   },
@@ -75,7 +75,7 @@ const pillars = [
     <title>binder — plain markdown into conformant OKF</title>
     <meta
       name="description"
-      content="binder is a Go CLI that converts a plain-markdown corpus into a conformant Open Knowledge Format (OKF) v0.2 bundle and validates OKF bundles against the spec's conformance rules — with a byte-faithful frontmatter round-trip and an MCP agent surface."
+      content="binder is a Go CLI that converts a plain-markdown corpus into a conformant Open Knowledge Format (OKF) v0.2 bundle and validates OKF bundles against the spec's conformance rules — with a lossless frontmatter round-trip and an MCP agent surface."
     />
     <meta name="generator" content="Astro" />
     <!-- Honor the same theme choice as the docs (Starlight stores it under the
@@ -132,7 +132,7 @@ const pillars = [
           binder is a Go command-line tool that converts a plain-markdown corpus
           into a conformant <a href={okf}>Open Knowledge Format (OKF) v0.2</a>
           bundle — and validates OKF bundles against the spec's conformance
-          rules. Built for pipelines: deterministic output, a byte-faithful
+          rules. Built for pipelines: deterministic output, a lossless
           frontmatter round-trip, and a discipline of never asserting the
           unverified.
         </p>
@@ -143,20 +143,21 @@ const pillars = [
           <a class="btn btn-ghost" href={`${base}reference/commands/`}>Command reference</a>
         </div>
 
-        <!-- Round-trip motif (static, honest): input bytes -> binder -> bundle,
-             and back to the same bytes where binder recognises the fence. No
-             interactivity; the deferred §4.6(b) demo is deliberately not built
-             here. -->
-        <figure class="roundtrip" aria-label="Byte-faithful round-trip">
+        <!-- Round-trip motif (static, honest): input.md -> binder -> bundle,
+             and back with every unmodified frontmatter key intact where binder
+             recognises the fence. The body is pipelined too, so the guarantee
+             does not extend to a whole-file comparison. No interactivity; the
+             deferred §4.6(b) demo is deliberately not built here. -->
+        <figure class="roundtrip" aria-label="Lossless frontmatter round-trip">
           <span class="rt-node">input.md</span>
           <span class="rt-arrow">→</span>
           <span class="rt-node rt-proc">binder&nbsp;convert&nbsp;·&nbsp;enrich</span>
           <span class="rt-arrow">→</span>
           <span class="rt-node">bundle/</span>
           <span class="rt-arrow rt-back">↩</span>
-          <span class="rt-node rt-same">input.md<small>same bytes</small></span>
+          <span class="rt-node rt-kept">input.md<small>frontmatter preserved</small></span>
           <figcaption>
-            Byte-faithful frontmatter round-trip — where binder recognises the fence.
+            Lossless frontmatter round-trip — where binder recognises the fence.
           </figcaption>
         </figure>
       </section>
@@ -460,12 +461,12 @@ go install github.com/ghchinoy/binder@latest</code></pre>
         border-color: var(--border-strong);
         color: var(--accent);
       }
-      .rt-same {
+      .rt-kept {
         display: inline-flex;
         flex-direction: column;
         line-height: 1.15;
       }
-      .rt-same small {
+      .rt-kept small {
         color: var(--accent);
         font-size: 0.68rem;
         letter-spacing: 0.04em;

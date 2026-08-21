@@ -54,7 +54,7 @@ export default defineConfig({
         {
           label: "Concepts",
           items: [
-            { label: "Byte-faithful round-trip", slug: "concepts/byte-faithfulness" },
+            { label: "Lossless frontmatter round-trip", slug: "concepts/byte-faithfulness" },
             { label: "Trust model & tiers", slug: "concepts/trust" },
             { label: "Relationship extraction & the graph", slug: "concepts/graph" },
             { label: "OKF v0.2 output structure", slug: "concepts/okf-output" },

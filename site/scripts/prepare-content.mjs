@@ -61,7 +61,7 @@ const pages = [
   { src: "docs/tutorial.md", out: "tutorial.md", slug: "tutorial", title: "Tutorial" },
 
   // ── Concepts (NEW canonical docs/concepts/*.md — extracted, not invented) ──
-  { src: "docs/concepts/byte-faithful.md", out: "concepts/byte-faithful.md", slug: "concepts/byte-faithfulness", title: "Byte-faithful round-trip" },
+  { src: "docs/concepts/byte-faithful.md", out: "concepts/byte-faithful.md", slug: "concepts/byte-faithfulness", title: "Lossless frontmatter round-trip" },
   { src: "docs/concepts/trust.md", out: "concepts/trust.md", slug: "concepts/trust", title: "Trust model & tiers" },
   { src: "docs/concepts/graph.md", out: "concepts/graph.md", slug: "concepts/graph", title: "Relationship extraction & the graph" },
   { src: "docs/concepts/okf-output.md", out: "concepts/okf-output.md", slug: "concepts/okf-output", title: "OKF v0.2 output structure" },
