@@ -1,5 +1,5 @@
 // This file adds the OQ-8 provenance-completeness projection (design v0.4.0
-// §4.3 items 3–4): the NodeVerified child table (byte-faithful verified[] rows)
+// §4.3 items 3–4): the NodeVerified child table (verified[] rows copied verbatim)
 // and the tier/stale derivation view. It is additive to the schema projection in
 // ddl.go and introduces NO new trust logic: is_human reuses okf.IsHumanActor —
 // the SAME predicate okf.TrustTier applies — and the verified[] attestations are
@@ -9,8 +9,10 @@
 //
 // Two honesty properties this file exists to hold, verifiable against the emitted
 // bytes:
-//   - NodeVerified rows are byte-faithful to each concept's verified[] (order
-//     preserved; by/at verbatim; is_human = the human: prefix test).
+//   - NodeVerified rows are a lossless copy of each concept's verified[] (order
+//     preserved; by/at verbatim as authored; is_human = the human: prefix test).
+//     The trust SIGNAL here is is_human, derived from the §7 actor prefix — never
+//     from how the attestation was spelled in the source.
 //   - tier/stale are exactly reconstructible from Nodes.stale_after + NodeVerified
 //     (RecomputeTier/RecomputeStale are the Go statement of the view's SQL, pinned
 //     by test against okf.TrustTier / okf.IsStale).
@@ -25,15 +27,15 @@ import (
 )
 
 // nodeVerifiedColumns is the fixed NodeVerified child-table column order (OQ-8
-// item 3; design §4.5): the byte-faithful projection of each concept's verified[]
+// item 3; design §4.5): the verbatim projection of each concept's verified[]
 // — the lossless record the frozen tier derives from. (node_key, seq) is the
 // primary key; is_human is okf.IsHumanActor(by), the SAME predicate TrustTier
 // uses, so the snapshot tier and this table cannot disagree.
 var nodeVerifiedColumns = []ddlColumn{
 	{"node_key", "STRING(MAX)", true, "= Nodes.node_key; never minted"},
 	{"seq", "INT64", true, "OQ-8: stable index within the concept's verified[]"},
-	{"by", "STRING(MAX)", false, "OQ-8: verified[].by, byte-faithful"},
-	{"at", "STRING(MAX)", false, "OQ-8: verified[].at, byte-faithful"},
+	{"by", "STRING(MAX)", false, "OQ-8: verified[].by, verbatim as authored"},
+	{"at", "STRING(MAX)", false, "OQ-8: verified[].at, verbatim as authored"},
 	{"is_human", "BOOL", false, "OQ-8: okf.IsHumanActor(by) — the TrustTier predicate"},
 }
 
@@ -74,7 +76,7 @@ func (p *Projection) NodeVerifiedRows() []NodeVerifiedRow {
 
 // NodeVerifiedCSV renders node_verified.csv: a fixed header then one line per
 // NodeVerifiedRow, encoded with encoding/csv (LF line endings, minimal quoting).
-// It is deterministic and byte-faithful — by/at are written exactly as authored;
+// It is deterministic and lossless — by/at are written exactly as authored;
 // CSV quoting is structural framing, not a transform of the value.
 func (p *Projection) NodeVerifiedCSV() []byte {
 	var buf bytes.Buffer

@@ -1,19 +1,21 @@
 // Package enrich implements `binder enrich <src>`: in-place, FRONTMATTER-ONLY
 // enrichment of a source markdown tree (issue #5). It injects the missing
 // required OKF frontmatter (type/title/generated, plus the optional #7 lifecycle
-// stamps) into existing files, preserving the body and every pre-existing
-// frontmatter key byte-for-byte.
+// stamps) into existing files, leaving the body and every pre-existing
+// frontmatter key exactly as authored.
 //
 // enrich is NOT `convert --in-place`. It does NO link rewriting, NO index
 // generation, NO "## Related" section, NO tag merge — frontmatter only. It
 // reuses convert's tested injection helpers (EnsureType/EnsureTitle/
-// StampGenerated and the codec's byte-faithful Serialize) but deliberately does
-// not run convert's body pipeline. `binder convert` is unchanged.
+// StampGenerated and the codec's Serialize) but deliberately does not run
+// convert's body pipeline. `binder convert` is unchanged.
 //
-// Safety model (load-bearing — enrich mutates the source):
+// Safety model (enrich mutates the source, so each of these is a promise the
+// implementation has to keep):
 //   - Additive / never-clobber: only ABSENT keys are added.
 //   - Idempotent: a second run adds nothing → no write.
-//   - Body + pre-existing keys byte-faithful (codec Serialize).
+//   - Body + pre-existing keys preserved losslessly: what the author wrote is
+//     re-emitted, never re-derived or dropped (codec Serialize).
 //   - Skip-unchanged: a file needing no key is never rewritten (no git churn).
 //   - Never mutate the unparseable: a file whose frontmatter will not parse is
 //     skipped and reported, never rewritten.
@@ -105,8 +107,9 @@ type FileResult struct {
 	// were persisted — so it never claims a change that did not reach disk. It is
 	// an ADDED optional field in binder.report/v1, omitted (nil) when nothing was
 	// normalized; consumers ignoring it and the default (no BOM/lone-CR) output are
-	// unaffected. A non-empty value means the written file does NOT round-trip
-	// byte-for-byte against the source; the run also raises a top-level advisory.
+	// unaffected. A non-empty value means the file was rewritten from the
+	// normalized input, so its original encoding is not preserved; the run also
+	// raises a top-level advisory.
 	Normalized []string `json:"normalized,omitempty"`
 }
 
@@ -250,9 +253,10 @@ func Enrich(src string, opts Options) (*Report, error) {
 			// Non-optional disclosure (#124, design §9 AC5): a written file whose
 			// bytes were normalized raises a top-level advisory in addition to its
 			// per-file `normalized` signal, so a "silent-success" enrich of a
-			// normalized file is impossible.
+			// normalized file is impossible. It reports what binder did to the
+			// input; it is not a byte-fidelity verdict.
 			rep.Warnings = append(rep.Warnings, fmt.Sprintf(
-				"%s: input normalized before frontmatter recognition (%s); written file does not round-trip byte-for-byte against the source",
+				"%s: input normalized before frontmatter recognition (%s); the file was rewritten from the normalized input, so its original encoding is not preserved",
 				f.Rel, strings.Join(res.Normalized, ", ")))
 		}
 		if vres.Advisory != "" {
@@ -379,7 +383,7 @@ func enrichFile(codec okf.Codec, f convert.SourceFile, raw []byte, opts Options)
 
 // applyOverwrites refreshes the frontmatter keys named in opts.OverwriteKeys with
 // the values the declarative injectors WOULD produce for a fresh file, updating
-// each IN PLACE so key order and every other key stay byte-faithful (issue #22).
+// each IN PLACE so key order and every other key are left as authored (issue #22).
 //
 // It computes the fresh values on a throwaway candidate concept whose frontmatter
 // is a deep copy of c's with the overwrite keys removed, so the set-when-absent

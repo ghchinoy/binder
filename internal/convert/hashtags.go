@@ -37,7 +37,7 @@ func extractHashtags(body string) []string {
 // mergeTags merges body hashtags into the frontmatter "tags" list (spec §4),
 // preserving any pre-existing tags and their order, appending only new tags in
 // first-appearance order, de-duplicated. Frontmatter is only mutated when a new
-// tag is actually added, so a concept with no hashtags round-trips byte-faithfully.
+// tag is actually added, so a concept with no hashtags round-trips unchanged.
 func mergeTags(fm *okf.OrderedMap, bodyTags []string) {
 	existing := existingTags(fm)
 	present := map[string]bool{}
@@ -54,7 +54,7 @@ func mergeTags(fm *okf.OrderedMap, bodyTags []string) {
 		}
 	}
 	if !added {
-		return // nothing new: leave frontmatter untouched (byte-faithful)
+		return // nothing new: leave frontmatter untouched
 	}
 	list := make([]any, len(merged))
 	for i, t := range merged {

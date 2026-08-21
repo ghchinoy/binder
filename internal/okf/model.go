@@ -91,11 +91,14 @@ type Concept struct {
 
 	// OriginalFrontmatter holds the exact bytes of the source frontmatter block
 	// (between the "---" fences), if the concept was parsed from an existing OKF
-	// document. It is codec-agnostic (opaque bytes) and lets Serialize reproduce
-	// unmodified frontmatter byte-for-byte, including nested-mapping key order and
+	// document. It is codec-agnostic (opaque bytes) and lets Serialize re-emit
+	// unmodified frontmatter verbatim, including nested-mapping key order and
 	// scalar quoting/folding style, which a decode→re-encode round-trip cannot
-	// preserve (design-v2 §3.2, byte-faithful round-trip). It is nil for concepts
-	// synthesised by the converter from plain markdown.
+	// preserve (design-v2 §3.2). Re-emitting the source is an internal mechanism
+	// for staying lossless over families binder does not model well enough to
+	// re-encode; it is not a byte-fidelity guarantee binder owes its users, and a
+	// codec that reaches losslessness another way may leave this nil. It is
+	// likewise nil for concepts synthesised by the converter from plain markdown.
 	OriginalFrontmatter []byte
 
 	Links []Link // extracted edges (spec §6)

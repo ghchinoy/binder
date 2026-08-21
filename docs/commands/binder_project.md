@@ -20,11 +20,11 @@ carries the raw authored input so stale stays re-derivable.
 
 Alongside schema.ddl it emits the loader row data (nodes.csv, edges.csv,
 load.sql) and the provenance artifacts node_verified.csv (the verified[]
-attestations, byte-faithful: order preserved, by/at verbatim, is_human = the
-human: prefix) and derivation.sql (a CREATE VIEW that recomputes tier/stale
-from stale_after and NodeVerified for any date). --target defaults to spanner
-and is the only accepted value in this release. No cloud credentials are used
-or needed.
+attestations, copied losslessly: order preserved, by/at verbatim as authored,
+is_human = the human: prefix) and derivation.sql (a CREATE VIEW that
+recomputes tier/stale from stale_after and NodeVerified for any date).
+--target defaults to spanner and is the only accepted value in this release.
+No cloud credentials are used or needed.
 
 ```
 binder project <bundle> --out <dir> [flags]

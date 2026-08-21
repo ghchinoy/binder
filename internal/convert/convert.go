@@ -5,9 +5,11 @@
 // Phase-1 scope: one concept per non-reserved .md; type defaulting; title
 // derivation; standard markdown-link extraction + bundle-relative rewrite;
 // reserved-file collision handling; a root index.md carrying okf_version; a
-// generated provenance stamp; and byte-faithful preservation of all existing
-// frontmatter (including trust / Attested-Computation families). Wikilinks,
-// tags, frontmatter-refs and per-directory indexes are deferred to Phase 2.
+// generated provenance stamp; and lossless preservation of all existing
+// frontmatter (including trust / Attested-Computation families): every authored
+// key and value survives, and none is silently dropped or re-derived (spec §4.1,
+// §10.5). Wikilinks, tags, frontmatter-refs and per-directory indexes are
+// deferred to Phase 2.
 package convert
 
 import (
@@ -349,9 +351,10 @@ func Analyze(src string, opts Options) (concepts []*okf.Concept, facts []SourceF
 			// Disclose the boundary-normalization non-optionally (#124, design §4.4):
 			// a per-concept `normalized` signal AND a top-level advisory, so neither
 			// a structured consumer nor a headless one can miss that binder changed
-			// the input's bytes before recognising its frontmatter.
+			// the input's encoding before recognising its frontmatter. This reports
+			// what binder DID to the input; it is not a byte-fidelity verdict.
 			cr.Normalized = it.normalized
-			report.addWarning("%s: input normalized before frontmatter recognition (%s); output does not round-trip byte-for-byte against the source",
+			report.addWarning("%s: input normalized before frontmatter recognition (%s); the source encoding is not carried through to the output",
 				it.out, strings.Join(it.normalized, ", "))
 		}
 		report.Concepts = append(report.Concepts, cr)

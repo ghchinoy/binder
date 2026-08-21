@@ -30,9 +30,9 @@ var utf8BOM = []byte{0xEF, 0xBB, 0xBF}
 // when nothing changed). Both the fence detectors below and the codec parser
 // receive its output, so recognition and parsing see the same bytes.
 //
-// It deliberately does NOT touch "\r\n": CRLF is already handled byte-faithfully
-// by the codec, and rewriting it here would change output for ordinary CRLF
-// files. The BOM strip mirrors internal/infer's precedent; lone-CR→LF mirrors
+// It deliberately does NOT touch "\r\n": CRLF is already preserved by the codec,
+// and rewriting it here would change output for ordinary CRLF files. The BOM
+// strip mirrors internal/infer's precedent; lone-CR→LF mirrors
 // the existing "\r\n"→"\n" step. Normalization is not applied inside the codec
 // (design §4.4), so the codec still receives a clean, recognised fence and the
 // existing parse/skip contract is unchanged.
@@ -220,7 +220,7 @@ func humanize(name string) string {
 // stampGenerated records the provenance of THIS conversion as
 // generated: { by: "binder/<ver>", at: <ISO8601> } — but only if the concept
 // does not already carry a generated stamp. Existing trust frontmatter is
-// preserved byte-faithfully (design-v2 §3.2); binder never clobbers it.
+// preserved losslessly (design-v2 §3.2); binder never clobbers it.
 func stampGenerated(fm *okf.OrderedMap, version string, now time.Time) {
 	if fm.Has("generated") {
 		return
