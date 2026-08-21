@@ -33,11 +33,16 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: site/package-lock.json
+          # Workspace-rooted: the JS side is one npm workspace (root
+          # package.json over packages/* and site/), so there is a single root
+          # lockfile and `npm ci` runs at the repo root.
+          cache-dependency-path: package-lock.json
       - run: npm ci
-        working-directory: site
-      - run: npm run build
-        working-directory: site
+      # site/ depends on the in-tree astro-okf via the workspace, and that
+      # dependency resolves to packages/astro-okf/dist — so the loader is built
+      # before the site is.
+      - run: npm run build --workspace astro-okf
+      - run: npm run build --workspace binder-site
         # Passed to the build step ONLY, to raise the version-API rate limit.
         # Harmless in Phase 1 (no version.ts yet); the deploy job below does not
         # use it.

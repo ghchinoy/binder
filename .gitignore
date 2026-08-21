@@ -3,3 +3,11 @@
 /dist/
 *.test
 *.out
+
+# JavaScript workspace (npm workspaces root over packages/* and site/).
+# /dist/ above is root-anchored, so it does NOT cover a package's build output;
+# and there was no node_modules/ rule at all before the workspace root existed.
+node_modules/
+packages/*/dist/
+packages/*/example/dist/
+packages/*/example/.astro/

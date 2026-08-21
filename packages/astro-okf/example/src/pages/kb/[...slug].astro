@@ -1,0 +1,117 @@
+---
+import { getCollection, render, type CollectionEntry } from "astro:content";
+
+export async function getStaticPaths() {
+  const entries = await getCollection("kb");
+  return entries.map((entry) => ({ params: { slug: entry.id }, props: { entry } }));
+}
+
+type Props = { entry: CollectionEntry<"kb"> };
+
+const { entry } = Astro.props as Props;
+const { Content } = await render(entry);
+const okf = entry.data._okf;
+---
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>{entry.data.title ?? entry.id}</title>
+  </head>
+  <body>
+    <h1>{entry.data.title ?? entry.id}</h1>
+    <p data-okf-type={entry.data.type}>Type: {entry.data.type}</p>
+    {entry.data.description && <p data-okf-description="stored">{entry.data.description}</p>}
+
+    {/*
+      The trust badge. The tier is COMPUTED by astro-okf from the concept's
+      verified[] stamps (OKF spec 5.3); the bundle does not store it. The
+      wording and the data-okf-tier-derived attribute both say so, and the
+      stamps the derivation used are listed underneath so a reader can check
+      the result instead of taking it on faith.
+    */}
+    <p
+      class="okf-trust"
+      data-okf-tier={okf.tier}
+      data-okf-tier-derived="true"
+    >
+      Trust tier: <strong>{okf.tier}</strong> — derived by astro-okf from this
+      concept's verified entries, not a claim stored in the bundle.
+    </p>
+
+    {
+      okf.tierBasis.length > 0 ? (
+        <ul data-okf-tier-basis="true">
+          {okf.tierBasis.map((stamp) => (
+            <li>
+              {stamp.by}
+              {stamp.at ? ` at ${stamp.at}` : ""}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p data-okf-tier-basis="empty">
+          No verified entries in this concept's frontmatter, so there is no
+          evidence for any tier above unverified.
+        </p>
+      )
+    }
+
+    {
+      okf.stale ? (
+        <p data-okf-stale="true">
+          Stale: the build date {okf.evaluatedOn} is on or after this concept's
+          stale_after of {okf.staleAfter}.
+        </p>
+      ) : okf.staleAfter ? (
+        <p data-okf-stale="false">
+          Not stale: the build date {okf.evaluatedOn} is before this concept's
+          stale_after of {okf.staleAfter}.
+        </p>
+      ) : (
+        <p data-okf-stale="unset">
+          This concept declares no stale_after, so staleness is not defined for
+          it.
+        </p>
+      )
+    }
+
+    {/*
+      Provenance is rendered from the RAW frontmatter families, never from the
+      derived block, so the page can only show stamps and sources the bundle
+      actually contains.
+    */}
+    {
+      entry.data.verified && entry.data.verified.length > 0 && (
+        <section data-okf-verified="stored">
+          <h2>Verified (as stored)</h2>
+          <ul>
+            {entry.data.verified.map((v) => (
+              <li>
+                {v.by}
+                {v.at ? ` at ${v.at}` : ""}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )
+    }
+
+    {
+      entry.data.sources && entry.data.sources.length > 0 && (
+        <section data-okf-sources="stored">
+          <h2>Sources (as stored)</h2>
+          <ul>
+            {entry.data.sources.map((s) => (
+              <li>{s.title ?? s.resource ?? s.id}</li>
+            ))}
+          </ul>
+        </section>
+      )
+    }
+
+    <article data-okf-body="true">
+      <Content />
+    </article>
+  </body>
+</html>

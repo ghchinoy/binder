@@ -1,0 +1,17 @@
+{
+  "name": "binder-workspace",
+  "version": "0.0.0",
+  "private": true,
+  "description": "npm workspace root for binder's JavaScript packages (the docs site and the astro-okf loader). Not published; binder itself is a Go program built from the repo root.",
+  "workspaces": [
+    "packages/*",
+    "site"
+  ],
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "scripts": {
+    "build": "npm run build --workspace astro-okf && npm run build --workspace binder-site",
+    "test": "npm test --workspaces --if-present"
+  }
+}

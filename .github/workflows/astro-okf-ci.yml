@@ -1,0 +1,62 @@
+name: astro-okf-ci
+
+# Gate for the astro-okf package (packages/astro-okf): it compiles, its unit
+# suite passes, and a real Astro build of the example host renders binder's own
+# testdata/expected-rich OKF bundle and passes the Phase 1 acceptance
+# assertions. Mirrors site-ci.yml's discipline — the package is proven on every
+# PR, long before any release tag is ever cut.
+#
+# Independent of the Go gate in ci.yml: the package is inert to `go build` and
+# `make check`.
+on:
+  pull_request:
+    paths:
+      - 'packages/**'
+      - 'package.json'
+      - 'package-lock.json'
+      # The acceptance corpus is binder's own emitted fixture, read in place.
+      # A change to it is a change to what this gate asserts against.
+      - 'testdata/expected-rich/**'
+      - '.github/workflows/astro-okf-ci.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'packages/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'testdata/expected-rich/**'
+      - '.github/workflows/astro-okf-ci.yml'
+
+# Read-only: this workflow builds and tests; it never publishes or deploys.
+permissions:
+  contents: read
+
+concurrency:
+  group: astro-okf-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          # Matches the package's engines.node ">=22.19.0" floor.
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      - name: Build the package (tsc -> dist)
+        run: npm run build --workspace astro-okf
+      - name: Unit and loader tests
+        run: npm test --workspace astro-okf
+      - name: Build the example Astro host over testdata/expected-rich
+        run: npm run build:example --workspace astro-okf
+      - name: Phase 1 acceptance assertions against the built HTML
+        run: npm run test:example --workspace astro-okf
+      # Proves the package is publishable — the tarball builds and contains the
+      # intended files — without publishing anything. `--dry-run` contacts no
+      # registry credential path and cannot publish.
+      - name: Publish dry run (no publish, no token)
+        run: npm publish --workspace astro-okf --dry-run
