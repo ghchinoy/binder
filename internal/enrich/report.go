@@ -37,6 +37,12 @@ func (r *Report) String() string {
 	for _, w := range r.Warnings {
 		fmt.Fprintf(&b, "  advisory: %s\n", w)
 	}
+	// Boundary normalizations (#124) read as advisories too — the human surface is
+	// unchanged. They are held apart from Warnings only so they do not gate
+	// --strict (issue #154); the disclosure itself stays non-optional.
+	for _, n := range r.Normalizations {
+		fmt.Fprintf(&b, "  advisory: %s\n", n)
+	}
 	for _, n := range r.StatusNotes {
 		fmt.Fprintf(&b, "  status: %s\n", n)
 	}

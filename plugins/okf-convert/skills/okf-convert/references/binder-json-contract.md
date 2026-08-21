@@ -150,6 +150,10 @@ binder lint <corpus> --json | jq '.result | {broken_links, missing_titles, schem
   "files": [ { "path": "adr/one.md", "status": "would-enrich",
                "added": [ "generated", "title", "type" ] } ],
   "warnings": [], "status_notes": [],
+  // "normalizations": [ ... ]                 // present only when a file's bytes were
+                                               // normalized at the read boundary (BOM
+                                               // stripped / lone CR translated); reported,
+                                               // never gates --strict
   "verified": {                                // trust disclosure (0.3.1+); same shape as convert
     "actor": "", "source": "none",
     "stamped": [], "num_stamped": 0,
@@ -160,6 +164,11 @@ binder lint <corpus> --json | jq '.result | {broken_links, missing_titles, schem
 
 `status` ∈ `enriched | unchanged | would-enrich | skipped`. `added` is the sorted
 list of injected keys.
+
+**`.result.normalizations` is a disclosure, not a finding.** `enrich --strict`
+gates on skipped files and `warnings` only; a read-boundary normalization is
+always reported (here and as a per-file `normalized` signal) and exits `0`
+([#154](https://github.com/ghchinoy/binder/issues/154)).
 
 **`.result.verified` is the run-level trust disclosure (0.3.1+).** It is `actor:
 "", source: "none"` when nothing was stamped. A stamp is written only from an

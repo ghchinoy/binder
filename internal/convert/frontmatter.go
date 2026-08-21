@@ -34,8 +34,9 @@ var utf8BOM = []byte{0xEF, 0xBB, 0xBF}
 // and rewriting it here would change output for ordinary CRLF files. The BOM
 // strip mirrors internal/infer's precedent; lone-CR→LF mirrors
 // the existing "\r\n"→"\n" step. Normalization is not applied inside the codec
-// (design §4.4), so the codec still receives a clean, recognised fence and the
-// existing parse/skip contract is unchanged.
+// (design §4.4), so the codec still receives a fence that is already BOM-free
+// and free of lone CRs — CRLF pairs pass through untouched — and its existing
+// parse/skip contract is unchanged.
 func NormalizeInput(raw []byte) (norm []byte, notes []string) {
 	out := raw
 	if bytes.HasPrefix(out, utf8BOM) {

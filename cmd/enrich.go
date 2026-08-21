@@ -54,8 +54,10 @@ func newEnrichCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 			"atomic write, and skip-unchanged. Trust/attestation keys (verified,\n" +
 			"verified_by, sources, generated, and the other provenance keys) are REFUSED\n" +
 			"(exit 2) — overwriting them could destroy a human attestation.\n\n" +
-			"Use --dry-run to preview. Skipped files are advisory: bare enrich exits 0;\n" +
-			"--strict gates (exit 1) when any file is skipped.",
+			"Use --dry-run to preview. Skipped files and preserve-or-advise warnings\n" +
+			"are advisory: bare enrich exits 0; --strict gates (exit 1) on them. The\n" +
+			"read-boundary normalization advisory (a stripped UTF-8 BOM or a translated\n" +
+			"lone CR) is always reported and never gates.",
 		Args: exactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			src := args[0]
@@ -143,10 +145,16 @@ func newEnrichCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 				fmt.Fprint(cmd.OutOrStdout(), rep.String())
 			}
 
-			// enrich produces one advisory: skipped files (unparseable frontmatter).
-			// Bare enrich never gates (exit 0); --strict gates on any skip (exit 1).
+			// enrich's gating findings are skipped files (unparseable frontmatter)
+			// and preserve-or-advise warnings, counted by NumFindings. Bare enrich
+			// never gates (exit 0); --strict gates on those findings (exit 1). The
+			// boundary-normalization advisory (#124) is reported but excluded from
+			// NumFindings, so it never gates. The message names each real quantity
+			// separately: printing the findings total as "skipped N file(s)" claimed
+			// skips that had not happened (issue #154).
 			return clijson.Gate(strict, false, rep.NumFindings() > 0,
-				fmt.Sprintf("enrich skipped %d file(s) (--strict)", rep.NumFindings()))
+				fmt.Sprintf("enrich skipped %d file(s) and raised %d warning(s) (--strict)",
+					rep.NumSkipped, len(rep.Warnings)))
 		},
 	}
 
@@ -159,6 +167,6 @@ func newEnrichCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 	cmd.Flags().BoolVar(&canonicalizeStat, "canonicalize-status", false, "opt-in: rewrite known --status-map aliases to the OKF §5.4 vocabulary (active->stable, wip/in-progress->draft, archived/legacy->deprecated); off by default, each rewrite is reported")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "report what would be enriched without writing anything")
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "emit the run report as deterministic JSON (schema "+clijson.SchemaVersion+") instead of prose")
-	cmd.Flags().BoolVar(&strict, "strict", false, "gate (exit 1) when any file is skipped; without it enrich never gates (never-reject)")
+	cmd.Flags().BoolVar(&strict, "strict", false, "gate (exit 1) when any file is skipped or a preserve-or-advise warning is raised; the read-boundary normalization advisory is reported but never gates; without it enrich never gates (never-reject)")
 	return cmd
 }
