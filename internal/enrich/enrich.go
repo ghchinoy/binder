@@ -128,6 +128,15 @@ type Report struct {
 	// (issue #7): the authored value is preserved unchanged and reported here
 	// rather than silently dropped. Each is "path: message". Initialized to [].
 	Warnings []string `json:"warnings"`
+	// Normalizations holds the top-level boundary-normalization advisories (#124):
+	// one per written file whose bytes were normalized (BOM stripped, lone CR
+	// translated) before frontmatter recognition. Each is "path: message". They
+	// report what binder did to the input rather than a finding about the corpus,
+	// so they are DISCLOSED but never gate: NumFindings does not count them and
+	// --strict does not escalate them to exit 1 (issue #154). Additive to
+	// binder.report/v1 and omitted when empty, so a run that normalized nothing
+	// serializes exactly as before.
+	Normalizations []string `json:"normalizations,omitempty"`
 	// StatusNotes carries the OKF §5.4 status-vocabulary notes for a run (issue
 	// #23): non-conformant --status-map values and any opt-in canonicalization
 	// rewrites. It is additive and always emitted, initialised to [] on a
@@ -145,6 +154,9 @@ type Report struct {
 // NumFindings returns the count of advisory findings enrich produces: skipped
 // files (unparseable frontmatter) plus preserve-or-advise warnings. All are
 // advisory — the run always completes; under --strict they gate (exit 1).
+// Boundary-normalization advisories (Normalizations) are deliberately NOT
+// counted: they describe a change binder made to the input, not a finding about
+// the corpus, so they are reported without gating the exit code (issue #154).
 func (r *Report) NumFindings() int { return r.NumSkipped + len(r.Warnings) }
 
 // ParseOverwriteKeys parses a --overwrite-keys value of the form
@@ -254,8 +266,10 @@ func Enrich(src string, opts Options) (*Report, error) {
 			// bytes were normalized raises a top-level advisory in addition to its
 			// per-file `normalized` signal, so a "silent-success" enrich of a
 			// normalized file is impossible. It reports what binder did to the
-			// input; it is not a byte-fidelity verdict.
-			rep.Warnings = append(rep.Warnings, fmt.Sprintf(
+			// input; it is not a byte-fidelity verdict, and because it is not a
+			// finding about the corpus it goes to Normalizations rather than
+			// Warnings, so it is disclosed without gating --strict (issue #154).
+			rep.Normalizations = append(rep.Normalizations, fmt.Sprintf(
 				"%s: input normalized before frontmatter recognition (%s); the file was rewritten from the normalized input, so its original encoding is not preserved",
 				f.Rel, strings.Join(res.Normalized, ", ")))
 		}
@@ -279,6 +293,7 @@ func Enrich(src string, opts Options) (*Report, error) {
 		}
 	}
 	sort.Strings(rep.Warnings)
+	sort.Strings(rep.Normalizations)
 	sort.Strings(rep.Verified.Stamped)
 	sort.Slice(rep.Verified.Skipped, func(i, j int) bool {
 		return rep.Verified.Skipped[i].Path < rep.Verified.Skipped[j].Path

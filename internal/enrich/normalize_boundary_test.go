@@ -113,9 +113,14 @@ func TestAC1_BOM_EnrichPreservesVerifiedAndDiscloses(t *testing.T) {
 	if len(fr.Normalized) != 1 || fr.Normalized[0] != "stripped-utf8-bom" {
 		t.Errorf("per-file normalized = %v, want [stripped-utf8-bom]", fr.Normalized)
 	}
-	if !anyContains(rep.Warnings, "normalized before frontmatter recognition") ||
-		!anyContains(rep.Warnings, "stripped-utf8-bom") {
-		t.Errorf("top-level advisory missing; warnings = %v", rep.Warnings)
+	if !anyContains(rep.Normalizations, "normalized before frontmatter recognition") ||
+		!anyContains(rep.Normalizations, "stripped-utf8-bom") {
+		t.Errorf("top-level advisory missing; normalizations = %v", rep.Normalizations)
+	}
+	// The advisory is disclosed on a NON-gating channel (issue #154): it must not
+	// land in Warnings, which --strict counts.
+	if len(rep.Warnings) != 0 {
+		t.Errorf("normalization advisory leaked into the gating Warnings: %v", rep.Warnings)
 	}
 }
 
@@ -166,8 +171,8 @@ func TestAC2_LoneCR_EnrichPreservesVerifiedAndDiscloses(t *testing.T) {
 	if len(fr.Normalized) != 1 || fr.Normalized[0] != "translated-lone-cr" {
 		t.Errorf("per-file normalized = %v, want [translated-lone-cr]", fr.Normalized)
 	}
-	if !anyContains(rep.Warnings, "translated-lone-cr") {
-		t.Errorf("top-level advisory missing; warnings = %v", rep.Warnings)
+	if !anyContains(rep.Normalizations, "translated-lone-cr") {
+		t.Errorf("top-level advisory missing; normalizations = %v", rep.Normalizations)
 	}
 }
 
@@ -241,8 +246,13 @@ func TestAC5_DisclosureIsNonOptional(t *testing.T) {
 	if len(fr.Normalized) == 0 {
 		t.Fatalf("silent-success: an enriched normalized file carried no `normalized` signal")
 	}
-	if len(rep.Warnings) == 0 {
+	if len(rep.Normalizations) == 0 {
 		t.Fatalf("silent-success: no top-level advisory for a normalized enrich")
+	}
+	// The disclosure also stays on the PROSE surface a human reads (issue #154
+	// moved the channel, not the disclosure).
+	if !strings.Contains(rep.String(), "advisory: a.md: input normalized before frontmatter recognition") {
+		t.Errorf("prose report dropped the normalization advisory:\n%s", rep.String())
 	}
 	// The field marshals in binder.report/v1.
 	b, err := json.Marshal(fr)
@@ -280,10 +290,8 @@ func TestAC6_DeterministicAndPlainUnchanged(t *testing.T) {
 	if len(fr1.Normalized) != 0 {
 		t.Errorf("plain file carried a normalized signal: %v", fr1.Normalized)
 	}
-	for _, w := range rep1.Warnings {
-		if strings.Contains(w, "normalized before frontmatter recognition") {
-			t.Errorf("plain file raised a normalization advisory: %q", w)
-		}
+	if len(rep1.Normalizations) != 0 {
+		t.Errorf("plain file raised a normalization advisory: %v", rep1.Normalizations)
 	}
 	// Positive control: the plain file WAS enriched (generated added), so the run
 	// is not vacuously "unchanged".
@@ -314,6 +322,59 @@ func TestAC7_LoneCRInsideScalarValueIsTranslated(t *testing.T) {
 	fr := find(t, rep, "a.md")
 	if len(fr.Normalized) != 1 || fr.Normalized[0] != "translated-lone-cr" {
 		t.Errorf("normalized = %v, want [translated-lone-cr]", fr.Normalized)
+	}
+}
+
+// TestNormalizationAdvisoryIsNotAFinding pins the issue-#154 semantics at the
+// report level: a run whose ONLY observation is a boundary normalization
+// discloses it (per-file signal + top-level advisory + prose line) yet produces
+// ZERO findings, so --strict has nothing to gate on. The counterpart CLI-level
+// exit-code assertion lives in cmd/normalize_boundary_test.go.
+func TestNormalizationAdvisoryIsNotAFinding(t *testing.T) {
+	src := t.TempDir()
+	writeFile(t, src, "a.md", bom+"---\ntype: Guide\ntitle: T\n---\nbody\n")
+
+	rep, err := enrich.Enrich(src, opts(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Positive control: the normalization really happened and was disclosed.
+	if len(rep.Normalizations) != 1 {
+		t.Fatalf("normalizations = %v, want 1 advisory", rep.Normalizations)
+	}
+	if rep.NumSkipped != 0 {
+		t.Fatalf("num_skipped = %d, want 0 (the file was enriched, not skipped)", rep.NumSkipped)
+	}
+	if rep.NumFindings() != 0 {
+		t.Errorf("NumFindings = %d, want 0 (a normalization advisory must not gate)", rep.NumFindings())
+	}
+	// The advisory is additive JSON: present when raised, absent otherwise.
+	b, err := json.Marshal(rep)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), "\"normalizations\":[") {
+		t.Errorf("JSON envelope missing the normalizations field: %s", b)
+	}
+}
+
+// TestNormalizationsOmittedWhenEmpty proves the new field is additive: a run
+// that normalized nothing serializes without it, so existing binder.report/v1
+// consumers see an unchanged envelope.
+func TestNormalizationsOmittedWhenEmpty(t *testing.T) {
+	src := t.TempDir()
+	writeFile(t, src, "a.md", "---\ntype: Guide\ntitle: Plain\n---\nbody\n")
+
+	rep, err := enrich.Enrich(src, opts(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := json.Marshal(rep)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(b), "normalizations") {
+		t.Errorf("clean run emitted the normalizations field: %s", b)
 	}
 }
 
