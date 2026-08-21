@@ -9,7 +9,7 @@ for new behavior.
 binder needs nothing but an installed binary; you only need a clone to get the
 sample corpus those walkthroughs convert, which ships in this repo (under
 `plugins/okf-convert/skills/okf-convert/assets/sample-corpus/`) and **not** in
-the release archive — a release archive holds the binary, `LICENSE`, and
+the release archive: a release archive holds the binary, `LICENSE`, and
 `README.md`, nothing else. This file is for changing binder itself.
 
 ## Development
@@ -32,7 +32,7 @@ The release process itself is [docs/RELEASING.md](docs/RELEASING.md).
 ## Command reference (generated, drift-gated)
 
 The CLI command reference under [`docs/commands/`](docs/commands/) is **generated
-from binder's own Cobra command tree** — never hand-edited — so it cannot assert
+from binder's own Cobra command tree** (never hand-edited), so it cannot assert
 a flag the binary does not have. The generator is `cmd/gendocs` (it walks the
 live command tree via `github.com/spf13/cobra/doc` and writes deterministic
 markdown), and the generation logic is shared with the drift test in
@@ -52,7 +52,7 @@ fails until you regenerate and commit. `make docs` is deterministic (no
 timestamps, no host paths, sorted), so running it twice yields no diff.
 
 `make build` is a plain `go build` and passes no `-ldflags`, so the binary it
-produces reports a Go module pseudo-version rather than a release version — which
+produces reports a Go module pseudo-version rather than a release version. That
 matters, because that string is stamped into every converted concept's
 `generated.by` provenance. Day to day that is fine; nothing about developing
 binder needs a pinned version. When you do need to rehearse the release stamp,

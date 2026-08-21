@@ -2,15 +2,15 @@
 
 binder extracts every relationship signal it can from a corpus and projects a
 **graph** from the bundle's resolved links. This page collects how relationships
-are extracted and what the derived graph is; for the model itself — nodes, edges,
-labels, property maps, and the adjacency index — see the
+are extracted and what the derived graph is; for the model itself (nodes, edges,
+labels, property maps, and the adjacency index), see the
 [in-memory LPG primer](../lpg-inmemory-primer.md).
 
 ## Relationship extraction
 
 binder extracts every relationship signal it can and rewrites resolved ones into
 persisted body links, so the graph survives reload. Unresolved references are
-**left in place and reported** — never dropped (spec §6/§11). Link-like text
+**left in place and reported**, never dropped (spec §6/§11). Link-like text
 inside fenced/indented code blocks or inline code spans is ignored throughout
 (the same markdown-aware code detection the codec uses).
 
@@ -25,7 +25,7 @@ inside fenced/indented code blocks or inline code spans is ignored throughout
 
 Every binder command that touches relationships works from the same derived
 structure: a **graph** binder projects from the bundle's resolved links. binder
-does not store a graph — it rebuilds one from the concepts and their links on
+does not store a graph: it rebuilds one from the concepts and their links on
 every call, hands you a view, and forgets it.
 
 That projection is a labeled property graph
@@ -49,7 +49,7 @@ binder projects a **labeled property graph**:
   `Metric`, `Policy`, …). Every node carries the same five queryable
   **properties**: `id`, `title`, `type`, `tier` (the derived trust tier), and
   `stale`.
-- **Edges are resolved links.** There is exactly **one edge label, `LINKS`** —
+- **Edges are resolved links.** There is exactly **one edge label, `LINKS`**:
   binder's links are untyped. Each edge carries three properties: `from`, `to`,
   and `text` (the link's text, which serves as a relationship label *by
   convention only*).
@@ -68,6 +68,6 @@ source.
 
 A runnable sample bundle and its graph views live in
 [`examples/graph-sample/`](../examples/graph-sample/). For the full graph surface
-— export formats, node identity, and `query_graph` operations — see the
+(export formats, node identity, and `query_graph` operations), see the
 [user guide](../user_guide.md#the-graph-surface). To take the graph offline into
 Spanner, see [Graph projection (`project`)](project.md).

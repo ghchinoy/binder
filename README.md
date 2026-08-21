@@ -59,7 +59,7 @@ recognised fence, see *Residual bounds* under
   `#hashtags` merged into `tags`, per-directory `index.md` navigation, and a
   generated provenance stamp.
 - **`enrich`** adds the missing required frontmatter (`type`, `title`,
-  `generated`) to a source markdown tree **in place** — frontmatter only, no body
+  `generated`) to a source markdown tree **in place**: frontmatter only, no body
   changes. It is additive/never-clobber, atomic, and safe on a git-tracked repo,
   and idempotent unless a `verified` stamp advances (see
   [`enrich`](docs/user_guide.md#enrich)).
@@ -111,7 +111,7 @@ Two properties make it trustworthy for pipelines:
 
 ## Installation
 
-**Homebrew** (macOS and Linux — the recommended path):
+**Homebrew** (macOS and Linux, the recommended path):
 
 ```bash
 brew install ghchinoy/tap/binder
@@ -137,8 +137,8 @@ checksums.txt
 
 Note: The `v` is in the tag but not in the filename.
 
-Set `VERSION` to the tag on the releases page **without its leading `v`** — the
-snippet puts the `v` back for the tag path and leaves it off the filename — pick
+Set `VERSION` to the tag on the releases page **without its leading `v`** (the
+snippet puts the `v` back for the tag path and leaves it off the filename), pick
 your platform, and the rest is mechanical:
 
 ```bash
@@ -152,7 +152,7 @@ sudo mv binder /usr/local/bin/
 binder --version    # binder/<version> — the stamp never carries a leading "v"
 ```
 
-Each archive also contains `LICENSE` and `README.md` — and nothing else: no
+Each archive also contains `LICENSE` and `README.md`, and nothing else: no
 docs directory, no sample corpus. Cosign signatures and SBOMs are **not**
 published yet, so `checksums.txt` is the integrity artifact today; see
 [what is deferred, and why](docs/RELEASING.md#deferred-phase-4).
@@ -166,7 +166,7 @@ go install github.com/ghchinoy/binder@latest
 `go install` stamps the binary cleanly, exactly like Homebrew and the direct
 download: `binder --version` prints `binder/0.3.0`, no leading `v`.
 
-> **Winget** — not published yet (tracked in
+> **Winget**: not published yet (tracked in
 > [#40](https://github.com/ghchinoy/binder/issues/40)). Windows users: take the
 > release `.zip` above.
 
@@ -245,7 +245,7 @@ RESULT: conformant (OKF 0.2)
 
 The `scope:` line appears whenever the bundle has reserved files, because
 structural validation of `index.md`/`log.md` is not implemented in this release.
-A `conformant` verdict covers the concept files only — it is not a claim about a
+A `conformant` verdict covers the concept files only. It is not a claim about a
 surface the validator never examined.
 
 ### Agent-ready machine-readable output (`--json`) and exit codes
@@ -287,7 +287,7 @@ always `binder`, `command`, `schema`, `result`. Only *map*-valued objects
 consumer that re-sorts the output and then compares bytes will not match.
 
 `graph` is already machine-readable, so `graph --json` is an **alias for
-`--format json`** — the raw `{nodes, edges}` export, **not** the envelope above.
+`--format json`**, the raw `{nodes, edges}` export, **not** the envelope above.
 Combining `--json` with a conflicting `--format {dot,graphml,html}` is a usage
 error (exit 2).
 
@@ -310,8 +310,8 @@ lists, the discovery surface (`--version`/`--help`), and a CI example.
 
 ### Command reference
 
-The examples above are the quickstart. The full per-command reference — every
-flag, the precise semantics, and worked end-to-end examples — lives in the
+The examples above are the quickstart. The full per-command reference (every
+flag, the precise semantics, and worked end-to-end examples) lives in the
 **[user guide](docs/user_guide.md)**:
 
 - **[`convert`](docs/user_guide.md#convert)** — all flags, plus
@@ -390,7 +390,7 @@ server, exposing **seven** MCP **tools** to an MCP-capable agent harness (Claude
 Code, Cursor, Zed): binder's **additive** verbs `convert`, `validate`, `review`,
 `lint` and `graph`, plus the **read-only** graph tools `list_graphs` and
 `query_graph`. Each report-producing tool returns the **same** deterministic
-`binder.report/v1` payload as the corresponding `binder <cmd> --json` — the
+`binder.report/v1` payload as the corresponding `binder <cmd> --json`: the
 handlers reuse the same internal functions and the same JSON encoder, so there is
 no second serialization path and no drift from the CLI.
 
@@ -479,13 +479,13 @@ schemas and examples.
   the internal functions above + `internal/clijson`, returning the same
   `binder.report/v1` payloads as `--json`. The MCP SDK is confined here.
 - `cmd` — the [Cobra](https://github.com/spf13/cobra) CLI; the concrete codec is
-  injected once at the composition root (`cmd/root.go`) — every other package
+  injected once at the composition root (`cmd/root.go`). Every other package
   depends only on the `okf` interfaces.
 
 ## Roadmap
 
-**Shipped today** — the complete v0.3.0 surface, checkable against
-`binder --help`:
+**Shipped today** (the complete v0.3.0 surface, checkable against
+`binder --help`):
 
 - the CLI verbs `convert`, `validate`, `index`, `review`, `lint`, `infer`,
   `graph`, `config`, and `enrich`, plus the stdio
@@ -496,7 +496,7 @@ schemas and examples.
 - `--strict` gating, `--canonicalize-status`, `convert --external-root`,
   `--entrypoint` on `review` and `lint`, and `enrich --overwrite-keys`.
 
-**Planned, not yet shipped** — what binder does *not* do today:
+**Planned, not yet shipped** (what binder does *not* do today):
 
 - **A community-core codec adapter** (e.g. `--okf-impl=community`): a second
   `Codec` behind the existing interface, slotted in only after it is confirmed
@@ -515,10 +515,10 @@ that surface was sequenced.
 
 ## Contributing
 
-Pull requests are welcome. How to build binder from a clone, run `make check`,
-and how the shipped surface was sequenced are in
-[CONTRIBUTING.md](CONTRIBUTING.md); the release process and the project's full
-exit gate are in [docs/RELEASING.md](docs/RELEASING.md).
+Pull requests are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) covers how to
+build binder from a clone, run `make check`, and how the shipped surface was
+sequenced; the release process and the project's full exit gate are in
+[docs/RELEASING.md](docs/RELEASING.md).
 
 ## License
 

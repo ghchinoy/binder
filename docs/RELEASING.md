@@ -5,7 +5,7 @@ binder is released with two interlocking pieces of automation:
 - **[release-please](https://github.com/googleapis/release-please)** owns
   *versioning*: it reads [Conventional Commits](https://www.conventionalcommits.org/)
   on `main`, maintains a "release PR" that bumps the version and updates
-  `CHANGELOG.md`, and — when that PR is merged — creates the `vX.Y.Z` git tag and
+  `CHANGELOG.md`, and, when that PR is merged, creates the `vX.Y.Z` git tag and
   a GitHub Release shell.
 - **[goreleaser](https://goreleaser.com) (v2)** owns *building & publishing*:
   triggered by the `vX.Y.Z` tag, it builds reproducible cross-platform binaries
@@ -72,7 +72,7 @@ means the user-facing install command is:
 brew install ghchinoy/tap/binder
 ```
 
-That is the one thing worth smoke-testing after a release — `ghchinoy/tap` is
+That is the one thing worth smoke-testing after a release. `ghchinoy/tap` is
 Homebrew's shorthand for the `ghchinoy/homebrew-tap` repo, and the formula's own
 `test` block runs `binder --version`.
 
@@ -80,14 +80,14 @@ Homebrew's shorthand for the `ghchinoy/homebrew-tap` repo, and the formula's own
 
 - SemVer with `v`-prefixed tags. The series opened at **`v0.1.0`** (seeded by
   `"initial-version": "0.1.0"` in `release-please-config.json`); the current
-  released version is always whatever `.release-please-manifest.json` holds —
-  never read a version out of this document.
+  released version is always whatever `.release-please-manifest.json` holds.
+  Never read a version out of this document.
 - While `0.x`: `feat:` → **minor**, `fix:` → **patch**, breaking changes →
   **minor** (not major). Configured via `bump-minor-pre-major: true` and
   `bump-patch-for-minor-pre-major: false` in `release-please-config.json`.
   `v1.0.0` is reserved for the first stability commitment (frozen converter
   output + trust-stamp format).
-- The OKF spec level binder targets is a **separate axis** — advertise it in the
+- The OKF spec level binder targets is a **separate axis**: advertise it in the
   README/CHANGELOG, never encode it in binder's SemVer.
 
 ## How the version reaches the binary (single-source: the tag)
@@ -95,7 +95,7 @@ Homebrew's shorthand for the `ghchinoy/homebrew-tap` repo, and the formula's own
 `cmd/root.go` declares `var Version = "dev"`, and two different sources can fill
 it in:
 
-- **goreleaser** injects the tag at build time —
+- **goreleaser** injects the tag at build time:
   `-ldflags "-X github.com/ghchinoy/binder/cmd.Version={{ .Version }}"`. Note
   that goreleaser's `.Version` is the tag with its `v` **stripped**.
 - **`go install github.com/ghchinoy/binder@vX.Y.Z`** gets no ldflags, so an

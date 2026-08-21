@@ -46,6 +46,6 @@ the trailing `| diff -u docs/examples/graph-sample/<file> -` with
 `> docs/examples/graph-sample/<file>` in the matching command. That overwrites the
 committed copy, so do it deliberately and review the resulting `git diff`.
 
-The graph is a read-only projection derived from the bundle on every call — binder
+The graph is a read-only projection derived from the bundle on every call; binder
 never stores or writes it back. The `binder` field in `list_graphs.json` is the
 runtime version string of the binary that produced it, not a fixed constant.

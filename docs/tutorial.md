@@ -3,7 +3,7 @@
 A hands-on, task-oriented walkthrough. You will ingest an existing corpus into
 an OKF v0.2 bundle, inspect and gate it, then author a fresh corpus and stamp its
 lifecycle and verification metadata. Every command below runs against a shipped
-binary — binder throughout, and the vendor-neutral okf in the final cross-check —
+binary (binder throughout, and the vendor-neutral okf in the final cross-check),
 and the output shown is real.
 
 For the concise landing page see the [README](../README.md); for the exhaustive
@@ -50,7 +50,7 @@ pseudo-version, and the reason is the build command, not the clone: `make build`
 runs a plain `go build` with **no `-ldflags`**, so nothing injects the release
 version and binder falls back to what the module graph knows. A fully tagged
 clone behaves identically. Install a release if you want a clean stamp, or pass
-the ldflag yourself — see
+the ldflag yourself; see
 [docs/RELEASING.md](RELEASING.md#how-the-version-reaches-the-binary-single-source-the-tag).
 
 Two habits make every run in this tutorial reproducible:
@@ -76,7 +76,7 @@ intact. The binder **repository** carries a small sample corpus with three
 deliberate triage cases (an unresolved link, a file with no title, and files with
 no frontmatter). Use it as the corpus for this part.
 
-The corpus lives in the git repository, **not** in the release archive — a
+The corpus lives in the git repository, **not** in the release archive: a
 Homebrew or direct-download install gives you the `binder` binary plus `LICENSE`
 and `README.md`, and nothing else. So grab the repo, whichever way you installed:
 
@@ -86,7 +86,7 @@ CORPUS=/tmp/binder-src/plugins/okf-convert/skills/okf-convert/assets/sample-corp
 ```
 
 If you built from source above you already have the clone; point `CORPUS` at your
-own checkout instead — every command below uses `"$CORPUS"`, so nothing else
+own checkout instead. Every command below uses `"$CORPUS"`, so nothing else
 changes. The pasted output shows the path from the shallow clone; yours will
 differ in that one line.
 
@@ -160,9 +160,9 @@ A concept with nothing pointing *at* it is an **entrypoint** rather than an
 orphan when any of three things holds: it links out to something, it is a root
 `README.md`, or you named it with `--entrypoint` (repeatable, and it tolerates a
 trailing `.md`). `README` here qualifies on the **second** count: it is the
-corpus-root `README.md`. It has no outbound edges of its own — every path it
+corpus-root `README.md`. It has no outbound edges of its own (every path it
 mentions sits inside a code span or a fenced block, so none of them is a
-markdown link — and renaming the file makes it a true orphan. binder reports
+markdown link), and renaming the file makes it a true orphan. binder reports
 entrypoints separately and does **not** count them as findings, so a corpus
 with a legitimate front door is not penalised for having one, and `--strict`
 never gates on them.
@@ -171,13 +171,13 @@ One edge of that rule is worth knowing: "root" means *root*, and `README.md` is
 the only name recognized this way. A nested `docs/README.md` is **not**
 recognized automatically and stays a true orphan until you pass
 `--entrypoint docs/README.md`, and a root `index.md` is not recognized in any
-spelling — it is classified on its edges like any other concept (`convert`
+spelling; it is classified on its edges like any other concept (`convert`
 renames an authored lowercase `index.md` to `index-note.md` first).
 
 `binder review` applies the same rule to a bundle, but over a different graph:
 `lint` reads the corpus **as authored**, `review` reads the **emitted bundle**,
 and conversion happens in between. The two usually agree about what is an
-orphan, but agreement is not guaranteed — `convert --fm-ref-keys related`, for
+orphan, but agreement is not guaranteed: `convert --fm-ref-keys related`, for
 instance, materializes edges out of a frontmatter key that `lint` has no flag to
 read, so a note `lint` calls an orphan can reach `review` as an entrypoint.
 
@@ -185,7 +185,7 @@ read, so a note `lint` calls an orphan can reach `review` as an entrypoint.
 
 The dry run typed almost everything `Note`, because that is the fallback when a
 file declares no `type:`. `binder infer` reads the corpus and **proposes** a
-`--type-map` from what it finds — directory names, filename patterns, and the
+`--type-map` from what it finds: directory names, filename patterns, and the
 types files already declare. It is proposal-only and writes nothing:
 
 ```bash
@@ -228,7 +228,7 @@ binder infer "$CORPUS" --json | jq '.result.mappings'
 ]
 ```
 
-Read the proposal before you use it — `infer` is a suggestion, not an authority.
+Read the proposal before you use it: `infer` is a suggestion, not an authority.
 When you agree with it, feed it straight into the conversion:
 
 ```bash
@@ -314,13 +314,13 @@ exit=0
 ```
 
 The `scope:` line tells you how far to trust the verdict. The bundle's three
-reserved files — the generated `index.md` in each directory — were counted, but
+reserved files (the generated `index.md` in each directory) were counted, but
 their structure was not examined, so `conformant` here is a claim about the
 five concept files and nothing else. That line appears only when a bundle
 contains reserved files; under `--json` the same fact is the
-`reserved_structure_checked` field, which every result carries — always
-`false` — regardless of the reserved count. It is a disclosure, not a
-finding — it does not change the verdict or the exit code.
+`reserved_structure_checked` field, which every result carries (always
+`false`) regardless of the reserved count. It is a disclosure, not a
+finding: it does not change the verdict or the exit code.
 
 The bundle is conformant and exits `0` even though it still has broken links and
 orphans. That is the never-reject rule in action: advisories are reported, not gated,
@@ -341,7 +341,7 @@ prose and `--json` mode:
 Never-reject governs the *corpus*, not the inputs that configure the run: binder
 will not refuse your documents for being imperfect, but it will refuse a value it
 cannot parse rather than quietly computing against something you did not mean.
-That applies to the config file too — a bad `verified_by:` in `.binder.yaml` is
+That applies to the config file too: a bad `verified_by:` in `.binder.yaml` is
 resolved before the subcommand runs, so *every* command exits `2` until you fix
 it, even one that never uses the value.
 
@@ -375,7 +375,7 @@ exit=1
 
 Under `--strict`, binder also prints a one-line summary to stderr
 (`binder: lint found 6 finding(s) (--strict)`); the JSON on stdout is unaffected.
-That is 1 broken link + 1 missing title + 2 schema violations + 2 orphans — the
+That is 1 broken link + 1 missing title + 2 schema violations + 2 orphans; the
 lone entrypoint is reported but not counted. A clean corpus exits `0` even with
 `--strict` set, so the flag is safe to leave on permanently in CI.
 
@@ -409,8 +409,8 @@ source, run it on a clean git tree and review the diff.
 
 ### Step 1: create a small corpus
 
-Work somewhere outside any binder checkout — including the shallow clone Part 1
-made — because `enrich` mutates the tree it is pointed at and the advice above is
+Work somewhere outside any binder checkout (including the shallow clone Part 1
+made), because `enrich` mutates the tree it is pointed at and the advice above is
 to run it on a clean git tree:
 
 ```bash
@@ -493,11 +493,11 @@ Trust (verified stamps):
 ```
 
 The `Trust (verified stamps):` block is the **trust disclosure**. Any run that
-writes a `verified` stamp — or declines to write one — names the actor it used
+writes a `verified` stamp (or declines to write one) names the actor it used
 and where that actor came from; `flag` here, because you passed `--verified-by`
 on the command line. It is the receipt for the one thing binder does that asserts
 something on your behalf, so it is printed whether you asked for prose or
-`--json`, and whether or not anything was actually written.
+`--json`, and whether or not anything was written.
 
 Look at the drafts file: it received `status: draft` from the `drafts=` prefix,
 `title` derived from its `# H1`, a `Note` type, and the `verified` and `generated`
@@ -557,7 +557,7 @@ stamp this run would have written.
 ### Step 5: stop retyping the actor — `binder config`
 
 You have now typed `--verified-by "human:alice"` twice. `binder config set`
-persists a default — but **where** you persist it decides whether binder will
+persists a default, but **where** you persist it decides whether binder will
 stamp from it at all. Start with the default location:
 
 ```bash
@@ -576,8 +576,8 @@ instead. `binder config set --local …` fails with `unknown flag: --local` and
 exit `2`.
 
 `binder config` with no arguments lists every resolved value **with the source it
-came from** — the fastest way to explain a surprising run, because the precedence
-is flag > env > config file > built-in default:
+came from**. That is the fastest way to explain a surprising run, because the
+precedence is flag > env > config file > built-in default:
 
 ```bash
 binder config
@@ -595,7 +595,7 @@ binder config
 ```
 
 That ordering is which layer *supplies* a value. For `verified_by` there is a
-second question underneath it — which layers may *act* on one — and the next few
+second question underneath it (which layers may *act* on one), and the next few
 commands are that distinction: `verified_by` is resolved here from the file, and
 is about to be refused as stamping authority.
 
@@ -620,12 +620,12 @@ Trust (verified stamps):
   note: ignored repo-local .binder.yaml verified_by "human:alice": a repo-local config does not authorize stamping (pass --verified-by to stamp)
 ```
 
-`pricing.md` got its `type`, `title` and `generated` — and **no** `verified`
+`pricing.md` got its `type`, `title` and `generated`. It got **no** `verified`
 stamp. Slow down here, because this is the shape of the whole trust model: a
 `.binder.yaml` lives inside a repository, so it travels. Clone somebody's corpus
 and their config file comes with it. A file that arrived in a clone you did not
 write cannot evidence a decision *you* made, so binder will not attest documents
-in your name on its say-so. It does not ignore the value silently either — the
+in your name on its say-so. It does not ignore the value silently either: the
 disclosure names it, and names what would honour it.
 
 The place that does count is your own home directory, because nothing but you
@@ -664,7 +664,7 @@ and no global `verified_by`, nothing is written.
 
 > One more thing worth knowing before you commit a `.binder.yaml`: binder loads
 > exactly **one** config file, and `./.binder.yaml` wins the search. A
-> repo-local file therefore hides your global one entirely — which is why the
+> repo-local file therefore hides your global one entirely, which is why the
 > unset above was needed before the global default could take effect.
 
 `config get` prints one resolved value (handy in scripts):
@@ -857,7 +857,7 @@ stdout, which makes it a good post-enrichment check: two independent tools
 agreeing your bundle is conformant is worth more than either tool agreeing with
 itself.
 
-Install it with Go — one static binary, no runtime dependencies. Pin the version
+Install it with Go: one static binary, no runtime dependencies. Pin the version
 so what you see below is what your binary prints: the JSON output in this section
 was generated with okf v0.3.0, so install exactly that version.
 
@@ -881,8 +881,8 @@ okf validate /tmp/kb | jq '{valid, errors, warnings}'
 ```
 
 okf agrees the enriched bundle is conformant. The eight warnings are
-recommended-field advisories — each of the four concepts is missing `description`
-and `tags` — the same kind of non-blocking finding binder reports, not errors that
+recommended-field advisories (each of the four concepts is missing `description`
+and `tags`), the same kind of non-blocking finding binder reports, not errors that
 fail the check.
 
 Now point okf at the brownfield bundle from Part 1, the one with the unresolved
@@ -901,7 +901,7 @@ okf validate /tmp/tut-bundle | jq '{valid, errors, warnings}'
 ```
 
 The single error is the broken `topics/onboarding -> /topics/deploy.md` link that
-binder flagged back in Part 1 — a second, independent implementation reaching the
+binder flagged back in Part 1. A second, independent implementation reached the
 same conclusion from the same bundle.
 
 okf also derives trust the way binder does, from the frontmatter alone. `okf
@@ -948,7 +948,7 @@ you want.
   command runs without a network or an API key, the sole exception being the
   opt-in `binder infer --gemini` semantic tier. Reach for it for batch ingestion,
   pipelines, and any gate that must run unattended. It is the foundation the
-  other two build on. (Runtime only — *building* binder still needs network to
+  other two build on. (Runtime only: *building* binder still needs network to
   fetch its pinned modules from the Go module proxy.)
 - **Agent Skill / Plugin (`okf-convert`).** A skill teaches an agent harness you
   already run (Claude Code, Cursor, Zed) how to drive the CLI for judgment-laden
