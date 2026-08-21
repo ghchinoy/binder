@@ -1,0 +1,10 @@
+---
+// Empty Search override (O2 hygiene).
+//
+// binder has NO search (pagefind: false in astro.config.mjs — see the rationale
+// there). Starlight's default Search component still ships a client script and
+// pulls a dead `Search.astro_astro_type_script_*` chunk into the build even when
+// pagefind is disabled. Overriding it with this no-op removes that dead chunk
+// and the search button, so the site ships no UI for an unshipped capability.
+// Renders nothing.
+---

@@ -15,6 +15,17 @@ export default defineConfig({
   integrations: [
     starlight({
       title: "binder",
+      // Brand seam: one stylesheet maps Starlight's --sl-* variables (palette,
+      // type, accents) so the site is visibly binder's OWN — a clean, modern
+      // tech feel, not stock Starlight. Restrained v1: no glassmorphism, no
+      // heavy effects. See src/styles/tokens.css.
+      customCss: ["./src/styles/tokens.css"],
+      // O2 hygiene: binder has no search (pagefind:false), but Starlight's
+      // default Search component still bundles a dead search script chunk.
+      // Override it with a no-op so the build ships no search UI or dead chunk.
+      components: {
+        Search: "./src/components/EmptySearch.astro",
+      },
       // No search UI. binder has no search capability, so shipping Starlight's
       // built-in Pagefind search box would assert an unshipped capability —
       // forbidden unconditionally by the design (§2 "site MUST NOT ship a search
@@ -61,6 +72,12 @@ export default defineConfig({
           label: "Reference",
           items: [
             { label: "User guide", slug: "reference/user-guide" },
+            // Generated Cobra command reference (docs/commands/, drift-gated on
+            // main). prepare-content.mjs folds the index + every per-command
+            // page into ONE self-contained page at /reference/commands with an
+            // auto-generated on-page TOC. Source is CI-proven true to the
+            // binary; the site renders it verbatim.
+            { label: "Command reference", slug: "reference/commands" },
           ],
         },
         {

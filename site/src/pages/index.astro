@@ -1,0 +1,520 @@
+---
+// binder — bespoke landing page (standalone, OUTSIDE the Starlight docs shell).
+//
+// RESTRAINED v1 (owner scope lock): a strong, welcoming hero + the three
+// pillars + clear CTAs into the docs. NO glassmorphism, NO interactive demo
+// widgets, NO search. Every claim on this page is grounded in README.md (and
+// the already-merged docs); see the source map in the completion note. The page
+// invents no capability binder does not have.
+//
+// Links are base-aware: derived from import.meta.env.BASE_URL (the `base` in
+// astro.config.mjs) so every CTA resolves under project Pages with no hand-typed
+// origin. BASE_URL can arrive with or without a trailing slash depending on
+// config; normalize to exactly one so `${base}tutorial/` -> "/binder/tutorial/".
+const rawBase = import.meta.env.BASE_URL;
+const base = rawBase.endsWith("/") ? rawBase : `${rawBase}/`;
+const repo = "https://github.com/ghchinoy/binder";
+const okf = "https://github.com/GoogleCloudPlatform/knowledge-catalog";
+
+const pillars = [
+  {
+    kicker: "Ingest",
+    title: "Plain markdown → conformant OKF",
+    // README: "converts a plain-markdown corpus into a conformant OKF v0.2
+    // bundle" (intro); "What it does" — convert/validate bullets.
+    body:
+      "binder convert walks a directory of ordinary markdown and writes an OKF v0.2 bundle: one concept per file, standard links and [[wikilinks]] rewritten to bundle-relative form, frontmatter-ref edges, #hashtags merged into tags, per-directory index navigation, and a generated provenance stamp. validate then checks a bundle against the OKF v0.2 §11 conformance rules.",
+    href: `${base}overview/`,
+    cta: "What binder is",
+  },
+  {
+    kicker: "Trust",
+    title: "Byte-faithful round-trip, trust never fabricated",
+    // README: byte-faithful frontmatter round-trip on a recognised fence;
+    // "Trust tiers, staleness, and the Attested flag are derived from
+    // frontmatter, never stored"; verified_by applied only when passed; the
+    // #124 read-boundary normalization is disclosed, not papered over.
+    body:
+      "Unmodified YAML frontmatter is passed through verbatim — including nested-map and list key order — so a recognised-fence round-trip changes nothing it did not have to. Trust tiers, staleness, and the attested flag are derived from frontmatter, never stored, and an attestation is stamped only when you pass --verified-by. Where an input must be normalized at the read boundary, binder discloses it rather than claiming a faithfulness it did not deliver.",
+    href: `${base}concepts/byte-faithfulness/`,
+    cta: "The round-trip",
+  },
+  {
+    kicker: "Agent-native",
+    title: "MCP server and graph projection",
+    // README: "binder mcp runs binder as a stdio MCP server, exposing seven
+    // tools…"; graph exports dot/json/graphml/html. Command reference: project
+    // "Project a bundle into offline property-graph DDL (Spanner SQL/PGQ)".
+    body:
+      "binder mcp runs binder as a stdio Model Context Protocol server, exposing seven tools — the additive verbs convert/validate/review/lint/graph plus the read-only list_graphs and query_graph — returning the same deterministic binder.report/v1 payloads as --json. graph exports the concept graph as dot/json/graphml/html, and project projects a bundle into offline property-graph DDL (Spanner SQL/PGQ).",
+    href: `${base}agent/mcp/`,
+    cta: "The agent surface",
+  },
+];
+---
+
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>binder — plain markdown into conformant OKF</title>
+    <meta
+      name="description"
+      content="binder is a Go CLI that converts a plain-markdown corpus into a conformant Open Knowledge Format (OKF) v0.2 bundle and validates OKF bundles against the spec's conformance rules — with a byte-faithful frontmatter round-trip and an MCP agent surface."
+    />
+    <meta name="generator" content="Astro" />
+    <!-- Honor the same theme choice as the docs (Starlight stores it under the
+         'starlight-theme' key), falling back to the OS preference. Runs before
+         paint so there is no flash. -->
+    <script is:inline>
+      (() => {
+        try {
+          const stored = localStorage.getItem("starlight-theme");
+          const theme =
+            stored === "light" || stored === "dark"
+              ? stored
+              : window.matchMedia("(prefers-color-scheme: light)").matches
+                ? "light"
+                : "dark";
+          document.documentElement.dataset.theme = theme;
+        } catch (_) {}
+      })();
+    </script>
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href={base}>
+        <span class="brand-mark" aria-hidden="true">⟳</span>
+        <span class="brand-name">binder</span>
+      </a>
+      <nav class="topnav">
+        <a href={`${base}overview/`}>Overview</a>
+        <a href={`${base}tutorial/`}>Tutorial</a>
+        <a href={`${base}reference/commands/`}>Commands</a>
+        <a href={repo} rel="noreferrer">GitHub</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="hero">
+        <p class="eyebrow">Open Knowledge Format · v0.2</p>
+        <h1>
+          Turn a plain-markdown corpus into a
+          <span class="accent">conformant OKF bundle</span>.
+        </h1>
+        <p class="lede">
+          binder is a Go command-line tool that converts a plain-markdown corpus
+          into a conformant <a href={okf}>Open Knowledge Format (OKF) v0.2</a>
+          bundle — and validates OKF bundles against the spec's conformance
+          rules. Built for pipelines: deterministic output, a byte-faithful
+          frontmatter round-trip, and a discipline of never asserting the
+          unverified.
+        </p>
+
+        <div class="cta-row">
+          <a class="btn btn-primary" href={`${base}tutorial/`}>Start the tutorial</a>
+          <a class="btn" href={`${base}overview/`}>What binder is</a>
+          <a class="btn btn-ghost" href={`${base}reference/commands/`}>Command reference</a>
+        </div>
+
+        <!-- Round-trip motif (static, honest): input bytes -> binder -> bundle,
+             and back to the same bytes on a recognised fence. No interactivity;
+             the deferred §4.6(b) demo is deliberately not built here. -->
+        <figure class="roundtrip" aria-label="Byte-faithful round-trip">
+          <span class="rt-node">input.md</span>
+          <span class="rt-arrow">→</span>
+          <span class="rt-node rt-proc">binder&nbsp;convert&nbsp;·&nbsp;enrich</span>
+          <span class="rt-arrow">→</span>
+          <span class="rt-node">bundle/</span>
+          <span class="rt-arrow rt-back">↩</span>
+          <span class="rt-node rt-same">input.md<small>same bytes</small></span>
+          <figcaption>
+            Byte-faithful frontmatter round-trip — on a recognised fence.
+          </figcaption>
+        </figure>
+      </section>
+
+      <section class="pillars" aria-label="What makes binder binder">
+        {
+          pillars.map((p) => (
+            <article class="pillar">
+              <p class="pillar-kicker">{p.kicker}</p>
+              <h2>{p.title}</h2>
+              <p>{p.body}</p>
+              <a class="pillar-link" href={p.href}>
+                {p.cta} <span aria-hidden="true">→</span>
+              </a>
+            </article>
+          ))
+        }
+      </section>
+
+      <section class="getit" aria-label="Install binder">
+        <div class="getit-copy">
+          <h2>Install</h2>
+          <p>
+            Homebrew is the recommended path on macOS and Linux; a
+            <code>go install</code> works with the Go toolchain. See the
+            <a href={`${base}install/`}>installation guide</a> for direct
+            downloads, checksums, and version notes.
+          </p>
+        </div>
+        <div class="getit-code">
+          <pre><code># Homebrew (macOS + Linux)
+brew install ghchinoy/tap/binder
+
+# or with the Go toolchain
+go install github.com/ghchinoy/binder@latest</code></pre>
+        </div>
+      </section>
+    </main>
+
+    <footer class="sitefoot">
+      <div class="foot-links">
+        <a href={`${base}overview/`}>Docs</a>
+        <a href={`${base}reference/commands/`}>Command reference</a>
+        <a href={repo} rel="noreferrer">GitHub</a>
+        <a href={okf} rel="noreferrer">OKF spec</a>
+      </div>
+      <p class="foot-note">
+        binder is licensed under the Apache License 2.0. Documentation is
+        byte-derived from the repository docs; this site asserts no capability
+        binder does not ship.
+      </p>
+    </footer>
+
+    <style is:global>
+      :root,
+      html[data-theme="dark"] {
+        --bg: #10171b;
+        --surface: #1c262b;
+        --surface-2: #2d383d;
+        --text: #d7dfe1;
+        --muted: #9aa8ac;
+        --heading: #f4f7f8;
+        --accent: #2dd4bf;
+        --accent-strong: #14b8a6;
+        --accent-soft: #0d3b37;
+        --border: rgba(45, 212, 191, 0.18);
+        --border-strong: rgba(45, 212, 191, 0.32);
+      }
+      html[data-theme="light"] {
+        --bg: #ffffff;
+        --surface: #f2f6f6;
+        --surface-2: #e6edee;
+        --text: #24322f;
+        --muted: #55666a;
+        --heading: #12201d;
+        --accent: #0d9488;
+        --accent-strong: #0f766e;
+        --accent-soft: #ccfbf1;
+        --border: rgba(13, 148, 136, 0.2);
+        --border-strong: rgba(13, 148, 136, 0.34);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+      html {
+        scroll-behavior: smooth;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family:
+          "Inter var", "Inter", ui-sans-serif, system-ui, -apple-system,
+          "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        line-height: 1.6;
+        -webkit-font-smoothing: antialiased;
+      }
+      a {
+        color: var(--accent);
+        text-decoration: none;
+      }
+      a:hover {
+        text-decoration: underline;
+      }
+      code,
+      pre {
+        font-family:
+          ui-monospace, "SFMono-Regular", "SF Mono", "JetBrains Mono", Menlo,
+          Consolas, "Liberation Mono", monospace;
+      }
+
+      /* Topbar */
+      .topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        max-width: 1080px;
+        margin: 0 auto;
+        padding: 1.1rem 1.5rem;
+      }
+      .brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        color: var(--heading);
+        font-weight: 650;
+        font-size: 1.15rem;
+        letter-spacing: -0.01em;
+      }
+      .brand:hover {
+        text-decoration: none;
+      }
+      .brand-mark {
+        color: var(--accent);
+        font-size: 1.25rem;
+      }
+      .topnav {
+        display: flex;
+        gap: 1.25rem;
+        flex-wrap: wrap;
+      }
+      .topnav a {
+        color: var(--muted);
+        font-size: 0.95rem;
+      }
+      .topnav a:hover {
+        color: var(--heading);
+        text-decoration: none;
+      }
+
+      main {
+        max-width: 1080px;
+        margin: 0 auto;
+        padding: 0 1.5rem;
+      }
+
+      /* Hero */
+      .hero {
+        padding: 3.5rem 0 2.5rem;
+        max-width: 62ch;
+      }
+      .eyebrow {
+        text-transform: uppercase;
+        letter-spacing: 0.14em;
+        font-size: 0.75rem;
+        font-weight: 600;
+        color: var(--accent);
+        margin: 0 0 0.9rem;
+      }
+      .hero h1 {
+        color: var(--heading);
+        font-size: clamp(2.1rem, 5vw, 3.3rem);
+        line-height: 1.08;
+        letter-spacing: -0.02em;
+        margin: 0 0 1.1rem;
+        font-weight: 700;
+      }
+      .accent {
+        color: var(--accent);
+      }
+      .lede {
+        font-size: 1.15rem;
+        color: var(--muted);
+        margin: 0 0 1.8rem;
+      }
+
+      .cta-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+      }
+      .btn {
+        display: inline-block;
+        padding: 0.6rem 1.15rem;
+        border-radius: 8px;
+        border: 1px solid var(--border-strong);
+        color: var(--heading);
+        font-weight: 550;
+        font-size: 0.98rem;
+        transition:
+          border-color 0.15s ease,
+          background-color 0.15s ease;
+      }
+      .btn:hover {
+        text-decoration: none;
+        border-color: var(--accent);
+        background: var(--surface);
+      }
+      .btn-primary {
+        background: var(--accent-strong);
+        border-color: var(--accent-strong);
+        color: #04211d;
+      }
+      html[data-theme="light"] .btn-primary {
+        color: #ffffff;
+      }
+      .btn-primary:hover {
+        background: var(--accent);
+        border-color: var(--accent);
+      }
+      .btn-ghost {
+        border-color: var(--border);
+        color: var(--muted);
+      }
+
+      /* Round-trip motif */
+      .roundtrip {
+        margin: 2.75rem 0 0;
+        padding: 1.1rem 1.25rem;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: var(--surface);
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 0.5rem 0.75rem;
+      }
+      .rt-node {
+        font-family:
+          ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+        font-size: 0.9rem;
+        padding: 0.35rem 0.6rem;
+        border-radius: 7px;
+        background: var(--bg);
+        border: 1px solid var(--border);
+        color: var(--text);
+        white-space: nowrap;
+      }
+      .rt-proc {
+        border-color: var(--border-strong);
+        color: var(--accent);
+      }
+      .rt-same {
+        display: inline-flex;
+        flex-direction: column;
+        line-height: 1.15;
+      }
+      .rt-same small {
+        color: var(--accent);
+        font-size: 0.68rem;
+        letter-spacing: 0.04em;
+      }
+      .rt-arrow {
+        color: var(--muted);
+        font-size: 1.1rem;
+      }
+      .rt-back {
+        color: var(--accent);
+      }
+      .roundtrip figcaption {
+        flex-basis: 100%;
+        margin-top: 0.6rem;
+        color: var(--muted);
+        font-size: 0.85rem;
+      }
+
+      /* Pillars */
+      .pillars {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 1.1rem;
+        padding: 1.5rem 0 3rem;
+      }
+      .pillar {
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        background: var(--surface);
+        padding: 1.5rem 1.4rem;
+        display: flex;
+        flex-direction: column;
+      }
+      .pillar-kicker {
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        font-size: 0.72rem;
+        font-weight: 700;
+        color: var(--accent);
+        margin: 0 0 0.5rem;
+      }
+      .pillar h2 {
+        color: var(--heading);
+        font-size: 1.2rem;
+        line-height: 1.25;
+        margin: 0 0 0.7rem;
+        letter-spacing: -0.01em;
+      }
+      .pillar p {
+        color: var(--muted);
+        font-size: 0.96rem;
+        margin: 0 0 1.1rem;
+      }
+      .pillar-link {
+        margin-top: auto;
+        font-weight: 600;
+        font-size: 0.95rem;
+      }
+
+      /* Install */
+      .getit {
+        display: grid;
+        grid-template-columns: 1fr 1.2fr;
+        gap: 1.5rem;
+        align-items: center;
+        padding: 2rem;
+        margin-bottom: 3rem;
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        background: var(--surface);
+      }
+      .getit h2 {
+        color: var(--heading);
+        margin: 0 0 0.6rem;
+        font-size: 1.4rem;
+      }
+      .getit p {
+        color: var(--muted);
+        margin: 0;
+      }
+      .getit code {
+        color: var(--text);
+      }
+      .getit-code pre {
+        margin: 0;
+        padding: 1.1rem 1.25rem;
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        overflow-x: auto;
+        font-size: 0.9rem;
+        line-height: 1.7;
+        color: var(--text);
+      }
+
+      /* Footer */
+      .sitefoot {
+        border-top: 1px solid var(--border);
+        max-width: 1080px;
+        margin: 0 auto;
+        padding: 1.75rem 1.5rem 2.5rem;
+      }
+      .foot-links {
+        display: flex;
+        gap: 1.25rem;
+        flex-wrap: wrap;
+        margin-bottom: 0.75rem;
+      }
+      .foot-links a {
+        color: var(--muted);
+        font-size: 0.92rem;
+      }
+      .foot-note {
+        color: var(--muted);
+        font-size: 0.82rem;
+        max-width: 62ch;
+        margin: 0;
+      }
+
+      @media (max-width: 680px) {
+        .getit {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </body>
+</html>
