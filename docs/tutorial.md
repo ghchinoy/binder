@@ -334,8 +334,8 @@ prose and `--json` mode:
 
 | Code | Meaning |
 |---|---|
-| `0` | Success. Advisories may be present but never gate unless `--strict` is set. |
-| `1` | Gating findings: `validate` §11 non-conformance (always), or any advisory under `--strict`. |
+| `0` | Success. Advisories may be present but never gate unless `--strict` is set. The read-boundary normalization advisory never gates at all. |
+| `1` | Gating findings: `validate` §11 non-conformance (always), or, under `--strict`, a command's advisory set, which excludes the read-boundary normalization advisory (see [Strict mode](user_guide.md#strict-mode)). |
 | `2` | Usage error — anything wrong with the command line, **or with the `.binder.yaml` that feeds it**: an unknown subcommand or flag, the wrong number of arguments, an invalid actor, a malformed `--today`/`--type-map`/`--status-map`/`--stale-after-map` value, an unknown `graph --format`, and an unreadable corpus for `lint`/`enrich`/`infer`. |
 | `3` | I/O or internal error — an unreadable bundle or source for `convert`/`validate`/`index`/`review`/`graph`, or a write failure. |
 

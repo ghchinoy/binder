@@ -23,12 +23,13 @@ A leading UTF-8 BOM or a lone-CR (classic-Mac) fence is now recognised too, but
 is normalized before recognition
 ([#124](https://github.com/ghchinoy/binder/issues/124)) — the fence and any
 `verified:` block it guards are preserved, though the round-trip does not
-preserve the original encoding and is disclosed (a `normalized` signal plus a
-top-level advisory). A file with **no** frontmatter fence at all is still read
-as plain and synthesized over, leaving its content in the body as text, with
-exit `0`, nothing skipped, and no warning. Recognition still leaves byte-level
-bounds; for the ones known today, see *Residual bounds* under
-[`enrich`](../user_guide.md#enrich).
+preserve the original encoding and is disclosed via a `normalized` signal and a
+top-level advisory in the run report. That advisory never gates (see
+[Strict mode](../user_guide.md#strict-mode)). A file with **no** frontmatter
+fence at all is still read as plain and synthesized over, leaving its content in
+the body as text, with exit `0`, nothing skipped, and no warning. Recognition
+still leaves byte-level bounds; for the ones known today, see *Residual bounds*
+under [`enrich`](../user_guide.md#enrich).
 
 The guarantee is scoped to the frontmatter. `convert` pipelines the body (links
 and wikilinks are rewritten, and under `--fm-ref-keys` a `## Related` section is
@@ -57,14 +58,14 @@ guarantee above.
 A leading UTF-8 BOM or a lone-CR fence is now recognised via read-boundary
 normalization ([#124](https://github.com/ghchinoy/binder/issues/124)), so its
 `verified:` attestation is preserved rather than demoted — but because that
-normalization does not preserve the original encoding it is disclosed (a
-`normalized` signal plus an advisory), not a silent round-trip. On a file with
-**no** frontmatter fence at all this does not hold: the file is treated as
-plain, so its content is left in the body as text while binder synthesizes keys
-of its own, among them a `type`, a `title`, and a `generated` provenance stamp,
-with exit `0`, nothing skipped, and no warning. `generated` is a key binder
-itself protects: `--overwrite-keys generated` is refused as a trust-provenance
-key.
+normalization does not preserve the original encoding it is disclosed rather
+than passing silently: a `normalized` signal plus a top-level advisory in the
+run report. On a file with **no** frontmatter fence at all this does not hold:
+the file is treated as plain, so its content is left in the body as text while
+binder synthesizes keys of its own, among them a `type`, a `title`, and a
+`generated` provenance stamp, with exit `0`, nothing skipped, and no warning.
+`generated` is a key binder itself protects: `--overwrite-keys generated` is
+refused as a trust-provenance key.
 
 Trust tiers and staleness are *derived* on demand from frontmatter, never stored
 (see [Trust model & tiers](trust.md)). A `verified` attestation in particular is

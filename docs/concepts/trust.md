@@ -6,7 +6,8 @@ fence, and **derives** trust tiers and staleness on demand. It never stores a
 credibility score, and where the fence is recognised it never fabricates
 provenance (spec §5.1).
 
-> **That scoping is load-bearing if you rely on binder for provenance.**
+> **That preservation is bounded, and the bound matters if you depend on binder
+> for provenance.**
 > Lossless preservation is scoped to files whose frontmatter binder
 > recognises and that need no read-boundary normalization: the fence opens with
 > `---` and a newline, LF or CRLF, at the very start. A leading UTF-8 BOM or a
@@ -14,8 +15,10 @@ provenance (spec §5.1).
 > ([#124](https://github.com/ghchinoy/binder/issues/124)), so the `verified:`
 > attestation it guards is preserved rather than demoted to body — but because
 > that normalization (BOM strip, lone-CR to LF) does not preserve the original
-> encoding, it is disclosed non-optionally (a `normalized` signal plus a
-> top-level advisory) rather than a silent round-trip. A file with **no**
+> encoding, it is disclosed non-optionally rather than passing as a silent
+> round-trip: a `normalized` signal plus a top-level advisory in the run report.
+> That advisory never gates, under `--strict` or otherwise
+> ([Strict mode](../user_guide.md#strict-mode)). A file with **no**
 > frontmatter fence at all is still read as plain and synthesized over. See
 > [Lossless frontmatter round-trip](byte-faithful.md).
 

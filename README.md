@@ -23,7 +23,8 @@ also reports and visualizes a bundle (`review`,
 trust/lifecycle metadata (`--status-map`, `--stale-after-map`, `--verified-by`),
 is configurable via `binder config`, and supports `--strict` CI gating.
 
-**That scoping is load-bearing if you rely on binder for provenance.**
+**That round-trip is bounded, and the bound matters if you depend on binder for
+provenance.**
 Recognising the fence is a scanner, not a property of the file. A leading UTF-8
 BOM or a lone-CR-delimited fence used to leave the file looking plain, so
 `convert` and `enrich` synthesized a fresh block and left the original — any
@@ -33,9 +34,11 @@ skipped and no warning. As of
 at the read boundary before recognition, so the fence — and the attestation it
 guards — is recognised; because the normalization (BOM strip, lone-CR → LF)
 does not preserve the original encoding it is disclosed non-optionally via a
-per-file `normalized` signal and a top-level advisory. Recognition still leaves
-byte-level bounds; for the ones known today, see *Residual bounds* under
-[`enrich`](docs/user_guide.md#enrich).
+per-file `normalized` signal and a top-level advisory in the run report. That
+advisory never gates, so a run raising only it exits `0` with or without
+`--strict` (see [Strict mode](docs/user_guide.md#strict-mode)). Recognition
+still leaves byte-level bounds; for the ones known today, see *Residual bounds*
+under [`enrich`](docs/user_guide.md#enrich).
 
 ## Table of Contents
 
@@ -107,8 +110,10 @@ Two properties make it trustworthy for pipelines:
   ([#124](https://github.com/ghchinoy/binder/issues/124)) — the fence and any
   `verified:` block it guards are preserved, but the round-trip does not
   preserve the original encoding and is disclosed via a `normalized` signal and
-  a top-level advisory. Recognition still leaves byte-level bounds; for the ones
-  known today, see *Residual bounds* under [`enrich`](docs/user_guide.md#enrich).
+  a top-level advisory in the run report. That advisory never gates (see
+  [Strict mode](docs/user_guide.md#strict-mode)). Recognition still leaves
+  byte-level bounds; for the ones known today, see *Residual bounds* under
+  [`enrich`](docs/user_guide.md#enrich).
   Scoped to the frontmatter: `convert` also pipelines the body and synthesises
   `index.md`, so the guarantee does not extend to a whole-file comparison.
 
@@ -299,8 +304,8 @@ prose and `--json` mode):
 
 | Code | Meaning |
 |---|---|
-| `0` | Success. Advisories (broken links, true orphans, staleness, recovered frontmatter, missing trust, non-conformant `status` values) may be present — they are reported but never gate unless `--strict` is set. Entrypoints are reported and **never** gate. |
-| `1` | Gating findings: `validate` spec §11 non-conformance (always), or, under `--strict`, the per-command advisory/finding set (see [Strict mode](docs/user_guide.md#strict-mode)). |
+| `0` | Success. Advisories (broken links, true orphans, staleness, recovered frontmatter, missing trust, non-conformant `status` values) may be present — they are reported but never gate unless `--strict` is set. Entrypoints, and the read-boundary normalization advisory, are reported and **never** gate. |
+| `1` | Gating findings: `validate` spec §11 non-conformance (always), or, under `--strict`, the per-command advisory/finding set, which excludes the read-boundary normalization advisory (see [Strict mode](docs/user_guide.md#strict-mode)). |
 | `2` | Usage error — anything wrong with the command line **or with the config file that feeds it**. Unknown subcommand (`binder bogus`); unknown flag; wrong number of positional arguments; `convert` with neither `-o` nor `--dry-run`; `--json` conflicting with `--format`; an unknown `graph --format`; a malformed `--today`, `--verified-by`, `--type-map`, `--status-map`, `--stale-after-map`, or empty `--external-root` value; `enrich --overwrite-keys` naming a protected trust-provenance key (the whole run is refused and nothing is written); an unknown `config` key; and an unreadable `<corpus>`/`<src>` for `lint`, `enrich`, and `infer`. A bad value in `.binder.yaml` fails the same way, before the command runs — e.g. `verified_by: "agent:bot"` makes *every* subcommand exit 2. |
 | `3` | I/O or internal error — an unreadable bundle or source for `convert`, `validate`, `index`, `review`, and `graph`, or a write failure. |
 

@@ -69,8 +69,9 @@ blanket promise across every command:
   (classic-Mac) fence is now recognised too, but is normalized before
   recognition ([#124](https://github.com/ghchinoy/binder/issues/124)) — the
   fence and any `verified:` block it guards are preserved, though the round-trip
-  does not preserve the original encoding and is disclosed (a `normalized`
-  signal plus a top-level advisory). A file with **no** frontmatter fence at all
+  does not preserve the original encoding and is disclosed via a `normalized`
+  signal and a top-level advisory in the run report. That advisory never gates
+  (see [Strict mode](#strict-mode)). A file with **no** frontmatter fence at all
   is still read as plain and synthesized over, leaving its content in the body
   as text, with exit `0`, nothing skipped, and no warning. Recognition still
   leaves byte-level bounds; for the ones known today, see *Residual bounds*
@@ -93,18 +94,18 @@ blanket promise across every command:
   read-boundary normalization
   ([#124](https://github.com/ghchinoy/binder/issues/124)), so its `verified:`
   attestation is preserved rather than demoted — but because that normalization
-  does not preserve the original encoding it is disclosed (a `normalized` signal
-  plus an advisory), not a silent round-trip. On a file with **no** frontmatter
-  fence at all this does not hold: the file is treated as plain, so its content
-  is left in the body as text while binder synthesizes keys of its own, among
-  them a `type`, a `title`, and a `generated` provenance stamp, with exit `0`,
-  nothing skipped, and no warning. `generated` is a key binder itself protects:
-  `--overwrite-keys generated` is refused as a trust-provenance key. Trust tiers
-  and staleness are *derived* on demand from frontmatter, never stored. A
-  `verified` attestation in particular is written only for a verifier **you**
-  supplied on this invocation or set as your own default, it is never written
-  **over** another identity's attestation from a default, and every
-  stamp-writing run discloses what it wrote — see
+  does not preserve the original encoding it is disclosed rather than passing
+  silently: a `normalized` signal plus a top-level advisory in the run report.
+  On a file with **no** frontmatter fence at all this does not hold: the file is
+  treated as plain, so its content is left in the body as text while binder
+  synthesizes keys of its own, among them a `type`, a `title`, and a `generated`
+  provenance stamp, with exit `0`, nothing skipped, and no warning. `generated`
+  is a key binder itself protects: `--overwrite-keys generated` is refused as a
+  trust-provenance key. Trust tiers and staleness are *derived* on demand from
+  frontmatter, never stored. A `verified` attestation in particular is written
+  only for a verifier **you** supplied on this invocation or set as your own
+  default, it is never written **over** another identity's attestation from a
+  default, and every stamp-writing run discloses what it wrote — see
   [Writing a `verified` stamp](#writing-a-verified-stamp).
 
 ## Concepts and terminology
@@ -210,7 +211,7 @@ Output is required unless you pass `--dry-run`.
 | `--map-draft` | `false` | Map a `draft: true` marker to `status: draft` (only when `status` is absent). |
 | `--report` | — | Also write the run report (the same text printed to stdout) to this file. |
 | `--json` | `false` | Emit the run report as deterministic JSON (schema `binder.report/v1`) instead of prose. Composes with `--report` (the file gets whichever format `--json` selects). See [JSON output](#json-output---json-and-the-exit-code-contract). |
-| `--strict` | `false` | Gate (exit 1) on unresolved links or recovery warnings. Without it these never gate (never-reject; exit 0). See [Strict mode](#strict-mode). |
+| `--strict` | `false` | Gate (exit 1) on `convert`'s advisory/finding set, which [Strict mode](#strict-mode) lists. Without it none of that set gates (never-reject; exit 0). The read-boundary normalization advisory is excluded from the set: it is reported either way and never gates. |
 | `--group-by-type` | `false` | Append an additive `# Catalog` of all concepts, grouped by type, to the **root** `index.md`. See [The type-grouped catalog](#the-type-grouped-catalog). |
 | `--include-backlinks` | `false` | Annotate each catalog entry with its inbound resolved edges (requires `--group-by-type`). |
 | `--include-graph` | `false` | Annotate each catalog entry with its outbound resolved edges (requires `--group-by-type`). |
@@ -485,8 +486,9 @@ A plain-markdown file (no frontmatter fence) gets a fresh, valid block prepended
 >    any human `verified` block it guards, is **recognised** rather than demoted to
 >    body. Because the rewrite does not preserve the source encoding it is disclosed
 >    non-optionally — the file's result carries a `normalized: ["translated-lone-cr"]`
->    signal and the run raises a top-level advisory (see bound 6). `\r\n` pairs are
->    left untouched (that is bound 1's separate concern).
+>    signal and, in `--json`, the run raises a matching `result.normalizations` entry
+>    (see bound 6, which covers both channels and why this advisory never gates).
+>    `\r\n` pairs are left untouched (that is bound 1's separate concern).
 > 3. **Trailing newline.** A file whose content ends without a trailing newline
 >    gains one on the closing `---` fence line.
 > 4. **Empty frontmatter re-emission.** A file whose frontmatter block is empty
@@ -506,9 +508,20 @@ A plain-markdown file (no frontmatter fence) gets a fresh, valid block prepended
 >    stripped; a BOM elsewhere in the file is left untouched. Whenever this or the
 >    lone-CR translation of bound 2 fires on a file enrich rewrites, the output does
 >    **not** preserve the source encoding, so the change is disclosed
->    non-optionally: the file's result carries a `normalized` signal
->    (`["stripped-utf8-bom"]` and/or `["translated-lone-cr"]`) and the run raises a
->    matching top-level advisory. A file enrich leaves unchanged is never rewritten,
+>    non-optionally on two channels: the prose report prints an `advisory:` line,
+>    and `--json` carries a per-file `normalized` signal
+>    (`["stripped-utf8-bom"]` and/or `["translated-lone-cr"]`) together with a
+>    matching top-level `result.normalizations` entry.
+>    **This advisory is reported and never gates.** enrich records it as a
+>    disclosure of what it did to the input rather than a finding about the corpus,
+>    so it stays out of the findings count: a run whose only finding is the
+>    normalization advisory exits `0` with or without
+>    [`--strict`](#strict-mode) ([#154](https://github.com/ghchinoy/binder/issues/154)).
+>    A skipped file or a preserve-or-advise warning still gates under `--strict`,
+>    and the advisory adds nothing to that count. `result.normalizations` is
+>    additive to `binder.report/v1` (the schema string is unbumped) and is omitted
+>    when nothing was normalized, so a run that normalized nothing serializes
+>    exactly as it did before. A file enrich leaves unchanged is never rewritten,
 >    so its bytes — BOM and lone CRs included — are left exactly as-is and nothing is
 >    normalized or disclosed.
 >
@@ -528,7 +541,7 @@ A plain-markdown file (no frontmatter fence) gets a fresh, valid block prepended
 | `--verified-by` | — (see [Writing a `verified` stamp](#writing-a-verified-stamp)) | Actor appended as a `verified` stamp, e.g. `"human:ghchinoy"`. A stamp is written **only** for this flag, or for a `verified_by` default you set in your **global** user config (neither a repo-local `.binder.yaml` nor `BINDER_VERIFIED_BY` authorizes one). Invalid actor → exit 2. Appends only (dedup by `by,at`). |
 | `--canonicalize-status` | `false` | **Opt-in**: rewrite a known `--status-map` alias to the OKF §5.4 vocabulary (`active`→`stable`, `wip`/`in-progress`→`draft`, `archived`/`legacy`→`deprecated`). The vocabulary **check** is always on; this flag controls only the rewrite. Each rewrite is reported in `status_notes`. See [Status vocabulary and `--canonicalize-status`](#status-vocabulary-and---canonicalize-status). |
 | `--overwrite-keys` | — | **Opt-in** comma-separated keys to **refresh in place even when present**, e.g. `"status,stale_after"`. Default is additive/never-clobber. Scoped strictly to the named keys; trust keys are **refused** (exit 2). See [Opt-in refresh](#opt-in-refresh---overwrite-keys). |
-| `--strict` | `false` | Gate (exit 1) when any file is skipped or a preserve-or-advise finding is present. Without it these never gate (exit 0). |
+| `--strict` | `false` | Gate (exit 1) on `enrich`'s advisory/finding set, which [Strict mode](#strict-mode) lists. Without it none of that set gates (exit 0). The read-boundary normalization advisory of bound 6 is excluded from the set: it is reported either way and never gates. |
 | `--json` | `false` | Emit the run report as deterministic JSON (schema `binder.report/v1`, `command:"enrich"`) instead of prose. |
 
 The `--status-map`/`--stale-after-map`/`--verified-by` injectors are the same
@@ -631,12 +644,16 @@ This same shared helper backs `convert`, which surfaces it as a warning.
 binder enrich path/to/corpus            # write injected frontmatter
 binder enrich path/to/corpus --dry-run  # preview; writes nothing
 binder enrich path/to/corpus --json     # deterministic envelope, command:"enrich"
-binder enrich path/to/corpus --strict   # exit 1 if any file is skipped
+binder enrich path/to/corpus --strict   # exit 1 on gating findings, not the normalization advisory
 ```
 
-Exit codes: clean run → `0`; a bad/unreadable `<src>` → `2`; a bad flag value
-(`--status-map`/`--stale-after-map`/`--verified-by`) → `2`; a write failure →
-`3`; skipped/advisory findings gate to `1` only under `--strict`.
+Exit codes: clean run → `0`; a bad/unreadable `<src>` → `2`; a malformed flag
+value (`--status-map`/`--stale-after-map`/`--verified-by`) → `2`; a write
+failure → `3`; `enrich`'s advisory/finding set gates to `1` only under
+`--strict`, and [Strict mode](#strict-mode) lists that set. The read-boundary
+normalization advisory of bound 6 is excluded from it. That advisory is reported
+on both channels and never gates, so a run raising only it exits `0` with the
+flag set.
 
 ### `validate`
 
@@ -1622,25 +1639,36 @@ Each `concepts[]` object: `rel_path`, `type`, `title`, `num_links`,
 | `num_unchanged` | int | Files needing no key — not written. |
 | `num_skipped` | int | Files skipped (unparseable frontmatter), never mutated. |
 | `files` | array | One object per file (see below), sorted by path. |
-| `warnings` | array of string | Preserve-or-advise notices (`path: message`). |
+| `warnings` | array of string | Preserve-or-advise notices (`path: message`). Gates under `--strict`. |
+| `normalizations` | array of string | Read-boundary normalization advisories (`path: message`), one per file enrich wrote (or would write under `--dry-run`) from normalized bytes. A disclosure rather than a finding: it is not counted among the run's findings and does not gate, even under `--strict` ([#154](https://github.com/ghchinoy/binder/issues/154)). **Omitted when empty**, so the key is absent from a run that wrote no normalized file. Additive to `binder.report/v1`; the schema string is unbumped. See [Strict mode](#strict-mode). |
 | `status_notes` | array of string | Status-vocabulary messages — canonicalization rewrites and non-conformance warnings — sorted. Always present; `[]` on a conformant run. See [Status vocabulary and `--canonicalize-status`](#status-vocabulary-and---canonicalize-status). |
 | `verified` | object | The trust disclosure — the same object `convert --json` emits, always present. Fields in [Disclosure: prose and JSON](#disclosure-prose-and-json). |
 
 Each `files[]` object: `path` (source-relative), `status` ∈
 `enriched|unchanged|would-enrich|skipped`, `added` (sorted keys injected),
 `overwritten` (sorted keys **refreshed in place** under
-[`--overwrite-keys`](#opt-in-refresh---overwrite-keys)), and `reason` (for
-`skipped`, e.g. `unparseable frontmatter: <err>`). A key is reported under
+[`--overwrite-keys`](#opt-in-refresh---overwrite-keys)), `normalized` (the
+read-boundary normalizations that produced the bytes this file was written from:
+`stripped-utf8-bom`, `translated-lone-cr`, or both in that order), and `reason`
+(for `skipped`, e.g. `unparseable frontmatter: <err>`). A key is reported under
 exactly one of `added` (it was absent) or `overwritten` (it was present and was
-replaced).
+replaced). `normalized` appears only on an `enriched` or `would-enrich` result,
+since a file enrich leaves `unchanged` or `skipped` is never rewritten and so
+discloses nothing (bound 6). Every `normalized` signal has a matching entry in
+the top-level `normalizations` array; that pair is the JSON half of the
+disclosure described in [Strict mode](#strict-mode), and neither field gates.
 
 **Emptiness convention: it is not uniform, so branch on presence.** Inside
-`files[]`, `added`, `overwritten`, and `reason` are all omitted when empty, so a
-file that needed nothing serializes as just `{"path": …, "status": "unchanged"}`.
-The top-level arrays behave the other way: `warnings` and `status_notes` are
-**always present** and serialize as `[]` when empty (as do `entrypoints` in
-`review --json` and `lint --json`). Treat an absent `files[].overwritten` as
-"nothing was overwritten", and do not expect the same rule at both levels:
+`files[]`, `added`, `overwritten`, `normalized`, and `reason` are all omitted
+when empty, so a file that needed nothing serializes as just
+`{"path": …, "status": "unchanged"}`. Most top-level arrays behave the other
+way: `warnings` and `status_notes` are **always present** and serialize as `[]`
+when empty (as do `entrypoints` in `review --json` and `lint --json`).
+`normalizations` is the exception at the top level and follows the `files[]`
+rule instead: it is omitted when empty, so a run that normalized nothing has no
+`normalizations` key at all. Treat an absent `files[].overwritten` as "nothing
+was overwritten" and an absent `normalizations` as "nothing was normalized", and
+do not expect one rule to cover every array:
 
 A second `enrich` pass over a tree whose `status` was already set by a first
 pass, this time refreshing it:
@@ -1840,7 +1868,7 @@ Every command maps its outcome onto four stable codes. The code is about the
 | Code | Name | Meaning | Emitted by (today) |
 |---|---|---|---|
 | `0` | success | Completed with no gating findings. Advisories may be present — they are reported but never gate. | all commands, normal case |
-| `1` | findings-present | A gating condition: `validate` spec §11 non-conformance (unparseable frontmatter or a missing/empty `type`), or — under [`--strict`](#strict-mode) — any advisory promoted to a gating finding. | `validate`, `review`, `lint`, `convert`, `enrich`, `infer` (with `--strict`) |
+| `1` | findings-present | A gating condition: `validate` spec §11 non-conformance (unparseable frontmatter or a missing/empty `type`), or — under [`--strict`](#strict-mode) — a command's advisory set promoted to gating findings. The read-boundary normalization advisory is excluded from those sets and never gates. | `validate`, `review`, `lint`, `convert`, `enrich`, `infer` (with `--strict`) |
 | `2` | usage-error | Bad flags/args — an unknown subcommand or flag, a missing/extra argument, a conflicting `--json`/`--format`, an unparseable `--today`, a malformed `--status-map`, or an `--overwrite-keys` list naming a trust-provenance key. Also: a missing source path for `lint`/`enrich`/`infer` (see below). | any command |
 | `3` | io-error | Cannot read the corpus/bundle, a write failure, an external-service failure, or an internal error. Includes a missing path for `convert`/`validate`/`review`/`index`/`graph` (see below), and a failing Gemini tier under [`infer --gemini-required`](#the-gemini-tier-degrade-by-default---gemini-required-to-fail). | any command |
 
@@ -1932,8 +1960,12 @@ requests it** — the default posture is unchanged.
 By default binder is **never-reject**: advisories are reported but exit `0`.
 `--strict` opts a single run into promoting advisories to gating findings
 (exit `1`), so CI can fail the build on conditions that are informational
-locally. It changes only the exit code — the report (prose or JSON) is
-byte-identical with and without the flag — and it never affects any other run.
+locally. Each command promotes its own advisory set, listed in the table below.
+The read-boundary normalization advisory is carved out of those sets: it is
+reported and does not gate, on `enrich` or on `convert`. On a run that reports,
+the flag changes only the exit code — the report (prose or JSON) is
+byte-identical with and without the flag — and in no case does it affect any
+other run.
 
 The per-command contract:
 
@@ -1943,8 +1975,27 @@ The per-command contract:
 | `review` | any review finding: orphans, stale concepts, unresolved links, unparsed-frontmatter recoveries | — |
 | `lint` | any lint finding: broken links, missing titles, orphans, stale, schema violations | — |
 | `convert` | unresolved links, recovery warnings, or non-conformant `--status-map` status values | — (a clean run is exit `0` even under `--strict`) |
-| `enrich` | skipped (unparseable-frontmatter) files, preserve-or-advise findings, or non-conformant `--status-map` status values | — (a clean run is exit `0` even under `--strict`) |
+| `enrich` | skipped (unparseable-frontmatter) files, preserve-or-advise findings, or non-conformant `--status-map` status values. The read-boundary normalization advisory is excluded and never gates (see below) | — (a clean run is exit `0` even under `--strict`) |
 | `infer` | any warning or inference failure (in practice, Gemini-tier warnings — the deterministic tiers do not warn) | — |
+
+**The read-boundary normalization advisory never gates.** When `enrich` strips a
+leading UTF-8 BOM or translates a lone CR before recognising the frontmatter
+([#124](https://github.com/ghchinoy/binder/issues/124)), it reports that on two
+channels, neither of them optional: an `advisory:` line in the prose report, and
+in `--json` a per-file `normalized` signal plus a top-level
+`result.normalizations` entry. That entry discloses what binder did to the
+input; it is not a finding about the corpus, so `enrich` keeps it out of the
+findings count and `--strict` does not escalate it
+([#154](https://github.com/ghchinoy/binder/issues/154)). A run whose only finding
+is that advisory exits `0` with or without the flag. A skipped file or a
+preserve-or-advise warning in the same run still exits `1` under `--strict`, and
+the advisory contributes nothing to that count. `result.normalizations` is
+additive to `binder.report/v1` (the schema string is unbumped) and is omitted
+when nothing was normalized. `convert` normalizes at the same read boundary and
+reports its own read-boundary advisory, which does not gate either; see the
+`convert` row above for what `convert --strict` does gate on. Bound 6 of
+*Residual bounds* under [`enrich`](/binder/reference/user-guide/#enrich) covers
+what the normalization does to the bytes.
 
 The `--status-map` vocabulary gate is the one that fires **before** anything is
 written: `convert --strict` exits `1` without creating the output directory, and
@@ -2742,18 +2793,20 @@ fence, and **derives** trust tiers and staleness on demand. It never stores a
 credibility score, and where the fence is recognised it never fabricates
 provenance (spec §5.1).
 
-**That scoping is load-bearing if you rely on binder for provenance.**
-Lossless preservation is scoped to files whose frontmatter binder
-recognises and that need no read-boundary normalization: the fence opens with
-`---` and a newline, LF or CRLF, at the very start. A leading UTF-8 BOM or a
-lone-CR (classic-Mac) fence is now recognised via read-boundary normalization
+**That preservation is bounded, and the bound matters if you depend on binder
+for provenance.** Lossless preservation is scoped to files whose frontmatter
+binder recognises and that need no read-boundary normalization: the fence opens
+with `---` and a newline, LF or CRLF, at the very start. A leading UTF-8 BOM or
+a lone-CR (classic-Mac) fence is now recognised via read-boundary normalization
 ([#124](https://github.com/ghchinoy/binder/issues/124)), so the `verified:`
 attestation it guards is preserved rather than demoted to body — but because
 that normalization (BOM strip, lone-CR to LF) does not preserve the original
-encoding, it is disclosed non-optionally (a `normalized` signal plus a top-level
-advisory) rather than a silent round-trip. A file with **no** frontmatter fence
-at all is still read as plain and synthesized over, leaving its content in the
-body as text while binder synthesizes keys of its own, among them a `type`, a
+encoding, it is disclosed non-optionally rather than passing as a silent
+round-trip: a `normalized` signal plus a top-level advisory in the run report.
+That advisory never gates, under `--strict` or otherwise (see
+[Strict mode](#strict-mode)). A file with **no** frontmatter fence at all is
+still read as plain and synthesized over, leaving its content in the body as
+text while binder synthesizes keys of its own, among them a `type`, a
 `title`, and a `generated` provenance stamp, with exit `0`, nothing skipped, and
 no warning.
 
