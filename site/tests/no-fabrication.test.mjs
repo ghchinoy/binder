@@ -39,9 +39,28 @@ function toText(html) {
     .trim();
 }
 
-// A sentence carries a DISCLAIMER (an honest "we do NOT do this") if it holds a
-// negation or scope marker. These flip a would-be claim into allowed honesty.
-const DISCLAIMER = /\b(not|no|never|without|yet|deferred|intentionally|out of scope|out-of-scope|scope:|unverified|does not|do not|doesn't|don't|cannot|can't|no longer|absent|missing|unsupported|planned|future|would|only)\b/i;
+// ── The claim/disclaimer boundary (narrowed after review round 1) ────────────
+// Round 1 matched disclaimer words SENTENCE-WIDE and over-broadly (only / would
+// / future / planned / bare "no"), so a present-tense fabricated CLAIM that
+// merely co-occurred with one of those words slipped through as an "allowed
+// disclaimer" (e.g. "…signed with cosign, and only the SBOM is omitted."). The
+// fix is twofold: (1) analyze CLAUSE-by-clause, not sentence-wide, and (2) count
+// only markers that ACTUALLY negate the capability — genuine negations, "no"
+// BOUND to the capability noun, or explicit scope-outs — dropping the loose
+// only/would/future/planned. A clause is a claim iff it names a supply-chain
+// capability AND an affirmative verb AND is not itself a disclaimer clause.
+
+// Genuine negations that actually negate a predicate ("is NOT signed", "does
+// NOT ship", "without cosign", "no longer signs").
+const NEGATION = /\b(not|never|without|cannot|can ?not|can't|isn't|aren't|wasn't|weren't|doesn't|don't|won't|no longer|neither|nor)\b/i;
+
+// "no" BOUND directly to the capability, which negates it: "no cosign", "no
+// SBOM", "no supply-chain attestation". (Bare "no" elsewhere is NOT a
+// disclaimer — that was the round-1 hole.)
+const BOUND_NO = /\bno\s+(cosign|sboms?|supply|signatures?|attestations?|provenance)\b/i;
+
+// Explicit scope-out / not-configured disclosures (binder's honest idiom).
+const SCOPE_OUT = /\b(out[- ]of[- ]scope|deferred|intentionally|not configured|unconfigured|unsupported|unimplemented|unavailable)\b|scope:/i;
 
 // Affirmative verbs that, next to a capability keyword, assert the capability.
 const CLAIM_VERB = /\b(sign|signed|signs|signing|publish|published|publishes|provide|provided|provides|include|included|includes|attach|attached|attest|attested|attests|generate|generated|generates|ship|ships|shipped|available|supported|supports|emit|emits|produce|produces)\b/i;
@@ -49,19 +68,40 @@ const CLAIM_VERB = /\b(sign|signed|signs|signing|publish|published|publishes|pro
 // Capability keywords for the supply-chain claim category.
 const SUPPLY_CHAIN = /\b(cosign|sbom|sboms|supply[- ]chain|provenance attestation|signature attestation)\b/i;
 
-// Split text into rough sentences for scoped analysis.
+// A clause is a DISCLAIMER (allowed) when it genuinely disavows the capability.
+function isDisclaimerClause(clause) {
+  return NEGATION.test(clause) || BOUND_NO.test(clause) || SCOPE_OUT.test(clause);
+}
+
+// Split text into rough sentences, then each sentence into clauses on
+// punctuation and coordinating conjunctions — so a claim clause and a disclaimer
+// clause in the same sentence are judged independently ("X is signed with
+// cosign, and only the SBOM is omitted." → the cosign clause is judged a claim).
 function sentences(text) {
   return text.split(/(?<=[.!?])\s+|\n+/).map((s) => s.trim()).filter(Boolean);
 }
+// NOTE: "yet" is deliberately NOT a splitter here. In binder's honest idiom it
+// is almost always the adverb of "not configured YET" / "not published YET" —
+// splitting on it would sever a disclaimer from its own tail clause (e.g. the
+// parenthetical in "…intentionally not configured yet (no signs: / sboms:
+// blocks)"). Leaving it un-split is also strictly SAFER for catching claims: a
+// real claim joined by "yet" stays in one clause and is still flagged.
+function clauses(sentence) {
+  return sentence
+    .split(/[,;]|\s+(?:and|but|so|while|whereas|however|although|though)\s+/i)
+    .map((c) => c.trim())
+    .filter(Boolean);
+}
 
-// Return the supply-chain CLAIM sentences in `text` (claim verb + keyword,
-// WITHOUT a disclaimer marker). Honest "not published yet" sentences are NOT
-// returned.
+// Return the supply-chain CLAIM clauses in `text`: a clause that names a
+// capability AND an affirmative verb AND is not itself a disclaimer clause.
 function supplyChainClaims(text) {
   const out = [];
   for (const s of sentences(text)) {
-    if (SUPPLY_CHAIN.test(s) && CLAIM_VERB.test(s) && !DISCLAIMER.test(s)) {
-      out.push(s);
+    for (const c of clauses(s)) {
+      if (SUPPLY_CHAIN.test(c) && CLAIM_VERB.test(c) && !isDisclaimerClause(c)) {
+        out.push(c);
+      }
     }
   }
   return out;
@@ -93,28 +133,41 @@ test("dist/ exists (build ran first)", () => {
 });
 
 test("controls: the claim detector draws the claim/disclaimer line", () => {
-  // Positive controls — real fabrications MUST be caught.
-  assert.ok(
-    supplyChainClaims("Every release is signed with cosign.").length > 0,
-    "detector missed an affirmative cosign claim",
-  );
-  assert.ok(
-    supplyChainClaims("An SBOM is published for each build.").length > 0,
-    "detector missed an affirmative SBOM claim",
-  );
-  // Negative controls — honest disclaimers from binder's own docs MUST pass.
-  assert.deepEqual(
-    supplyChainClaims(
-      "Cosign signatures and SBOMs are not published yet, so checksums.txt is the integrity anchor.",
-    ),
-    [],
-    "detector wrongly flagged an honest 'not published yet' disclaimer",
-  );
-  assert.deepEqual(
-    supplyChainClaims("cosign signatures and SBOMs are intentionally deferred."),
-    [],
-    "detector wrongly flagged an honest 'intentionally deferred' disclaimer",
-  );
+  // Positive controls — real fabrications MUST be caught (non-empty).
+  const POSITIVE = [
+    "Every release is signed with cosign.",
+    "An SBOM is published for each build.",
+    // The three that SLIPPED the round-1 sentence-wide matcher (only/would/future):
+    "Every binder release is signed with cosign, and only the SBOM is omitted.",
+    "binder signs every release with cosign, as you would expect.",
+    "The next future release is signed with cosign and ships an SBOM.",
+  ];
+  for (const s of POSITIVE) {
+    assert.ok(
+      supplyChainClaims(s).length > 0,
+      `detector MISSED a fabricated capability claim: "${s}"`,
+    );
+  }
+
+  // Negative controls — honest disclaimers MUST pass (empty). Includes binder's
+  // real byte-derived idiom and the reviewer's suggested disclosures.
+  const NEGATIVE = [
+    "Cosign signatures and SBOMs are not published yet, so checksums.txt is the integrity anchor.",
+    "cosign signatures and SBOMs are intentionally deferred.",
+    "cosign signing is not configured for binder releases.",
+    "SBOM generation is out of scope for now.",
+    "binder does not sign releases with cosign and publishes no SBOM.",
+    // binder's REAL byte-derived idiom (from docs/ → project/releasing): the
+    // adverbial "yet" plus a parenthetical shorthand must stay ALLOWED.
+    "cosign signatures and SBOMs are intentionally not configured yet (no signs: / sboms: blocks).",
+  ];
+  for (const s of NEGATIVE) {
+    assert.deepEqual(
+      supplyChainClaims(s),
+      [],
+      `detector WRONGLY flagged an honest disclaimer: "${s}"`,
+    );
+  }
 });
 
 test("no search UI / widget in the built site", async () => {

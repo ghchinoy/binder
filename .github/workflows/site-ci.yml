@@ -40,7 +40,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           # 22 resolves to the latest 22.x, satisfying the site's
-          # engines.node ">=22.12" floor (Astro 7's real minimum).
+          # engines.node ">=22.19.0" floor (the true install-clean minimum:
+          # undici, transitively via Astro, wants >=22.19).
           node-version: 22
           cache: npm
           cache-dependency-path: site/package-lock.json

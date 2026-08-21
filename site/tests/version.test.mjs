@@ -17,22 +17,34 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { dist, srcRoot, read, distHtmlFiles } from "./_helpers.mjs";
+import { dist, srcRoot, read, distHtmlFiles, walk } from "./_helpers.mjs";
 
 // A three-component version literal, optionally "v"-prefixed. This is the shape
 // a hand-typed "current version" would take (e.g. `0.4.0` or `v0.4.0`). Note a
 // spec reference like "OKF v0.2" is only TWO components and does not match.
 const VERSION_LITERAL = /v?\d+\.\d+\.\d+/;
 
-// The authored site source that must never hard-code a version. Deliberately
-// EXCLUDES src/content/docs/_generated (byte-derived docs prose) — those legit
-// carry version numbers from the source docs and are not "the site's version
-// display". version.ts itself is allowed (its only literals are the API version
-// header and the "latest" fallback word — neither is an X.Y.Z release literal).
-const AUTHORED_SOURCE = [
-  join(srcRoot, "pages", "index.astro"),
-  join(srcRoot, "components", "EmptySearch.astro"),
-];
+// The authored site source that must never hard-code a version: EVERY page and
+// component source under src/pages and src/components (globbed, not a fixed
+// list — so a NEW page that hardcodes a version is caught in future). This
+// deliberately EXCLUDES src/content/docs/_generated (byte-derived docs prose,
+// which legitimately carries version numbers from the source docs) — that dir
+// lives under src/content, not under pages/components, so it is never scanned.
+// version.ts (under src/lib) has its own dedicated check below.
+const SOURCE_EXT = /\.(astro|ts|tsx|js|jsx|mjs|cjs|md|mdx)$/;
+async function authoredSources() {
+  const roots = [join(srcRoot, "pages"), join(srcRoot, "components")];
+  const files = [];
+  for (const r of roots) {
+    if (!existsSync(r)) continue;
+    for (const f of await walk(r)) {
+      if (SOURCE_EXT.test(f) && !f.split(/[\\/]/).includes("_generated")) {
+        files.push(f);
+      }
+    }
+  }
+  return files;
+}
 
 test("dist/ exists (build ran first)", () => {
   assert.ok(
@@ -41,18 +53,21 @@ test("dist/ exists (build ran first)", () => {
   );
 });
 
-test("authored homepage source hard-codes no current-version literal", async () => {
-  for (const file of AUTHORED_SOURCE) {
-    if (!existsSync(file)) continue;
+test("no authored page/component source hard-codes a current-version literal", async () => {
+  const files = await authoredSources();
+  assert.ok(files.length > 0, "no authored page/component sources found to scan");
+  const offenders = [];
+  for (const file of files) {
     const body = await read(file);
     const hit = VERSION_LITERAL.exec(body);
-    assert.equal(
-      hit,
-      null,
-      `${file} contains a hand-typed version literal "${hit && hit[0]}" — ` +
-        `the version must come from src/lib/version.ts, not the page source`,
-    );
+    if (hit) offenders.push(`${file}: "${hit[0]}"`);
   }
+  assert.deepEqual(
+    offenders,
+    [],
+    `hand-typed version literal(s) found — the version must come from ` +
+      `src/lib/version.ts, not page source:\n  ${offenders.join("\n  ")}`,
+  );
 });
 
 test("version.ts stays the single source (no X.Y.Z literal baked into it)", async () => {
