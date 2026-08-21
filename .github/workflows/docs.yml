@@ -46,4 +46,7 @@ jobs:
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site/dist
+      - uses: actions/configure-pages@v5
+        with:
+          enablement: true
       - uses: actions/deploy-pages@v4
