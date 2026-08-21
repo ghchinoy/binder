@@ -1,0 +1,49 @@
+name: docs
+
+# Publish-on-version: rebuild and redeploy the latest docs when a version is
+# released. The tag is pushed by release-please with RELEASE_TOKEN (a PAT), which
+# is precisely why tag-keyed workflows fire — the same mechanism release.yml
+# relies on. workflow_dispatch allows a manual redeploy (e.g. a content fix
+# without a release).
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch: {}
+
+# GitHub Pages deployment uses the built-in GITHUB_TOKEN — no PAT/RELEASE_TOKEN
+# is needed here; that PAT is a trigger concern only, never a deploy concern.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build-deploy:
+    environment: github-pages
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+      - run: npm ci
+        working-directory: site
+      - run: npm run build
+        working-directory: site
+        # Passed to the build step ONLY, to raise the version-API rate limit.
+        # Harmless in Phase 1 (no version.ts yet); the deploy job below does not
+        # use it.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site/dist
+      - uses: actions/deploy-pages@v4

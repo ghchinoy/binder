@@ -1,0 +1,21 @@
+{
+  "name": "binder-site",
+  "type": "module",
+  "version": "0.0.0",
+  "private": true,
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "prebuild": "node scripts/prepare-content.mjs",
+    "build": "astro build",
+    "dev": "astro dev",
+    "preview": "astro preview",
+    "astro": "astro"
+  },
+  "dependencies": {
+    "@astrojs/starlight": "0.41.7",
+    "astro": "7.2.4",
+    "sharp": "0.34.4"
+  }
+}
