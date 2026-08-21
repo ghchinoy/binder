@@ -1,9 +1,10 @@
 # Trust model & tiers
 
 binder maps corpus-native provenance into the OKF v0.2 trust vocabulary,
-**preserves** existing trust frontmatter byte-for-byte on a recognised fence, and
-**derives** trust tiers and staleness on demand. It never stores a credibility
-score, and on a recognised fence it never fabricates provenance (spec §5.1).
+**preserves** existing trust frontmatter byte-for-byte where it recognises the
+fence, and **derives** trust tiers and staleness on demand. It never stores a
+credibility score, and where the fence is recognised it never fabricates
+provenance (spec §5.1).
 
 > **That scoping is load-bearing if you rely on binder for provenance.**
 > Byte-for-byte preservation is scoped to files whose frontmatter binder
@@ -14,7 +15,7 @@ score, and on a recognised fence it never fabricates provenance (spec §5.1).
 > attestation it guards is preserved rather than demoted to body — but because
 > that normalization (BOM strip, lone-CR to LF) is not byte-faithful, it is
 > disclosed non-optionally (a `normalized` signal plus a top-level advisory)
-> rather than a silent round-trip. A file with **no** recognisable fence at all
+> rather than a silent round-trip. A file with **no** frontmatter fence at all
 > is still read as plain and synthesized over. See
 > [Byte-faithful round-trip](byte-faithful.md).
 

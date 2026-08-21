@@ -33,8 +33,8 @@ skipped and no warning. As of
 at the read boundary before recognition, so the fence — and the attestation it
 guards — is recognised; because the normalization (BOM strip, lone-CR → LF) is
 not byte-faithful it is disclosed non-optionally via a per-file `normalized`
-signal and a top-level advisory. For the bounds known to remain even on a
-recognised fence, see *Residual bounds* under
+signal and a top-level advisory. Recognition still leaves byte-level bounds;
+for the ones known today, see *Residual bounds* under
 [`enrich`](docs/user_guide.md#enrich).
 
 ## Table of Contents
@@ -96,18 +96,19 @@ Two properties make it trustworthy for pipelines:
 
 - **Deterministic output.** `convert` honours `SOURCE_DATE_EPOCH` for any
   synthesised timestamps, so identical input yields byte-identical output.
-- **Byte-faithful frontmatter round-trip, on a recognised fence.** Unmodified
-  YAML frontmatter is passed through verbatim — including nested-map and list
-  key order — so a round-trip changes nothing it did not have to change. This is
-  scoped to files whose frontmatter binder recognises **and that need no
-  read-boundary normalization**: the fence must open with `---` and a newline
-  (LF or CRLF) at the very start. A leading UTF-8 BOM or a lone-CR (classic-Mac)
-  fence is now recognised too, but is first normalized at the read boundary
-  ([#124](https://github.com/ghchinoy/binder/issues/124)) — the fence and any
-  `verified:` block it guards are preserved, but the round-trip is intentionally
-  not byte-faithful and is disclosed via a `normalized` signal and a top-level
-  advisory. For the bounds known to remain even on a recognised fence, see
-  *Residual bounds* under [`enrich`](docs/user_guide.md#enrich).
+- **Byte-faithful frontmatter round-trip, where binder recognises the fence.**
+  Unmodified YAML frontmatter is passed through verbatim — including nested-map
+  and list key order — so a round-trip changes nothing it did not have to
+  change. This is scoped to files whose frontmatter binder recognises **and that
+  need no read-boundary normalization**: the fence must open with `---` and a
+  newline (LF or CRLF) at the very start. A leading UTF-8 BOM or a lone-CR
+  (classic-Mac) fence is now recognised too, but is first normalized at the read
+  boundary ([#124](https://github.com/ghchinoy/binder/issues/124)) — the fence
+  and any `verified:` block it guards are preserved, but the round-trip is
+  intentionally not byte-faithful and is disclosed via a `normalized` signal and
+  a top-level advisory. Recognition still leaves byte-level bounds; for the ones
+  known today, see *Residual bounds* under
+  [`enrich`](docs/user_guide.md#enrich).
 
 ## Installation
 
@@ -301,12 +302,13 @@ prose and `--json` mode):
 | `2` | Usage error — anything wrong with the command line **or with the config file that feeds it**. Unknown subcommand (`binder bogus`); unknown flag; wrong number of positional arguments; `convert` with neither `-o` nor `--dry-run`; `--json` conflicting with `--format`; an unknown `graph --format`; a malformed `--today`, `--verified-by`, `--type-map`, `--status-map`, `--stale-after-map`, or empty `--external-root` value; `enrich --overwrite-keys` naming a protected trust-provenance key (the whole run is refused and nothing is written); an unknown `config` key; and an unreadable `<corpus>`/`<src>` for `lint`, `enrich`, and `infer`. A bad value in `.binder.yaml` fails the same way, before the command runs — e.g. `verified_by: "agent:bot"` makes *every* subcommand exit 2. |
 | `3` | I/O or internal error — an unreadable bundle or source for `convert`, `validate`, `index`, `review`, and `graph`, or a write failure. |
 
-**Never-reject governs corpus content, not the command line.** binder never
-refuses a corpus for being imperfect: a well-formed bundle with broken links or
-orphans still exits `0`. A malformed *flag value* is a different act, and binder
-does refuse it with exit `2` rather than silently computing against a value you
-did not mean. See the [user guide](docs/user_guide.md) for the per-command field
-lists, the discovery surface (`--version`/`--help`), and a CI example.
+**Never-reject governs corpus content. The command line has its own contract.**
+binder never refuses a corpus for being imperfect: a well-formed bundle with
+broken links or orphans still exits `0`. A malformed *flag value* is a different
+act, and binder does refuse it with exit `2` rather than silently computing
+against a value you did not mean. See the [user guide](docs/user_guide.md) for
+the per-command field lists, the discovery surface (`--version`/`--help`), and a
+CI example.
 
 ### Command reference
 
@@ -394,8 +396,8 @@ Code, Cursor, Zed): binder's **additive** verbs `convert`, `validate`, `review`,
 handlers reuse the same internal functions and the same JSON encoder, so there is
 no second serialization path and no drift from the CLI.
 
-It is a transport, not a report-producing command: it has no `--json` flag (its
-*outputs* are the structured tool payloads). It serves over stdio until the
+It is a transport. It produces no report of its own and has no `--json` flag
+(its *outputs* are the structured tool payloads). It serves over stdio until the
 client disconnects.
 
 > **Parity, in brief:** each MCP tool mirrors its CLI verb one-to-one; the
@@ -433,10 +435,10 @@ excepted — `dot` on the CLI, `json` here; the MCP-only `list_graphs` and
 a `node_key` object; `id_key` is accepted **for parity with `list_graphs` only
 and is never honored** in this version, so the echo is always
 `{"strategy":"path","key":"…","honored":false}` and traversal identity is always
-the path-derived concept id. A query that matches nothing is a **result**, not an
-error (`isError:false`, `not_found:true`); an unknown `op` or an out-of-range
-`depth`/`max_depth` is a **tool error** (`isError:true`, plain text rather than
-the envelope). Every traversal is depth-bounded by construction.
+the path-derived concept id. A query that matches nothing comes back as a
+**result** (`isError:false`, `not_found:true`); an unknown `op` or an
+out-of-range `depth`/`max_depth` is a **tool error** (`isError:true`, plain text
+rather than the envelope). Every traversal is depth-bounded by construction.
 
 The surface is deliberately additive (produce/validate) plus **read-only** graph
 introspection and traversal. Source-mutating verbs (`enrich`, `emit_concept`) are
