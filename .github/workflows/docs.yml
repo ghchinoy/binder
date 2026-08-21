@@ -1,13 +1,13 @@
 name: docs
 
-# Publish-on-version: rebuild and redeploy the latest docs when a version is
-# released. The tag is pushed by release-please with RELEASE_TOKEN (a PAT), which
-# is precisely why tag-keyed workflows fire — the same mechanism release.yml
-# relies on. workflow_dispatch allows a manual redeploy (e.g. a content fix
-# without a release).
+# Publish-on-main: rebuild and redeploy the docs when main moves, which includes
+# the release-please release commit — so a cut still publishes, one commit before
+# the tag. The deploy is NOT keyed to a v* tag: the github-pages environment
+# rejects tag refs, so a tag-triggered run fails at exactly the moment a release
+# is cut. workflow_dispatch allows a manual redeploy.
 on:
   push:
-    tags: ['v*']
+    branches: [main]
   workflow_dispatch: {}
 
 # GitHub Pages deployment uses the built-in GITHUB_TOKEN — no PAT/RELEASE_TOKEN

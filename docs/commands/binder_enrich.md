@@ -50,7 +50,7 @@ binder enrich <src> [flags]
       --overwrite-keys string    opt-in: comma-separated keys to REFRESH in place even when present, e.g. "status,stale_after" (default is additive/never-clobber; trust keys attester, computation, executor, generated, parameters, runtime, sources, usage_window, verified, verified_by are refused)
       --stale-after-map string   per-directory stale_after relative to now, e.g. "07-benchmarks=+6m,legacy=+0d" (grammar +Nd/+Nm/+Ny; set only when absent)
       --status-map string        per-directory status, e.g. "archive=deprecated,drafts=draft,default=active" (set only when status absent)
-      --strict                   gate (exit 1) when any file is skipped or a preserve-or-advise warning is raised; the read-boundary normalization advisory is reported but never gates; without it enrich never gates (never-reject)
+      --strict                   gate (exit 1) on any of enrich's gating conditions, including a skipped file, a preserve-or-advise warning, and a non-conformant --status-map OKF 5.4 value; the read-boundary normalization advisory is reported but never gates; without it enrich never gates (never-reject)
       --type-map string          per-directory type overrides, e.g. "docs=Guide,adr=Decision"
       --verified-by string       actor to append as a verified stamp, e.g. "human:ghchinoy" or "binder/0.3.0"; a stamp is written ONLY when passed here, or when verified_by is set in your GLOBAL config (neither BINDER_VERIFIED_BY nor a repo-local .binder.yaml authorizes stamping; valid forms: human:<id>, process:<id>, team:<id>, or <producer>/<version> (e.g. binder/0.3.0))
 ```

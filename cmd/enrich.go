@@ -145,11 +145,15 @@ func newEnrichCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 				fmt.Fprint(cmd.OutOrStdout(), rep.String())
 			}
 
-			// enrich's gating findings are skipped files (unparseable frontmatter)
-			// and preserve-or-advise warnings, counted by NumFindings. Bare enrich
-			// never gates (exit 0); --strict gates on those findings (exit 1). The
-			// boundary-normalization advisory (#124) is reported but excluded from
-			// NumFindings, so it never gates. The message names each real quantity
+			// This is the post-run gate, and it covers only what NumFindings counts:
+			// skipped files (unparseable frontmatter) and preserve-or-advise
+			// warnings. It is NARROWER than "gating findings" in the user guide,
+			// which also covers the non-conformant --status-map OKF 5.4 value gated
+			// pre-write in resolveStatusMap (cmd/statusmap.go) and never counted
+			// here. Bare enrich never gates (exit 0); --strict gates on the counted
+			// findings (exit 1). The boundary-normalization advisory (#124) is
+			// reported but excluded from NumFindings, so it never gates. The
+			// message names each real quantity
 			// separately: printing the findings total as "skipped N file(s)" claimed
 			// skips that had not happened (issue #154).
 			return clijson.Gate(strict, false, rep.NumFindings() > 0,
@@ -167,6 +171,6 @@ func newEnrichCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 	cmd.Flags().BoolVar(&canonicalizeStat, "canonicalize-status", false, "opt-in: rewrite known --status-map aliases to the OKF §5.4 vocabulary (active->stable, wip/in-progress->draft, archived/legacy->deprecated); off by default, each rewrite is reported")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "report what would be enriched without writing anything")
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "emit the run report as deterministic JSON (schema "+clijson.SchemaVersion+") instead of prose")
-	cmd.Flags().BoolVar(&strict, "strict", false, "gate (exit 1) when any file is skipped or a preserve-or-advise warning is raised; the read-boundary normalization advisory is reported but never gates; without it enrich never gates (never-reject)")
+	cmd.Flags().BoolVar(&strict, "strict", false, "gate (exit 1) on any of enrich's gating conditions, including a skipped file, a preserve-or-advise warning, and a non-conformant --status-map OKF 5.4 value; the read-boundary normalization advisory is reported but never gates; without it enrich never gates (never-reject)")
 	return cmd
 }
