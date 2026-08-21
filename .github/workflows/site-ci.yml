@@ -1,0 +1,57 @@
+name: site-ci
+
+# Turn the site's determinism / no-fabrication guardrails into REAL gates on
+# every change that can affect the built site: it builds the Astro/Starlight
+# project and runs the site test suite (clean URLs, internal links, no-fabricated
+# capability, no hand-typed version). This does NOT deploy — deployment stays in
+# docs.yml (publish-on-version); this only proves the site builds and passes its
+# invariants before a change lands.
+on:
+  pull_request:
+    paths:
+      - 'site/**'
+      - 'docs/**'
+      - 'README.md'
+      - 'CONTRIBUTING.md'
+      - '.github/workflows/site-ci.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'site/**'
+      - 'docs/**'
+      - 'README.md'
+      - 'CONTRIBUTING.md'
+      - '.github/workflows/site-ci.yml'
+
+# Read-only: this workflow builds and tests; it never deploys or writes.
+permissions:
+  contents: read
+
+# Don't pile up redundant runs on a busy PR branch.
+concurrency:
+  group: site-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          # 22 resolves to the latest 22.x, satisfying the site's
+          # engines.node ">=22.12" floor (Astro 7's real minimum).
+          node-version: 22
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+      - run: npm ci
+        working-directory: site
+      - run: npm run build
+        working-directory: site
+        # Passed to the build ONLY, to raise the version-API rate limit. The
+        # build degrades gracefully without it (src/lib/version.ts), so CI never
+        # hard-fails on a rate-limited or unreachable Releases API.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - run: npm test
+        working-directory: site

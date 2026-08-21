@@ -16,6 +16,20 @@ const base = rawBase.endsWith("/") ? rawBase : `${rawBase}/`;
 const repo = "https://github.com/ghchinoy/binder";
 const okf = "https://github.com/GoogleCloudPlatform/knowledge-catalog";
 
+// The displayed version is DERIVED at build time from the GitHub Releases API
+// (see src/lib/version.ts), never hand-typed. `versionDisplay` is the BARE form
+// (binder's canonical stamp, no leading "v"), or the honest "latest" fallback
+// when the API could not be reached during the build. `versionHref` points at
+// the exact release when known, otherwise the releases index.
+import {
+  fetchLatestVersion,
+  displayVersion,
+  releaseUrl,
+} from "../lib/version.ts";
+const version = await fetchLatestVersion();
+const versionDisplay = displayVersion(version);
+const versionHref = releaseUrl(version);
+
 const pillars = [
   {
     kicker: "Ingest",
@@ -98,7 +112,18 @@ const pillars = [
 
     <main>
       <section class="hero">
-        <p class="eyebrow">Open Knowledge Format · v0.2</p>
+        <p class="eyebrow">
+          <span>Open Knowledge Format · v0.2</span>
+          <a
+            class="version-badge"
+            href={versionHref}
+            data-version={versionDisplay}
+            rel="noreferrer"
+          >
+            <span class="vb-label">binder</span>
+            <span class="vb-value">{versionDisplay}</span>
+          </a>
+        </p>
         <h1>
           Turn a plain-markdown corpus into a
           <span class="accent">conformant OKF bundle</span>.
@@ -153,6 +178,13 @@ const pillars = [
       <section class="getit" aria-label="Install binder">
         <div class="getit-copy">
           <h2>Install</h2>
+          <p class="getit-version">
+            Current release:
+            <a class="version-badge" href={versionHref} data-version={versionDisplay} rel="noreferrer">
+              <span class="vb-label">binder</span>
+              <span class="vb-value">{versionDisplay}</span>
+            </a>
+          </p>
           <p>
             Homebrew is the recommended path on macOS and Linux; a
             <code>go install</code> works with the Go toolchain. See the
@@ -295,12 +327,54 @@ go install github.com/ghchinoy/binder@latest</code></pre>
         max-width: 62ch;
       }
       .eyebrow {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        flex-wrap: wrap;
         text-transform: uppercase;
         letter-spacing: 0.14em;
         font-size: 0.75rem;
         font-weight: 600;
         color: var(--accent);
         margin: 0 0 0.9rem;
+      }
+
+      /* Version badge — value is DERIVED from src/lib/version.ts at build time
+         (never hand-typed); the guardrail test ties it to /version.json. */
+      .version-badge {
+        display: inline-flex;
+        align-items: stretch;
+        border: 1px solid var(--border-strong);
+        border-radius: 6px;
+        overflow: hidden;
+        font-size: 0.72rem;
+        letter-spacing: 0.02em;
+        text-transform: none;
+        line-height: 1.6;
+      }
+      .version-badge:hover {
+        text-decoration: none;
+        border-color: var(--accent);
+      }
+      .version-badge .vb-label {
+        background: var(--surface-2);
+        color: var(--muted);
+        padding: 0.1rem 0.5rem;
+        font-weight: 600;
+      }
+      .version-badge .vb-value {
+        background: var(--accent-soft);
+        color: var(--accent);
+        padding: 0.1rem 0.5rem;
+        font-weight: 700;
+      }
+      .getit-version {
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+        margin: 0 0 0.75rem;
+        font-size: 0.9rem;
+        color: var(--muted);
       }
       .hero h1 {
         color: var(--heading);
