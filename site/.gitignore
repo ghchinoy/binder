@@ -7,3 +7,9 @@ node_modules/
 # scripts/prepare-content.mjs. Regenerated every build; never edited by hand,
 # never committed (committing it would let it drift from the source docs).
 src/content/docs/_generated/
+
+# Diagram/example assets copied in from ../docs at build time by
+# scripts/prepare-content.mjs. Same rule: regenerated every build, never
+# committed (the binaries live once, canonically, under docs/).
+public/assets/
+public/examples/
