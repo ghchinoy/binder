@@ -59,20 +59,21 @@ blanket promise across every command:
   Every package above `internal/okf` depends only on binder-owned interfaces
   (`Codec`, `LinkGraph`) — the **dependency rule** — so the codec is swappable
   without touching the converter, CLI, or validators.
-- **Byte-faithful round-trip, on a recognised fence.** Unmodified YAML
-  frontmatter is passed through verbatim — including nested-map and list key
-  order and scalar quoting style — so a round-trip changes nothing it did not
-  have to change. This is scoped to files whose frontmatter binder recognises
-  **and that need no read-boundary normalization**: the fence must open with
-  `---` and then a newline, LF or CRLF, at the very start. A leading UTF-8 BOM
-  or a lone-CR (classic-Mac) fence is now recognised too, but is normalized
-  before recognition ([#124](https://github.com/ghchinoy/binder/issues/124)) —
-  the fence and any `verified:` block it guards are preserved, though the
-  round-trip is deliberately not byte-faithful and is disclosed (a `normalized`
-  signal plus a top-level advisory). A file with **no** recognisable fence at
-  all is still read as plain and synthesized over, leaving its content in the
-  body as text, with exit `0`, nothing skipped, and no warning. For the bounds
-  known to remain even on a recognised fence, see *Residual bounds* under
+- **Byte-faithful frontmatter round-trip, where binder recognises the fence.**
+  Unmodified YAML frontmatter is passed through verbatim — including nested-map
+  and list key order and scalar quoting style — so a round-trip changes nothing
+  it did not have to change. This is scoped to files whose frontmatter binder
+  recognises **and that need no read-boundary normalization**: the fence must
+  open with `---` and then a newline, LF or CRLF, at the very start. A leading
+  UTF-8 BOM or a lone-CR (classic-Mac) fence is now recognised too, but is
+  normalized before recognition
+  ([#124](https://github.com/ghchinoy/binder/issues/124)) — the fence and any
+  `verified:` block it guards are preserved, though the round-trip is
+  deliberately not byte-faithful and is disclosed (a `normalized` signal plus a
+  top-level advisory). A file with **no** frontmatter fence at all is still read
+  as plain and synthesized over, leaving its content in the body as text, with
+  exit `0`, nothing skipped, and no warning. Recognition still leaves byte-level
+  bounds; for the ones known today, see *Residual bounds* under
   [`enrich`](#enrich).
 - **Deterministic output.** Given identical input and the same clock,
   `convert` produces byte-identical output; `review` and `graph` sort their
@@ -81,27 +82,27 @@ blanket promise across every command:
   never rejects a bundle for missing optional fields, unknown keys, unknown type
   values, broken links, or absent trust families. Non-fatal issues are surfaced
   as **advisories**, never errors.
-- **Never fabricate trust, on a recognised fence.** On a fence binder
-  recognises, binder never invents a source, a credibility score, or provenance.
-  Trust mapping is opt-in and additive; with no mapping flags, frontmatter on a
-  recognised fence that needed no read-boundary normalization round-trips
-  byte-for-byte — bounded exactly as the round-trip guarantee above. A leading
-  UTF-8 BOM or a lone-CR fence is now recognised via read-boundary normalization
+- **Never fabricate trust, where binder recognises the frontmatter.** On a fence
+  binder recognises, binder never invents a source, a credibility score, or
+  provenance. Trust mapping is opt-in and additive; with no mapping flags,
+  frontmatter that binder recognised and that needed no read-boundary
+  normalization round-trips byte-for-byte — bounded exactly as the round-trip
+  guarantee above. A leading UTF-8 BOM or a lone-CR fence is now recognised via
+  read-boundary normalization
   ([#124](https://github.com/ghchinoy/binder/issues/124)), so its `verified:`
   attestation is preserved rather than demoted — but because that normalization
   is not byte-faithful it is disclosed (a `normalized` signal plus an advisory),
-  not a silent round-trip. On a file with **no** recognisable fence at all this
+  not a silent round-trip. On a file with **no** frontmatter fence at all this
   does not hold: the file is treated as plain, so its content is left in the
   body as text while binder synthesizes keys of its own, among them a `type`, a
   `title`, and a `generated` provenance stamp, with exit `0`, nothing skipped,
-  and no warning. `generated` is
-  a key binder itself protects: `--overwrite-keys generated` is refused as a
-  trust-provenance key. Trust tiers and staleness are *derived* on demand from
-  frontmatter, never stored. A `verified`
-  attestation in particular is written only for a verifier **you** supplied on
-  this invocation or set as your own default, it is never written **over**
-  another identity's attestation from a default, and every stamp-writing run
-  discloses what it wrote — see
+  and no warning. `generated` is a key binder itself protects:
+  `--overwrite-keys generated` is refused as a trust-provenance key. Trust tiers
+  and staleness are *derived* on demand from frontmatter, never stored. A
+  `verified` attestation in particular is written only for a verifier **you**
+  supplied on this invocation or set as your own default, it is never written
+  **over** another identity's attestation from a default, and every
+  stamp-writing run discloses what it wrote — see
   [Writing a `verified` stamp](#writing-a-verified-stamp).
 
 ## Concepts and terminology
@@ -123,8 +124,9 @@ The binary exposes eleven commands. All bundle-reading commands
 codec, so their views of concepts, links, and trust always agree. `lint`, `enrich`, and
 `infer` are the exceptions: they read (and, for `enrich`, mutate) a **source
 corpus** rather than a bundle; `lint` and `enrich` do so through the same
-converter machinery, and `infer` never writes at all. `mcp` is a transport rather than a
-corpus/bundle command; it exposes the additive verbs over stdio (see
+converter machinery, and `infer` never writes at all. `mcp` is neither a
+bundle-reading command nor one of these exceptions: it is a transport that
+exposes the additive verbs over stdio (see
 [MCP server](#mcp-server-binder-mcp)).
 
 *Summary of the command set — written for this guide, **not** verbatim
@@ -441,9 +443,9 @@ A plain-markdown file (no frontmatter fence) gets a fresh, valid block prepended
    very start. A leading UTF-8 BOM or a lone-CR fence is recognised too, but is
    normalized before recognition ([#124](https://github.com/ghchinoy/binder/issues/124),
    residual bound 6 below) — disclosed, not byte-faithful. See *Residual bounds*
-   below for the byte-level cases it does **not** cover on a recognised fence.
+   below for the byte-level cases it does **not** cover even within that scope.
 
-   A file with **no** recognisable fence at all is not covered here, and is not
+   A file with **no** frontmatter fence at all is not covered here, and is not
    one of those residual bounds: it is treated as plain and synthesized over,
    leaving its content in the body as text, with exit `0`, nothing skipped, and
    no warning (residual bound 5, *No frontmatter at all*).
@@ -970,14 +972,13 @@ and is disclosed in `okf.HeadingSlugs` itself; it is tracked as
 [#85](https://github.com/ghchinoy/binder/issues/85). Read "GitHub-style" as
 holding for ASCII headings.
 
-**What is load-bearing here is the single source, not the character set.** The
-convention has exactly one unit-tested implementation, `okf.HeadingSlugs` (a
-design commitment from [#8](https://github.com/ghchinoy/binder/issues/8)), and
-every part of binder that has to decide what `#bar` matches resolves through it
-(today that is `lint`'s anchor check), so binder cannot hold two answers at once.
-The character rules above describe what that one implementation does in v0.3.0;
-they are a fact about this release rather than a frozen promise, and v0.3.0 itself
-changed two of them.
+**One implementation decides what an anchor matches.** The convention has
+exactly one unit-tested implementation, `okf.HeadingSlugs` (a design commitment
+from [#8](https://github.com/ghchinoy/binder/issues/8)), and every part of
+binder that has to decide what `#bar` matches resolves through it (today that is
+`lint`'s anchor check), so binder cannot hold two answers at once. The character
+rules above describe what that one implementation does in v0.3.0. They are a
+fact about this release and can change: v0.3.0 itself changed two of them.
 
 ### `graph`
 
@@ -1007,7 +1008,7 @@ convention). Format notes:
   edge key `rel`.
 - **`html`** — a self-contained, dependency-free page: a readable node/edge table
   plus the same JSON embedded as a `<script type="application/json">` island. It
-  is a zero-extra-tool fallback, not an interactive viewer.
+  is a zero-extra-tool fallback with no interactivity.
 
 ```text
 digraph okf {
@@ -1827,7 +1828,7 @@ error** (exit 2) — binder will not silently override your chosen format.
 ### Exit-code contract
 
 Every command maps its outcome onto four stable codes. The code is about the
-**run, not the output format**: it is identical in prose and `--json` mode.
+**run**: it is identical in prose and `--json` mode.
 
 | Code | Name | Meaning | Emitted by (today) |
 |---|---|---|---|
@@ -2004,9 +2005,9 @@ The server registers **seven** tools: `convert`, `validate`, `review`, `lint`,
 `graph`, `list_graphs`, and `query_graph`. (`enrich` is excluded because it
 mutates the source tree; see [Behavior and invariants](#behavior-and-invariants).)
 
-`binder mcp` is a **transport, not a report-producing command**: it takes no
-positional args and has no `--json` flag (its *outputs* are the structured tool
-payloads). It serves over stdio until the client disconnects.
+`binder mcp` is a **transport**. It takes no positional args and, since it
+produces no report of its own, no `--json` flag (its *outputs* are the
+structured tool payloads). It serves over stdio until the client disconnects.
 
 > **Parity is a claim about the five verbs that have a CLI counterpart**, and
 > **output-routing flags are its deliberate exception.** For `convert`,
@@ -2100,13 +2101,12 @@ transport over the existing internal functions:
   MCP error. Tool errors are reserved for **usage** (bad/missing params, an
   invalid `verified_by`, an unknown `graph` format) and **IO** (an unreadable
   path).
-- **A zero-match query is a result, not an error.** `query_graph` extends the
+- **A zero-match query is an ordinary result.** `query_graph` extends the
   never-reject rule to the query surface: a `lookup` for an id that does not
-  exist comes back as an ordinary result: the normal envelope with
-  `result.not_found: true`, and **no** `isError` field on the wire at all (MCP
-  treats an absent `isError` as false, so do not wait for a literal
-  `"isError": false` — it is never sent). What *is* a tool error is malformed
-  usage — an unknown `op`
+  exist returns the normal envelope with `result.not_found: true`, and **no**
+  `isError` field on the wire at all (MCP treats an absent `isError` as false,
+  so do not wait for a literal `"isError": false` — it is never sent). What
+  *is* a tool error is malformed usage — an unknown `op`
   (`unknown op "bogus" (want lookup|neighbors|neighborhood|pattern|path)`)
   or an out-of-range `depth` (`depth must be in 1..5`) come back as
   `isError: true` with **plain text**, not the envelope. So a consumer must
@@ -2364,8 +2364,9 @@ what edges reference and what you pass to `query_graph`. binder **never mints** 
 identity.
 
 `list_graphs` accepts an optional `id_key`: the name of a frontmatter key to
-*prefer* as the node key when a concept carries it. It is a read preference, not a
-rename; nothing is written. The sample bundle's concepts carry a `slug` key:
+*prefer* as the node key when a concept carries it. It is a read preference;
+nothing is renamed and nothing is written. The sample bundle's concepts carry a
+`slug` key:
 
 Each line below is a `list_graphs` call made with the wrapper above, its payload
 filtered with `jq '.result.graphs[0].node_key'`:
@@ -2538,12 +2539,12 @@ arguments: {"bundle":"/tmp/bigbundle","op":"lookup","label":"Item"}
 result:    {"count":1000,"truncated":true,"first":"items/item-00000","last":"items/item-00999"}
 ```
 
-#### Empty results are answers, not errors
+#### A zero-match query is an ordinary result
 
-A well-formed query that matches nothing returns a normal result (`isError` unset),
-not a failure. `lookup`/`neighbors`/`neighborhood`/`pattern` return an empty `nodes`
-list; a named-but-absent start id adds `not_found: true`; an unreachable `path`
-returns `exists: false`.
+For a well-formed query that matches nothing, `isError` is unset and
+`lookup`/`neighbors`/`neighborhood`/`pattern` return an empty `nodes` list; a
+named-but-absent start id adds `not_found: true`; an unreachable `path` returns
+`exists: false`.
 
 ```json
 {
@@ -2729,10 +2730,10 @@ resolves, the body is left byte-identical.
 ## The trust vocabulary
 
 binder maps corpus-native provenance into the OKF v0.2 trust vocabulary,
-**preserves** existing trust frontmatter byte-for-byte on a recognised fence,
-and **derives** trust tiers and staleness on demand. It never stores a
-credibility score, and on a recognised fence it never fabricates provenance
-(spec §5.1).
+**preserves** existing trust frontmatter byte-for-byte where it recognises the
+fence, and **derives** trust tiers and staleness on demand. It never stores a
+credibility score, and where the fence is recognised it never fabricates
+provenance (spec §5.1).
 
 **That scoping is load-bearing if you rely on binder for provenance.**
 Byte-for-byte preservation is scoped to files whose frontmatter binder
@@ -2743,7 +2744,7 @@ lone-CR (classic-Mac) fence is now recognised via read-boundary normalization
 attestation it guards is preserved rather than demoted to body — but because
 that normalization (BOM strip, lone-CR to LF) is not byte-faithful, it is
 disclosed non-optionally (a `normalized` signal plus a top-level advisory)
-rather than a silent round-trip. A file with **no** recognisable fence at all is
+rather than a silent round-trip. A file with **no** frontmatter fence at all is
 still read as plain and synthesized over, leaving its content in the body as
 text while binder synthesizes keys of its own, among them a `type`, a `title`,
 and a `generated` provenance stamp, with exit `0`, nothing skipped, and no

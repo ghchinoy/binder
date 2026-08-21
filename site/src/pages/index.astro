@@ -44,12 +44,12 @@ const pillars = [
   {
     kicker: "Trust",
     title: "Byte-faithful round-trip, trust never fabricated",
-    // README: byte-faithful frontmatter round-trip on a recognised fence;
-    // "Trust tiers, staleness, and the Attested flag are derived from
-    // frontmatter, never stored"; verified_by applied only when passed; the
-    // #124 read-boundary normalization is disclosed, not papered over.
+    // README: "Byte-faithful frontmatter round-trip, where binder recognises
+    // the fence"; "Trust tiers, staleness, and the Attested flag are derived
+    // from frontmatter, never stored"; verified_by applied only when passed;
+    // the #124 read-boundary normalization is disclosed, not papered over.
     body:
-      "Unmodified YAML frontmatter is passed through verbatim — including nested-map and list key order — so a recognised-fence round-trip changes nothing it did not have to. Trust tiers, staleness, and the attested flag are derived from frontmatter, never stored, and an attestation is stamped only when you pass --verified-by. Where an input must be normalized at the read boundary, binder discloses it rather than claiming a faithfulness it did not deliver.",
+      "Unmodified YAML frontmatter is passed through verbatim — including nested-map and list key order — so, where binder recognises the frontmatter, a round-trip changes nothing it did not have to. Trust tiers, staleness, and the attested flag are derived from frontmatter, never stored, and an attestation is stamped only when you pass --verified-by. Where an input must be normalized at the read boundary, binder discloses it rather than claiming a faithfulness it did not deliver.",
     href: `${base}concepts/byte-faithfulness/`,
     cta: "The round-trip",
   },
@@ -144,8 +144,9 @@ const pillars = [
         </div>
 
         <!-- Round-trip motif (static, honest): input bytes -> binder -> bundle,
-             and back to the same bytes on a recognised fence. No interactivity;
-             the deferred §4.6(b) demo is deliberately not built here. -->
+             and back to the same bytes where binder recognises the fence. No
+             interactivity; the deferred §4.6(b) demo is deliberately not built
+             here. -->
         <figure class="roundtrip" aria-label="Byte-faithful round-trip">
           <span class="rt-node">input.md</span>
           <span class="rt-arrow">→</span>
@@ -155,7 +156,7 @@ const pillars = [
           <span class="rt-arrow rt-back">↩</span>
           <span class="rt-node rt-same">input.md<small>same bytes</small></span>
           <figcaption>
-            Byte-faithful frontmatter round-trip — on a recognised fence.
+            Byte-faithful frontmatter round-trip — where binder recognises the fence.
           </figcaption>
         </figure>
       </section>

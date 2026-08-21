@@ -39,8 +39,8 @@ binder/<version>
 ```
 
 A Homebrew or direct-download install of v0.3.0 prints exactly `binder/0.3.0`.
-The banner is always `binder/<version>` and **never** carries a leading `v`. This
-is not cosmetic: it is the exact string binder stamps into every concept's
+The banner is always `binder/<version>` and **never** carries a leading `v`.
+That banner string is the exact one binder stamps into every concept's
 `generated.by`, so the value you see here is the value that will show up in your
 bundles.
 
@@ -228,8 +228,9 @@ binder infer "$CORPUS" --json | jq '.result.mappings'
 ]
 ```
 
-Read the proposal before you use it: `infer` is a suggestion, not an authority.
-When you agree with it, feed it straight into the conversion:
+Read the proposal before you use it: `infer` suggests a mapping, and you decide
+whether to adopt it. When you agree with it, feed it straight into the
+conversion:
 
 ```bash
 SOURCE_DATE_EPOCH=1700000000 binder convert "$CORPUS" -o /tmp/tut-typed \
@@ -319,12 +320,12 @@ their structure was not examined, so `conformant` here is a claim about the
 five concept files and nothing else. That line appears only when a bundle
 contains reserved files; under `--json` the same fact is the
 `reserved_structure_checked` field, which every result carries (always
-`false`) regardless of the reserved count. It is a disclosure, not a
-finding: it does not change the verdict or the exit code.
+`false`) regardless of the reserved count. It is a disclosure: it sits outside
+`findings` and changes neither the verdict nor the exit code.
 
 The bundle is conformant and exits `0` even though it still has broken links and
-orphans. That is the never-reject rule in action: advisories are reported, not gated,
-unless you ask for gating.
+orphans. That is the never-reject rule in action: advisories are reported, and
+they gate only when you ask for gating.
 
 ### Step 5: gate CI on JSON and exit codes
 
@@ -338,12 +339,12 @@ prose and `--json` mode:
 | `2` | Usage error — anything wrong with the command line, **or with the `.binder.yaml` that feeds it**: an unknown subcommand or flag, the wrong number of arguments, an invalid actor, a malformed `--today`/`--type-map`/`--status-map`/`--stale-after-map` value, an unknown `graph --format`, and an unreadable corpus for `lint`/`enrich`/`infer`. |
 | `3` | I/O or internal error — an unreadable bundle or source for `convert`/`validate`/`index`/`review`/`graph`, or a write failure. |
 
-Never-reject governs the *corpus*, not the inputs that configure the run: binder
-will not refuse your documents for being imperfect, but it will refuse a value it
-cannot parse rather than quietly computing against something you did not mean.
-That applies to the config file too: a bad `verified_by:` in `.binder.yaml` is
-resolved before the subcommand runs, so *every* command exits `2` until you fix
-it, even one that never uses the value.
+Never-reject governs the *corpus*: binder will not refuse your documents for
+being imperfect. The inputs that configure the run have their own contract, and
+binder will refuse a value it cannot parse rather than quietly computing against
+something you did not mean. That applies to the config file too: a bad
+`verified_by:` in `.binder.yaml` is resolved before the subcommand runs, so
+*every* command exits `2` until you fix it, even one that never uses the value.
 
 `--json` wraps the report in a deterministic envelope (schema
 `binder.report/v1`) with a stable field order and a trailing newline, so two runs
@@ -882,7 +883,7 @@ okf validate /tmp/kb | jq '{valid, errors, warnings}'
 
 okf agrees the enriched bundle is conformant. The eight warnings are
 recommended-field advisories (each of the four concepts is missing `description`
-and `tags`), the same kind of non-blocking finding binder reports, not errors that
+and `tags`), the same kind of non-blocking finding binder reports; they do not
 fail the check.
 
 Now point okf at the brownfield bundle from Part 1, the one with the unresolved
@@ -961,10 +962,10 @@ you want.
   **seven** tools: the additive verbs `convert`, `validate`, `review`, `lint` and
   `graph`, which return the same payloads as `binder <cmd> --json`, plus the two
   read-only graph tools `list_graphs` (schema introspection) and `query_graph`
-  (traversal). It is a transport, not a report-producing command, and the surface
-  stays deliberately narrow: source-mutating verbs such as `enrich` are not
-  exposed, and neither is `infer`, which is proposal-only and may call out to a
-  model. Wire it into a host with
+  (traversal). It is a transport. It produces no report of its own, and the
+  surface stays deliberately narrow: source-mutating verbs such as `enrich` are
+  not exposed, and neither is `infer`, which is proposal-only and may call out
+  to a model. Wire it into a host with
   `claude mcp add binder -- binder mcp`, or let the `okf-convert` plugin's bundled
   `.mcp.json` register it on install. See
   [MCP server](/binder/agent/mcp/).
