@@ -51,16 +51,26 @@ function toText(html) {
 // capability AND an affirmative verb AND is not itself a disclaimer clause.
 
 // Genuine negations that actually negate a predicate ("is NOT signed", "does
-// NOT ship", "without cosign", "no longer signs").
-const NEGATION = /\b(not|never|without|cannot|can ?not|can't|isn't|aren't|wasn't|weren't|doesn't|don't|won't|no longer|neither|nor)\b/i;
+// NOT ship", "no longer signs"). Phase 6 (round 2): "without" is REMOVED from
+// this loose list — a bare "without" does not disavow the capability ("signed
+// with cosign without exception" is a CLAIM). "without" now only counts when
+// bound to the capability noun (see BOUND_NEG).
+const NEGATION = /\b(not|never|cannot|can ?not|can't|isn't|aren't|wasn't|weren't|doesn't|don't|won't|no longer|neither|nor)\b/i;
 
-// "no" BOUND directly to the capability, which negates it: "no cosign", "no
-// SBOM", "no supply-chain attestation". (Bare "no" elsewhere is NOT a
-// disclaimer — that was the round-1 hole.)
-const BOUND_NO = /\bno\s+(cosign|sboms?|supply|signatures?|attestations?|provenance)\b/i;
+// "no" OR "without" BOUND directly to the capability, which negates it: "no
+// cosign", "without cosign", "no SBOM", "without a signature", "no supply-chain
+// attestation". Bare "no"/"without" elsewhere is NOT a disclaimer (that was the
+// round-1 "no" hole and the round-2 "without" hole).
+const BOUND_NEG = /\b(?:no|without)\s+(?:a\s+|an\s+|the\s+)?(?:cosign|sboms?|supply|signatures?|signing|attestations?|provenance)\b/i;
 
 // Explicit scope-out / not-configured disclosures (binder's honest idiom).
-const SCOPE_OUT = /\b(out[- ]of[- ]scope|deferred|intentionally|not configured|unconfigured|unsupported|unimplemented|unavailable)\b|scope:/i;
+// Phase 6 (round 2): "intentionally" is REMOVED — on its own it does not
+// disavow a capability ("Every release is intentionally signed with cosign" is
+// still a fabricated CLAIM). It only ever rides alongside a genuine negation
+// ("intentionally NOT configured"), which NEGATION / the other SCOPE_OUT tokens
+// already catch — so an affirmative claim that merely contains the adverb is no
+// longer excused.
+const SCOPE_OUT = /\b(out[- ]of[- ]scope|deferred|not configured|unconfigured|unsupported|unimplemented|unavailable)\b|scope:/i;
 
 // Affirmative verbs that, next to a capability keyword, assert the capability.
 const CLAIM_VERB = /\b(sign|signed|signs|signing|publish|published|publishes|provide|provided|provides|include|included|includes|attach|attached|attest|attested|attests|generate|generated|generates|ship|ships|shipped|available|supported|supports|emit|emits|produce|produces)\b/i;
@@ -70,7 +80,7 @@ const SUPPLY_CHAIN = /\b(cosign|sbom|sboms|supply[- ]chain|provenance attestatio
 
 // A clause is a DISCLAIMER (allowed) when it genuinely disavows the capability.
 function isDisclaimerClause(clause) {
-  return NEGATION.test(clause) || BOUND_NO.test(clause) || SCOPE_OUT.test(clause);
+  return NEGATION.test(clause) || BOUND_NEG.test(clause) || SCOPE_OUT.test(clause);
 }
 
 // Split text into rough sentences, then each sentence into clauses on
@@ -141,6 +151,10 @@ test("controls: the claim detector draws the claim/disclaimer line", () => {
     "Every binder release is signed with cosign, and only the SBOM is omitted.",
     "binder signs every release with cosign, as you would expect.",
     "The next future release is signed with cosign and ships an SBOM.",
+    // The two that SLIPPED the round-2 matcher (adverbial "intentionally" /
+    // affirmative "without exception" wrongly read as disclaimers):
+    "Every release is intentionally signed with cosign.",
+    "Releases are signed with cosign without exception.",
   ];
   for (const s of POSITIVE) {
     assert.ok(
