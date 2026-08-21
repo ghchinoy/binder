@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.5.1](https://github.com/ghchinoy/binder/compare/v0.5.0...v0.5.1) (2026-08-21)
+
+
+### Bug Fixes
+
+* **enrich:** stop --strict gating on the normalization advisory ([f300710](https://github.com/ghchinoy/binder/commit/f300710e1b775378f000cdcc16ab3a7ced453763))
+* state all three enrich --strict gates, deploy docs on main ([#160](https://github.com/ghchinoy/binder/issues/160)) ([114cf1f](https://github.com/ghchinoy/binder/commit/114cf1f54034371724c7527e72f2e45cc356315c))
+
+
+### Code Refactoring
+
+* demote byte-faithfulness to an internal detail ([#153](https://github.com/ghchinoy/binder/issues/153)) ([285589b](https://github.com/ghchinoy/binder/commit/285589b8e7917cab8a4046b8440809bd76d78b54))
+
+
+### Documentation
+
+* correct enrich --strict advisory and gating claims ([#159](https://github.com/ghchinoy/binder/issues/159)) ([1a400aa](https://github.com/ghchinoy/binder/commit/1a400aa8443588a15668e6ab29aff8f74609becd))
+* demote byte-faithfulness to an internal detail ([#158](https://github.com/ghchinoy/binder/issues/158)) ([6813222](https://github.com/ghchinoy/binder/commit/6813222c614c4ad400da0daeb5c1b16f6e2fed43))
+* replace em-dash asides and filler adverbs in prose ([#151](https://github.com/ghchinoy/binder/issues/151)) ([30f109f](https://github.com/ghchinoy/binder/commit/30f109fb87593e2b3eb35f7a62fc9369ed8531a3))
+* retire the recognised-fence and this-not-that tells ([#156](https://github.com/ghchinoy/binder/issues/156)) ([0ba3d49](https://github.com/ghchinoy/binder/commit/0ba3d499151b5cfec80989d756b923852c1992a4))
+
 ## [0.5.0](https://github.com/ghchinoy/binder/compare/v0.4.0...v0.5.0) (2026-08-21)
 
 
