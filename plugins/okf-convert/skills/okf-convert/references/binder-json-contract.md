@@ -39,7 +39,7 @@ Check `$?`, not the text:
 | Code | Meaning | When |
 |------|---------|------|
 | `0` | ok | conformant / no gating findings |
-| `1` | findings / gate tripped | `validate` non-conformance (spec §11); or, under `--strict`, any advisory promoted to a gate (`review`/`lint`/`convert`/`enrich`) |
+| `1` | findings / gate tripped | `validate` non-conformance (spec §11); or, under `--strict`, a command's advisory set promoted to gating findings (`review`/`lint`/`convert`/`enrich`) — for `enrich` that set is skipped files, preserve-or-advise warnings, and a non-conformant `--status-map` OKF §5.4 value. The read-boundary normalization advisory is excluded from those sets and never gates: an advisory-only run exits `0` with or without `--strict` |
 | `2` | usage error | bad flags/args (e.g. `convert` with no `<src>`, conflicting `graph` flags) |
 | `3` | I/O error | path missing / unreadable / unwritable |
 
@@ -166,7 +166,8 @@ binder lint <corpus> --json | jq '.result | {broken_links, missing_titles, schem
 list of injected keys.
 
 **`.result.normalizations` is a disclosure, not a finding.** `enrich --strict`
-gates on skipped files and `warnings` only; a read-boundary normalization is
+gates on skipped files, preserve-or-advise `warnings`, and a non-conformant
+`--status-map` OKF §5.4 value; a read-boundary normalization is
 always reported (here and as a per-file `normalized` signal) and exits `0`
 ([#154](https://github.com/ghchinoy/binder/issues/154)).
 
