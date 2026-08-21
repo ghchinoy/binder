@@ -4,7 +4,7 @@ name: site-ci
 # every change that can affect the built site: it builds the Astro/Starlight
 # project and runs the site test suite (clean URLs, internal links, no-fabricated
 # capability, no hand-typed version). This does NOT deploy — deployment stays in
-# docs.yml (publish-on-version); this only proves the site builds and passes its
+# docs.yml (publish-on-main); this only proves the site builds and passes its
 # invariants before a change lands.
 #
 # Install is WORKSPACE-ROOTED. The repo's JavaScript side is one npm workspace

@@ -30,10 +30,11 @@ atomic write, and skip-unchanged. Trust/attestation keys (verified,
 verified_by, sources, generated, and the other provenance keys) are REFUSED
 (exit 2) — overwriting them could destroy a human attestation.
 
-Use --dry-run to preview. Skipped files and preserve-or-advise warnings
-are advisory: bare enrich exits 0; --strict gates (exit 1) on them. The
-read-boundary normalization advisory (a stripped UTF-8 BOM or a translated
-lone CR) is always reported and never gates.
+Use --dry-run to preview. Skipped files, preserve-or-advise warnings, and a
+non-conformant --status-map OKF §5.4 value are advisory: bare enrich exits 0;
+--strict gates (exit 1) on them — the status-map value gates BEFORE anything is
+written. The read-boundary normalization advisory (a stripped UTF-8 BOM or a
+translated lone CR) is always reported and never gates.
 
 ```
 binder enrich <src> [flags]
@@ -50,7 +51,7 @@ binder enrich <src> [flags]
       --overwrite-keys string    opt-in: comma-separated keys to REFRESH in place even when present, e.g. "status,stale_after" (default is additive/never-clobber; trust keys attester, computation, executor, generated, parameters, runtime, sources, usage_window, verified, verified_by are refused)
       --stale-after-map string   per-directory stale_after relative to now, e.g. "07-benchmarks=+6m,legacy=+0d" (grammar +Nd/+Nm/+Ny; set only when absent)
       --status-map string        per-directory status, e.g. "archive=deprecated,drafts=draft,default=active" (set only when status absent)
-      --strict                   gate (exit 1) on any of enrich's gating conditions, including a skipped file, a preserve-or-advise warning, and a non-conformant --status-map OKF 5.4 value; the read-boundary normalization advisory is reported but never gates; without it enrich never gates (never-reject)
+      --strict                   gate (exit 1) on any of enrich's gating conditions, including a skipped file, a preserve-or-advise warning, and a non-conformant --status-map OKF §5.4 value; the read-boundary normalization advisory is reported but never gates; without it enrich never gates (never-reject)
       --type-map string          per-directory type overrides, e.g. "docs=Guide,adr=Decision"
       --verified-by string       actor to append as a verified stamp, e.g. "human:ghchinoy" or "binder/0.3.0"; a stamp is written ONLY when passed here, or when verified_by is set in your GLOBAL config (neither BINDER_VERIFIED_BY nor a repo-local .binder.yaml authorizes stamping; valid forms: human:<id>, process:<id>, team:<id>, or <producer>/<version> (e.g. binder/0.3.0))
 ```
