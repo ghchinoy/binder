@@ -26,7 +26,7 @@ line diagrams with text (not photos); `-Gdpi=192` keeps the type crisp.
 ## Font
 
 The diagrams reference **Google Sans Flex** (from fonts.google.com). It is a
-proprietary Google font and is **intentionally not committed here** — install it
+proprietary Google font and is **intentionally not committed here**. Install it
 locally before rendering (drop the TTF from the Google Fonts API into `~/.fonts`
 and run `fc-cache -f`). `fc-match "Google Sans Flex"` should resolve before you
 render, otherwise Graphviz falls back to a default face.

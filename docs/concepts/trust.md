@@ -67,6 +67,6 @@ preserved):
 Mapped sources are de-duplicated against existing `sources` by
 `(resource, title, author)`.
 
-For the full trust surface — declarative lifecycle flags, writing a `verified`
-stamp, status canonicalization, and trust well-formedness advisories — see the
+For the full trust surface (declarative lifecycle flags, writing a `verified`
+stamp, status canonicalization, and trust well-formedness advisories), see the
 [user guide](../user_guide.md#the-trust-vocabulary).

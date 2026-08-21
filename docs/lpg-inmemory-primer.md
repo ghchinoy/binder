@@ -457,7 +457,7 @@ appendix (§7) and the machine is in the environment block below.
 
 > **Reproducibility note.** The **selective** row above (319.6 ns/op, ~1,500×) is
 > *not* reproducible from the harness as printed in §7. That listing builds only the
-> evenly distributed labels `L0`–`L4` and benchmarks `NodesByLabel("L0")` — which is
+> evenly distributed labels `L0`–`L4` and benchmarks `NodesByLabel("L0")`, which is
 > the *non-selective* row. §7's closing paragraph describes the rare-label setup this
 > selective row needs, but the code that produced it is not shown on this page, so
 > running the printed harness alone will not regenerate this one row.
@@ -641,7 +641,7 @@ func (g *Graph) NodesByLabelNaive(label string) []*Node {
 }
 ```
 
-> **Note — these snippets are illustrative, not a complete program.** They are
+> **Note: these snippets are illustrative, not a complete program.** They are
 > deliberately elided for readability rather than a single package you can build.
 > In particular the naive baselines above iterate `g.edgeList` and `g.nodeList` —
 > flat-slice fields that the `Graph` struct in §2.2 does not declare (it keeps only

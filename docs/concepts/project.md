@@ -28,7 +28,7 @@ It also prints a `binder.report/v1` summary (command `project`) to stdout, uses
 The projection reuses the same node/edge model as `graph`, `list_graphs`, and
 `query_graph` (see [Relationship extraction & the graph](graph.md)), so the
 emitted edge set and node identity stay in parity by construction. No graph is
-created or populated remotely — this command emits offline DDL text only.
+created or populated remotely. This command emits offline DDL text only.
 
 | Flag | Default | Purpose |
 |---|---|---|
@@ -60,8 +60,8 @@ trust tier (a node is `human-reviewed` when any attestation is human, else
 `machine-confirmed`, else `unverified` — see [Trust model & tiers](trust.md)).
 
 `derivation.sql` is a `CREATE VIEW NodeTrustDerived` that **recomputes** `tier`
-and `stale` from the stored facts — `Nodes.stale_after` and the `NodeVerified`
-table — rather than reading the frozen `Nodes.tier`/`Nodes.stale` columns. The
+and `stale` from the stored facts (`Nodes.stale_after` and the `NodeVerified`
+table) rather than reading the frozen `Nodes.tier`/`Nodes.stale` columns. The
 view recomputes as of `CURRENT_DATE()`; substitute a `DATE` literal to recompute
 for any chosen date. Because the frozen `tier`/`stale` in `Nodes` are only a
 snapshot as of `projected_as_of`, this view lets a consumer re-derive the current

@@ -42,5 +42,5 @@ Key rules binder enforces on emit:
 - **Links are rewritten to bundle-relative-absolute form.** A body link
   `[t](../a/b.md#sec)` that resolves to a concept becomes `[t](/a/b.md#sec)`.
 
-For the full reference — including reserved files, the concept/edge vocabulary,
-and validation rules — see the [user guide](../user_guide.md#okf-v02-output-structure).
+For the full reference (including reserved files, the concept/edge vocabulary,
+and validation rules), see the [user guide](../user_guide.md#okf-v02-output-structure).
