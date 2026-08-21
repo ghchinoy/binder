@@ -56,7 +56,7 @@ type ProjectedNode struct {
 
 	// Verified is the concept's verified[] attestations projected VERBATIM
 	// (okf.ProjectTrust order-preserving; see projectActorstamps). It is the
-	// lossless source the frozen Tier derives from and the byte-faithful input to
+	// lossless source the frozen Tier derives from and the verbatim input to
 	// the NodeVerified child table (OQ-8 item 3). Copied, never re-derived.
 	Verified []okf.Actorstamp
 }
@@ -236,7 +236,7 @@ func (p *Projection) DDL() []byte {
 	b.WriteString("\n")
 	writeCreateTable(&b, "Edges", edgeColumns, "from_key, to_key, rel")
 	b.WriteString("\n")
-	// OQ-8 item 3: the NodeVerified child table (byte-faithful verified[]). It is
+	// OQ-8 item 3: the NodeVerified child table (verified[] copied verbatim). It is
 	// a relational detail table keyed under Nodes, NOT a graph node/edge, so it
 	// does not appear in CREATE PROPERTY GRAPH below.
 	writeCreateTable(&b, "NodeVerified", nodeVerifiedColumns, "node_key, seq")

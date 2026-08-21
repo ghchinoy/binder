@@ -11,7 +11,7 @@ import (
 // the run is explicitly configured to (design-v2 §3.2 / Phase-2 point 7). Every
 // mapping is deterministic and additive: original keys are preserved, and binder
 // never fabricates a source or a credibility score (§5.1). With no mapping
-// options set, this is a no-op and frontmatter round-trips byte-faithfully.
+// options set, this is a no-op and frontmatter round-trips unchanged.
 func mapTrust(c *okf.Concept, opts Options) {
 	fm := c.Frontmatter
 

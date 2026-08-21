@@ -354,7 +354,7 @@ it still writes a full bundle to the output directory and rewrites `<src>` only 
 
 A plain-markdown file (no frontmatter fence) gets a fresh, valid block prepended.
 
-#### The safety model (load-bearing — enrich mutates the source)
+#### The safety model (enrich mutates the source, so each item is a promise it keeps)
 
 1. **Additive / never-clobber.** Only keys that are **absent** are added; an
    authored value (any key) is never overwritten. The **one** exception is the

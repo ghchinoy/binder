@@ -57,11 +57,11 @@ func newProjectCmd(codec okf.Codec) *cobra.Command {
 			"carries the raw authored input so stale stays re-derivable.\n\n" +
 			"Alongside schema.ddl it emits the loader row data (nodes.csv, edges.csv,\n" +
 			"load.sql) and the provenance artifacts node_verified.csv (the verified[]\n" +
-			"attestations, byte-faithful: order preserved, by/at verbatim, is_human = the\n" +
-			"human: prefix) and derivation.sql (a CREATE VIEW that recomputes tier/stale\n" +
-			"from stale_after and NodeVerified for any date). --target defaults to spanner\n" +
-			"and is the only accepted value in this release. No cloud credentials are used\n" +
-			"or needed.",
+			"attestations, copied losslessly: order preserved, by/at verbatim as authored,\n" +
+			"is_human = the human: prefix) and derivation.sql (a CREATE VIEW that\n" +
+			"recomputes tier/stale from stale_after and NodeVerified for any date).\n" +
+			"--target defaults to spanner and is the only accepted value in this release.\n" +
+			"No cloud credentials are used or needed.",
 		Args: exactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// --target: spanner is the only accepted value in v0.4.0 (usage/exit 2).

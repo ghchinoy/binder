@@ -6,17 +6,25 @@
 // It is the SOLE Phase-1 codec (design decision A / R-2 reversed): a
 // community-core adapter over an external OKF library is a deferred, optional
 // slot behind the same interfaces, to be added only if it is first validated
-// against real-world YAML (the check that ruled factile out of Phase 1).
+// against real-world YAML (the check that ruled factile out of Phase 1). The bar
+// such an adapter must clear is LOSSLESSNESS — unknown keys and authored
+// attestation values survive a round-trip and are never silently dropped (spec
+// §4.1, §10.5, §11) — not byte-identity. Byte-identity is the mechanism THIS
+// codec happens to use to reach that bar safely; it is not a requirement OKF
+// imposes, nor a promise binder makes to its users.
 //
-// Frontmatter fidelity (design-v2 §3.2 — byte-faithful round-trip): parsing
-// preserves every key/value and the top-level key order. Unmodified frontmatter
-// is re-emitted from the original source bytes verbatim, so nested-mapping key
-// order and scalar quoting/folding style survive exactly. When the converter
-// changes or adds a TOP-LEVEL key (e.g. a `generated` stamp), the mapping is
-// rebuilt from the original order-preserving *yaml.Node: every unchanged
-// top-level key reuses its source subtree verbatim, so nested-map key order and
-// list-item order are preserved at every level; only the added/changed values
-// are encoded fresh, deterministically.
+// Frontmatter preservation (design-v2 §3.2 — an internal property of this codec,
+// not a project guarantee): parsing preserves every key/value and the top-level
+// key order. Unmodified frontmatter is re-emitted from the original source bytes
+// verbatim, so nested-mapping key order and scalar quoting/folding style survive
+// exactly. Re-emitting the source bytes is how the codec stays lossless over
+// families it does not model well enough to re-encode (the trust and Attested
+// Computation families above all), and it keeps rewrites diffable. When the
+// converter changes or adds a TOP-LEVEL key (e.g. a `generated` stamp), the
+// mapping is rebuilt from the original order-preserving *yaml.Node: every
+// unchanged top-level key reuses its source subtree verbatim, so nested-map key
+// order and list-item order are preserved at every level; only the added/changed
+// values are encoded fresh, deterministically.
 package native
 
 import (
@@ -44,9 +52,9 @@ var (
 
 // ParseConcept splits the frontmatter/body of raw, parses the frontmatter with
 // yaml.v3 (preserving top-level key order and every key/value), retains the
-// original frontmatter bytes for byte-faithful serialization, and projects
-// TrustSignals. It errors only for structural non-conformance (spec §11.1):
-// missing or unterminated frontmatter, or invalid YAML.
+// original frontmatter bytes so Serialize can re-emit them verbatim, and
+// projects TrustSignals. It errors only for structural non-conformance (spec
+// §11.1): missing or unterminated frontmatter, or invalid YAML.
 func (c *Codec) ParseConcept(relPath string, raw []byte) (*okf.Concept, error) {
 	text := strings.ReplaceAll(string(raw), "\r\n", "\n")
 	fmText, body, err := splitFrontmatter(text)
@@ -90,8 +98,8 @@ func (c *Codec) ParseConcept(relPath string, raw []byte) (*okf.Concept, error) {
 }
 
 // Serialize renders a Concept to bytes. Unmodified frontmatter is emitted
-// verbatim from OriginalFrontmatter (byte-faithful); modified or synthesised
-// frontmatter is re-encoded deterministically with a 2-space indent.
+// verbatim from OriginalFrontmatter; modified or synthesised frontmatter is
+// re-encoded deterministically with a 2-space indent.
 func (c *Codec) Serialize(con *okf.Concept) ([]byte, error) {
 	fmBytes, err := c.encodeFrontmatter(con)
 	if err != nil {

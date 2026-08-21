@@ -58,7 +58,7 @@ func applyVerifiedBy(c *okf.Concept, opts Options) VerifiedResult {
 	case map[string]any:
 		list = []any{v}
 	default:
-		// A spec-invalid scalar verified value. Preserve it byte-faithfully and do
+		// A spec-invalid scalar verified value. Preserve it exactly as authored and do
 		// NOT append (appending would reshape or discard authored data); advise the
 		// caller so it is reported as a finding instead of silently dropped.
 		return VerifiedResult{Advisory: fmt.Sprintf("verified: value %q is not a {by,at} stamp or list of them (spec §5.2); preserved unchanged, no verified stamp appended", okf.AsString(v))}

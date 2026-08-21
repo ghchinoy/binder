@@ -27,8 +27,8 @@ CREATE TABLE Edges (
 CREATE TABLE NodeVerified (
   node_key STRING(MAX) NOT NULL,  -- = Nodes.node_key; never minted
   seq      INT64 NOT NULL,        -- OQ-8: stable index within the concept's verified[]
-  by       STRING(MAX),           -- OQ-8: verified[].by, byte-faithful
-  at       STRING(MAX),           -- OQ-8: verified[].at, byte-faithful
+  by       STRING(MAX),           -- OQ-8: verified[].by, verbatim as authored
+  at       STRING(MAX),           -- OQ-8: verified[].at, verbatim as authored
   is_human BOOL,                  -- OQ-8: okf.IsHumanActor(by) — the TrustTier predicate
 ) PRIMARY KEY (node_key, seq);
 
