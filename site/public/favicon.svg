@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="binder">
+  <rect width="32" height="32" rx="7" fill="#10171b"/>
+  <!-- binder's round-trip / faithfulness motif: the ⟳ mark. -->
+  <text x="16" y="22" text-anchor="middle" font-size="20" font-family="ui-sans-serif, system-ui, sans-serif" fill="#2dd4bf">⟳</text>
+</svg>

@@ -39,8 +39,9 @@ export default defineConfig({
       // frontmatter prepended — templating, not generation. The sidebar
       // references each page's PUBLISHED slug (the clean URL), not its on-disk
       // _generated/ path. The IA mirrors design §4.3. The generated Command
-      // reference (Reference group) is intentionally omitted here — it is
-      // produced by a separate phase; its row lands when that source exists.
+      // reference (Reference group) is wired in below — prepare-content.mjs
+      // folds docs/commands/ (CI-drift-gated on main) into one page rendered at
+      // /reference/commands.
       sidebar: [
         {
           label: "Start",
