@@ -190,6 +190,18 @@ func (idx shapeIndex) register(name string, obj any) {
 }
 
 // registerElem records the shape of the first element of a JSON array, if any.
+//
+// INVARIANT / KNOWN LIMIT (#172): only element ZERO's key set is registered. A
+// typed Go []T slice gives one anchor per array, but not one JSON key set — a
+// field tagged `omitempty` (e.g. enrich FileResult.added/reason, convert
+// ConceptReport.normalized, graph Edge.text, infer Mapping.rationale) is dropped
+// from any element whose value is the zero value. Since the doc-side descent now
+// walks every element (finding 1, #106), a faithful MULTI-element capture whose
+// non-first element legitimately differs in key set would be OVER-reported
+// against element zero's set. Every documented array is single-element today, so
+// there is no live exposure, and the failure is loud (a wrong finding on first
+// contact), not silent. The fix — registering the UNION of live element key
+// sets — touches index construction and is deferred to #172.
 func (idx shapeIndex) registerElem(name string, arr any) {
 	if a, ok := arr.([]any); ok && len(a) > 0 {
 		idx.register(name, a[0])
