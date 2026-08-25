@@ -152,10 +152,10 @@ func TestGate_FlagsRenamedValues(t *testing.T) {
 // Catastrophic subset: concept keeping 1 of 7. Old gate: jaccard 0.143 -> SILENT.
 func TestGate_FlagsCatastrophicConcept1of7(t *testing.T) {
 	fs, _ := scanFix(t, reviewWithConcept(`{ "id": "README" }`))
-	if !mentions(fs, "concepts[]", "entrypoint") {
+	if !mentions(fs, "concepts[", "entrypoint") {
 		t.Fatalf("gate did not flag concept missing keys at 1-of-7; got:\n%s", render(fs))
 	}
-	if s := flaggedShape(fs, "concepts[]"); s != "review.result.concepts[]" {
+	if s := flaggedShape(fs, "concepts["); s != "review.result.concepts[]" {
 		t.Fatalf("concept flagged against wrong shape %q", s)
 	}
 }
@@ -165,16 +165,52 @@ func TestGate_FlagsCatastrophicConcept1of7(t *testing.T) {
 // must name review.result.concepts[] and must NOT mention title.
 func TestGate_FlagsConcept4of7_NoMisattribution(t *testing.T) {
 	fs, _ := scanFix(t, reviewWithConcept(`{ "id": "README", "type": "Note", "tier": "unverified", "stale": false }`))
-	if s := flaggedShape(fs, "concepts[]"); s != "review.result.concepts[]" {
+	if s := flaggedShape(fs, "concepts["); s != "review.result.concepts[]" {
 		t.Fatalf("concept 4-of-7 flagged against wrong shape %q (misattribution not fixed); got:\n%s", s, render(fs))
 	}
 	for _, want := range []string{"attested", "entrypoint", "orphan"} {
-		if !mentions(fs, "concepts[]", want) {
+		if !mentions(fs, "concepts[", want) {
 			t.Fatalf("concept 4-of-7 missing key %q not reported; got:\n%s", want, render(fs))
 		}
 	}
 	if anyMissingOrExtra(fs, "title") {
 		t.Fatalf("gate still reports a bogus 'title' key (graph.nodes[] misattribution); got:\n%s", render(fs))
+	}
+}
+
+// Finding 1 (round 3): completeness used to recurse into array element v[0]
+// ONLY, so a drifted or unanchored NON-FIRST element was both silent AND
+// unreported — the same "zero exposure today" reasoning that hid the Jaccard
+// floor, reintroduced one layer down. This block's concepts[0] is verbatim
+// correct and concepts[1] is stripped to {id}. Against the previous descend
+// (git checkout <pre-fix> -- internal/plugindocs/drift_test.go, the case that
+// walked only v[0]) it produces NO finding and one coverage entry. Under the
+// all-elements descent it flags concepts[1] against review.result.concepts[]
+// naming the missing keys, and records coverage for BOTH elements.
+func TestGate_FlagsDriftedNonFirstArrayElement(t *testing.T) {
+	correct := `{ "id": "README", "type": "Note", "tier": "unverified",
+	              "stale": false, "attested": false, "orphan": false,
+	              "entrypoint": true }`
+	fs, cov := scanFix(t, reviewWithConcept(correct+`, { "id": "orphan" }`))
+	// The FIRST element is correct; the finding must be on the SECOND.
+	if !mentions(fs, "concepts[1]", "entrypoint") {
+		t.Fatalf("gate did not flag the drifted non-first concept element; got:\n%s", render(fs))
+	}
+	if s := flaggedShape(fs, "concepts[1]"); s != "review.result.concepts[]" {
+		t.Fatalf("non-first concept flagged against wrong shape %q", s)
+	}
+	// Both elements must appear in coverage — the non-first one is no longer skipped.
+	var saw0, saw1 bool
+	for _, c := range cov {
+		if strings.Contains(c.path, "concepts[0]") {
+			saw0 = true
+		}
+		if strings.Contains(c.path, "concepts[1]") {
+			saw1 = true
+		}
+	}
+	if !saw0 || !saw1 {
+		t.Fatalf("expected coverage for both concepts[0] and concepts[1]; coverage:\n%s", renderCov(cov))
 	}
 }
 

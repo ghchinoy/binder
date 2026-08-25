@@ -374,13 +374,20 @@ type coverage struct {
 func (c coverage) unanchored() bool { return strings.HasPrefix(c.status, "UNANCHORED") }
 
 // container reports whether x is worth descending into: an object, or an array
-// whose first element is a container. Scalars and scalar arrays are ignored.
+// with ANY container element. Scalars and scalar arrays are ignored. (It checks
+// every element, not just the first, so a mixed array whose first entry is a
+// scalar is still descended for its object entries — finding 1.)
 func container(x any) bool {
 	switch v := x.(type) {
 	case map[string]any:
 		return true
 	case []any:
-		return len(v) > 0 && container(v[0])
+		for _, e := range v {
+			if container(e) {
+				return true
+			}
+		}
+		return false
 	}
 	return false
 }
@@ -448,14 +455,25 @@ func descend(o any, path string, a *anchor, idx shapeIndex, file string, line in
 			descend(child, path+"."+k, ca, idx, file, line, findings, cov)
 		}
 	case []any:
-		if len(v) == 0 || !container(v[0]) {
-			return
-		}
+		// Walk EVERY container element, not just v[0]: a drifted or unanchored
+		// non-first element must be checked and reported, never silently skipped
+		// (issue #106, finding 1). Every object-bearing array under plugins/ is
+		// homogeneous by contract — each is emitted from a Go []T slice, so all
+		// elements share the one element anchor (a.elem). A heterogeneous array
+		// (elements differing in shape by design) does not exist here and is not
+		// idiomatic for these typed slices; were one ever introduced it would
+		// have to be anchored per-element or exempted by name like by_type/tiers,
+		// not silently averaged to the first element's shape.
 		var ea *anchor
 		if a != nil {
 			ea = a.elem
 		}
-		descend(v[0], path+"[]", ea, idx, file, line, findings, cov)
+		for i, e := range v {
+			if !container(e) {
+				continue
+			}
+			descend(e, fmt.Sprintf("%s[%d]", path, i), ea, idx, file, line, findings, cov)
+		}
 	}
 }
 
