@@ -66,6 +66,17 @@ like, and the bundle bytes are unchanged. If you need the graph again, ask again
 it is always recomputed from the current bundle, so it never drifts from the
 source.
 
+## Disclosure of unparseable files
+
+A concept file whose frontmatter will not parse is never silently dropped
+(never-reject, spec §11): the loader recovers it as a body-only node — so it
+still appears in the graph and no edge dangles to a missing node — and discloses
+it. Alongside `review`'s `unparsed_frontmatter`, the graph surfaces the same
+disclosure: `binder graph --format json`, `list_graphs`, and `query_graph` emit
+an `unparsed` array of the recovered node ids (`binder graph`, `index`, and
+`project` also warn on stderr). The field is omitted when every concept parsed,
+so a clean bundle's export is unchanged.
+
 A runnable sample bundle and its graph views live in
 [`examples/graph-sample/`](../examples/graph-sample/). For the full graph surface
 (export formats, node identity, and `query_graph` operations), see the
