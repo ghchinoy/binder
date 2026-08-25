@@ -49,6 +49,17 @@ func Infer(ctx context.Context, src string, codec okf.Codec, opts Options) (*Rep
 	dirSampleTitles := make(map[string][]string)
 	dirFileNames := make(map[string][]string)
 
+	// Files whose frontmatter could not be parsed. They must not back any
+	// frontmatter-based claim (issue #162): infer never read a value from them,
+	// so they cannot count toward an authored-type majority nor appear in
+	// sample_files as evidence for source:frontmatter. They are disclosed as
+	// warnings instead. Following convert's model: recover, warn, count.
+	type unparsedNote struct {
+		rel string
+		err string
+	}
+	var unparsedFiles []unparsedNote
+
 	for dir, fList := range dirFiles {
 		for _, sf := range fList {
 			raw, err := os.ReadFile(sf.abs)
@@ -58,6 +69,11 @@ func Infer(ctx context.Context, src string, codec okf.Codec, opts Options) (*Rep
 
 			c, err := parseConceptSafe(codec, sf.rel, raw)
 			if err != nil {
+				// Frontmatter did not parse. Record it for disclosure and keep
+				// its filename available for filename/pattern heuristics only —
+				// never as frontmatter evidence or a frontmatter sample.
+				unparsedFiles = append(unparsedFiles, unparsedNote{rel: sf.rel, err: err.Error()})
+				dirFileNames[dir] = append(dirFileNames[dir], sf.rel)
 				continue
 			}
 
@@ -148,6 +164,15 @@ func Infer(ctx context.Context, src string, codec okf.Codec, opts Options) (*Rep
 	// Non-nil so an empty run marshals warnings as [] rather than null, keeping
 	// the JSON envelope's shape stable (docs/user_guide.md).
 	warnings := []string{}
+
+	// Disclose files whose frontmatter did not parse (issue #162). Sorted for
+	// deterministic output because dirFiles is iterated in map order above.
+	sort.Slice(unparsedFiles, func(i, j int) bool { return unparsedFiles[i].rel < unparsedFiles[j].rel })
+	for _, u := range unparsedFiles {
+		warnings = append(warnings, fmt.Sprintf(
+			"%s: frontmatter did not parse (%s); excluded from type inference (not counted as authored-type evidence)",
+			u.rel, u.err))
+	}
 
 	// 2. Optional Tier 4: Gemini semantic inference
 	if opts.UseGemini {
@@ -244,12 +269,19 @@ func Infer(ctx context.Context, src string, codec okf.Codec, opts Options) (*Rep
 	return report, nil
 }
 
+// parseConceptSafe parses a source file into a Concept. A file that opens a
+// "---" fence is routed through the codec; if that parse fails, the error is
+// returned to the caller rather than silently swallowed — a file whose
+// frontmatter did not parse must not be presented as one carrying empty
+// frontmatter (issue #162). A file with no frontmatter fence legitimately has
+// empty frontmatter and is returned without error.
 func parseConceptSafe(codec okf.Codec, rel string, raw []byte) (*okf.Concept, error) {
 	if opensFrontmatterFence(raw) {
 		c, err := codec.ParseConcept(rel, raw)
-		if err == nil {
-			return c, nil
+		if err != nil {
+			return nil, err
 		}
+		return c, nil
 	}
 	id, _ := codec.ConceptIDFromRel(rel)
 	return &okf.Concept{

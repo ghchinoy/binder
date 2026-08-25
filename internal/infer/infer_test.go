@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/ghchinoy/binder/internal/okf/native"
@@ -99,6 +100,63 @@ func TestInferDeterministic(t *testing.T) {
 	wantTypeMap := "custom=Proposal,ops=Runbook,subsystems=Subsystem"
 	if rep.TypeMap != wantTypeMap {
 		t.Errorf("TypeMap = %q, want %q", rep.TypeMap, wantTypeMap)
+	}
+}
+
+// TestInferDoesNotCiteUnparsedFrontmatter is the negative fixture for issue
+// #162: a file whose frontmatter does not parse must not be cited in
+// sample_files as evidence for source:frontmatter, must not count toward the
+// authored-type majority, and must be disclosed in warnings. Before the fix,
+// parseConceptSafe swallowed the parse error and returned empty frontmatter, so
+// guides/a.md landed in sample_files with no warning emitted — this test failed.
+func TestInferDoesNotCiteUnparsedFrontmatter(t *testing.T) {
+	dir := t.TempDir()
+	guides := filepath.Join(dir, "guides")
+	if err := os.MkdirAll(guides, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// a.md: `title: A: colon breaks this` is invalid YAML — frontmatter does not parse.
+	if err := os.WriteFile(filepath.Join(guides, "a.md"),
+		[]byte("---\ntype: Guide\ntitle: A: colon breaks this\n---\n\n# A\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// b.md: clean frontmatter with an authored type.
+	if err := os.WriteFile(filepath.Join(guides, "b.md"),
+		[]byte("---\ntype: Guide\ntitle: B\n---\n\n# B\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	rep, err := Infer(context.Background(), dir, native.New(), Options{DefaultType: "Note"})
+	if err != nil {
+		t.Fatalf("Infer failed: %v", err)
+	}
+
+	var guidesMapping *Mapping
+	for i := range rep.Mappings {
+		if rep.Mappings[i].Dir == "guides" {
+			guidesMapping = &rep.Mappings[i]
+		}
+	}
+	if guidesMapping == nil {
+		t.Fatalf("expected a mapping for guides/, got mappings: %+v", rep.Mappings)
+	}
+
+	// guides/a.md was never parsed, so it must not appear as evidence.
+	for _, s := range guidesMapping.SampleFiles {
+		if s == "guides/a.md" {
+			t.Errorf("guides/a.md cited in sample_files %v, but its frontmatter never parsed", guidesMapping.SampleFiles)
+		}
+	}
+
+	// The unparsed file must be disclosed in warnings.
+	found := false
+	for _, w := range rep.Warnings {
+		if strings.Contains(w, "guides/a.md") && strings.Contains(w, "did not parse") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected a warning disclosing guides/a.md's parse failure, got warnings: %v", rep.Warnings)
 	}
 }
 
