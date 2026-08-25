@@ -22,6 +22,27 @@
 //     #106 (the drift sat one level down, in .result.values and concepts[]); the
 //     audit's own first instrument did exactly that and produced a false CLEAN.
 //
+// KNOWN LIMIT — version literals are NOT checked. The gate compares key SETS,
+// not values, and in particular not the `binder/<version>` value. Two reasons,
+// both structural rather than incidental:
+//
+//  1. An in-process test build is unstamped: it reports `binder/dev`, because
+//     goreleaser injects the real tag via -ldflags only at release time. So
+//     inside `go test` there is no trustworthy current version to compare a doc
+//     literal against — a check would either misflag the correct release
+//     literal or degrade to a no-op.
+//  2. Prose version references cannot be blanket-checked. The contract docs
+//     legitimately cite older versions (the minimum-version floor, historical
+//     "as of binder/0.3.1" notes); telling those apart from a stale
+//     capture-provenance claim is a semantic judgment, not a mechanical one, so
+//     a blanket "must equal current" check false-positives and gets disabled.
+//
+// Version-literal drift in transcripts is therefore a known gap, tracked here
+// rather than pretended-covered (#106). It is caught today by the human sweep
+// instrument (sweep-106-keydrift.py), which runs against a stamped release
+// binary; wiring that into CI would mean building a stamped binary as a test
+// fixture, which is heavier than this in-process gate.
+//
 // This test is part of `make check` automatically: `make check` runs
 // `go test ./...`, which includes this package.
 package plugindocs
