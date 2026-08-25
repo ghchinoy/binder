@@ -5,6 +5,8 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -37,6 +39,28 @@ test("an unreadable bundle directory fails with the path in the message", async 
   const { context } = createContext({ schema: okfSchema(), root: here });
   const loader = okfLoader({ bundle: join(here, "no-such-bundle") });
   await assert.rejects(loader.load(context), /cannot read bundle directory/);
+});
+
+test("#164: a malformed file aborts the load with its own id in the message, not anonymously", async () => {
+  // Since splitFrontmatter now throws on malformed frontmatter (#164), the
+  // loader must say WHICH file failed — an anonymous mid-bundle abort would
+  // trade N-1's unhelpful "type Required" for an equally unhelpful mystery.
+  const dir = await mkdtemp(join(tmpdir(), "astro-okf-loader-"));
+  try {
+    await writeFile(join(dir, "ok.md"), "---\ntype: Note\ntitle: Fine\n---\n\n# Fine\n");
+    // Unterminated fence — splitFrontmatter throws (Go codec parity).
+    await writeFile(join(dir, "broken.md"), "---\ntype: Note\ntitle: Oops\n\n# No closing fence\n");
+
+    const { context } = createContext({ schema: okfSchema(), root: here });
+    const loader = okfLoader({ bundle: dir, now: () => NOW });
+    await assert.rejects(loader.load(context), (err) => {
+      assert.match(err.message, /broken\.md/, "error must name the offending file");
+      assert.match(err.message, /unterminated '---' block/, "error must carry the real diagnostic");
+      return true;
+    });
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 test("every concept in the bundle becomes an entry, keyed by bundle-relative path", async () => {
