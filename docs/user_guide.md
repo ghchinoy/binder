@@ -1146,6 +1146,14 @@ Inspects a source markdown corpus and proposes a `--type-map` string (e.g.
 3. **Tier 3 (Frontmatter):** Recognizes authored frontmatter type majorities and key hints (`goal:` → `Proposal`, `runtime:` → `Attested Computation`).
 4. **Tier 4 (Gemini):** Opt-in semantic inference (`--gemini`) sending directory names and sample titles to Gemini, supporting both API key and Google Cloud Vertex AI.
 
+A source file whose frontmatter does not parse (invalid YAML, or an
+unterminated `---` fence) is **not** read for type evidence: it never counts
+toward a frontmatter type majority and is never listed in a mapping's
+`sample_files`, because `infer` read no authored value from it. Each such file
+is instead disclosed in the report's `warnings` array (its filename remains
+available for the filename/heading heuristics of Tier 2). `infer` still exits 0
+by default; under `--strict` these warnings gate like any other.
+
 `infer` is strictly **proposal-only** and writes nothing to disk. Review the
 proposal, then apply it with `convert` or `enrich`:
 
