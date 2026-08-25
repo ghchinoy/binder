@@ -1,0 +1,16 @@
+{
+  "name": "binder-fixture",
+  "metadata": {
+    "pluginRoot": "./plugins"
+  },
+  "plugins": [
+    {
+      "name": "okf-fixture",
+      "source": "./plugins/okf-fixture",
+      "description": "Fixture plugin for the plugin-validate frontmatter tests (issue #89).",
+      "skills": [
+        "./plugins/okf-fixture/skills/okf-fixture"
+      ]
+    }
+  ]
+}

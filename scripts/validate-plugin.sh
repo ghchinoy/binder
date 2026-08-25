@@ -8,7 +8,10 @@
 
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Root of the tree to validate. Defaults to the repo this script ships in;
+# VALIDATE_PLUGIN_ROOT lets the fixture harness (scripts/validate-plugin-fixtures.sh)
+# point the same checks at a throwaway tree without copying the script (issue #89).
+REPO_ROOT="${VALIDATE_PLUGIN_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 cd "$REPO_ROOT"
 
 RED='\033[1;31m'
@@ -72,47 +75,91 @@ for skill_md in plugins/*/skills/*/SKILL.md; do
   skill_dir="$(dirname "$skill_md")"
   expected_name="$(basename "$skill_dir")"
 
-  # Single Python script to safely parse frontmatter from the file
-  read_res="$(python3 -c "
-import json, sys, os
+  # Parse the frontmatter with a REAL YAML parser and fail closed on anything
+  # a YAML parser rejects (issue #89). The prior implementation split on the
+  # '---' substring and scraped name/description/license with per-key regexes,
+  # so it could not tell valid YAML from invalid YAML and waved malformed
+  # frontmatter through with a clean exit 0 (this is the gate #88 was about).
+  #
+  # The fence/mapping semantics below mirror the Go codec's splitFrontmatter +
+  # parseFrontmatterNode (internal/okf/native/native.go) so binder and this gate
+  # agree on what "valid frontmatter" means and use the same wording.
+  #
+  # Only stdout is captured here, and only stdout carries the JSON contract the
+  # shell parses below. Python's stderr is routed to a temp file (NOT merged into
+  # stdout, which would corrupt that JSON stream) and surfaced on failure, so a
+  # future crash shows its traceback instead of a bare "python execution failed"
+  # (issue #89, round 3).
+  py_stderr="$(mktemp)"
+  read_res="$(SKILL_MD="$skill_md" python3 -c "
+import json, sys, os, re
 
-filepath = '$skill_md'
+filepath = os.environ['SKILL_MD']
 content = open(filepath, 'r', encoding='utf-8').read()
 
-if not content.startswith('---'):
-    print(json.dumps({'error': 'No YAML frontmatter delimiter at start'}))
+# Split on the YAML 1.1 line-break set (\r\n, lone \r, \n), matching the Go
+# codec's splitLinesKeepEnds so a fence is recognised the same way here.
+lines = re.split(r'\r\n|\r|\n', content)
+
+# Opening fence: first line must be exactly '---' (after trimming line ends).
+if not lines or lines[0].strip() != '---':
+    print(json.dumps({'error': \"missing frontmatter: document does not start with '---'\"}))
     sys.exit(0)
 
-parts = content.split('---', 2)
-if len(parts) < 3:
-    print(json.dumps({'error': 'Malformed YAML frontmatter delimiters'}))
+# Closing fence: a subsequent line that is exactly '---'.
+end = None
+for i in range(1, len(lines)):
+    if lines[i].strip() == '---':
+        end = i
+        break
+if end is None:
+    print(json.dumps({'error': \"invalid frontmatter: unterminated '---' block\"}))
     sys.exit(0)
 
-fm_text = parts[1]
+fm_text = '\n'.join(lines[1:end])
 
-# Fallback simple parser for name, description, license
-import re
-def get_val(key, text):
-    m = re.search(r'^' + key + r':\s*(.*)$', text, re.MULTILINE)
-    if not m:
-        return ''
-    val = m.group(1).strip()
-    if (val.startswith('\"') and val.endswith('\"')) or (val.startswith(\"'\") and val.endswith(\"'\")):
-        val = val[1:-1]
-    return val
+try:
+    import yaml
+except ImportError:
+    print(json.dumps({'error': 'PyYAML is required to validate frontmatter (pip install pyyaml)'}))
+    sys.exit(0)
 
-name = get_val('name', fm_text)
-desc = get_val('description', fm_text)
-lic = get_val('license', fm_text)
+try:
+    data = yaml.safe_load(fm_text)
+except yaml.YAMLError as e:
+    print(json.dumps({'error': 'invalid frontmatter: ' + ' '.join(str(e).split())}))
+    sys.exit(0)
+
+if data is None:
+    data = {}
+if not isinstance(data, dict):
+    print(json.dumps({'error': 'invalid frontmatter: expected a mapping at the top level'}))
+    sys.exit(0)
+
+def as_str(v):
+    return '' if v is None else str(v)
+
+name = as_str(data.get('name', ''))
+desc = as_str(data.get('description', ''))
+lic = as_str(data.get('license', ''))
 
 print(json.dumps({'name': name, 'desc': desc, 'desc_len': len(desc), 'license': lic}))
-" 2>/dev/null || echo '{"error": "python execution failed"}')"
+" 2>"$py_stderr" || echo '{"error": "python execution failed"}')"
 
   has_err="$(echo "$read_res" | python3 -c "import json,sys; print(json.load(sys.stdin).get('error',''))" 2>/dev/null || true)"
   if [ -n "$has_err" ]; then
     err "Skill '$expected_name' at '$skill_md': $has_err"
+    # Surface any interpreter diagnostics (e.g. a traceback) captured on the
+    # python process's stderr, so a crash is debuggable instead of opaque. Goes
+    # to stderr to keep it clear of anything parsed as data.
+    if [ -s "$py_stderr" ]; then
+      echo "      python stderr (diagnostics):" >&2
+      sed 's/^/        /' "$py_stderr" >&2
+    fi
+    rm -f "$py_stderr"
     continue
   fi
+  rm -f "$py_stderr"
 
   name_in_fm="$(echo "$read_res" | python3 -c "import json,sys; print(json.load(sys.stdin).get('name',''))" 2>/dev/null || true)"
   desc_len="$(echo "$read_res" | python3 -c "import json,sys; print(json.load(sys.stdin).get('desc_len',0))" 2>/dev/null || echo 0)"
