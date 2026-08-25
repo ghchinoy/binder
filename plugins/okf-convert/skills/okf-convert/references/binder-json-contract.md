@@ -4,9 +4,13 @@ Load this when you need the exact shape of what a binder command emits, so you
 **parse structured output with `jq`** and never scrape prose. Every shape below
 was captured from real `binder/0.5.1` output. The `internal/plugindocs` drift
 gate mechanically checks each block's **shape** — its key set at every nesting
-level — against the live binary, but not its **values**: version literals like
-the `binder` field below are not verified and can go stale (tracked in #169), so
-regenerate a block by recapturing it rather than hand-editing (issue #106).
+level — against the live binary, matching each object to its live shape by
+structural position (not key similarity) so an object stays checked however far
+it has drifted. It does **not** check **values**: version literals like the
+`binder` field below are not verified and can go stale (tracked in #169).
+Free-form data maps whose keys are data, not schema (`by_type`, `tiers`), are
+exempt. Regenerate a block by recapturing it rather than hand-editing (issue
+#106).
 
 ## The report envelope (`binder.report/v1`)
 
