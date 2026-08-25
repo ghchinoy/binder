@@ -5,6 +5,8 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -38,6 +40,65 @@ test("an unreadable bundle directory fails with the path in the message", async 
   const loader = okfLoader({ bundle: join(here, "no-such-bundle") });
   await assert.rejects(loader.load(context), /cannot read bundle directory/);
 });
+
+// All three malformed cases #164 covers. A try/catch wrapped around a
+// fail-closed throw is the exact shape a fail-open regression takes, so this
+// asserts the LOAD ACTUALLY REJECTS for each case — not merely that the message
+// is prettier — and that the original codec wording survives the wrap. The
+// wording check is what distinguishes a genuine parse-layer throw (the point of
+// #164: Go and TS agreeing) from a silent collapse to `{}` that only Zod later
+// rejects with "type Required": the harness runs the real okfSchema, so a
+// fail-open regression would still make the load reject, but on Zod's message,
+// not the codec's — and this test would then fail on the wording assertion.
+const MALFORMED_CASES = [
+  {
+    name: "unterminated-fence",
+    frontmatter: "---\ntype: Note\ntitle: Oops\n\n# No closing fence\n",
+    wording: /unterminated '---' block/,
+  },
+  {
+    name: "top-level-sequence",
+    frontmatter: "---\n- one\n- two\n---\n\n# Body\n",
+    wording: /expected a mapping at the top level/,
+  },
+  {
+    name: "top-level-scalar",
+    frontmatter: "---\njust a bare string\n---\n\n# Body\n",
+    wording: /expected a mapping at the top level/,
+  },
+];
+
+for (const c of MALFORMED_CASES) {
+  test(`#164: a ${c.name} file fails the load loudly, naming the file and keeping the codec wording`, async () => {
+    const dir = await mkdtemp(join(tmpdir(), "astro-okf-loader-"));
+    try {
+      await writeFile(join(dir, "ok.md"), "---\ntype: Note\ntitle: Fine\n---\n\n# Fine\n");
+      await writeFile(join(dir, `${c.name}.md`), c.frontmatter);
+
+      const { context } = createContext({ schema: okfSchema(), root: here });
+      const loader = okfLoader({ bundle: dir, now: () => NOW });
+      await assert.rejects(
+        loader.load(context),
+        (err) => {
+          assert.match(
+            err.message,
+            new RegExp(`${c.name}\\.md`),
+            `${c.name}: error must name the offending file`,
+          );
+          assert.match(
+            err.message,
+            c.wording,
+            `${c.name}: error must carry the codec wording, not a downstream Zod message`,
+          );
+          return true;
+        },
+        `${c.name}: the load must reject (fail closed), not fail open`,
+      );
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+}
 
 test("every concept in the bundle becomes an entry, keyed by bundle-relative path", async () => {
   const { store } = await loadBundle();
