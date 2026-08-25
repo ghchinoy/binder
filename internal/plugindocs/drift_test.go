@@ -5,43 +5,64 @@
 // with no mechanical tie to the binary — which is exactly how the okf-convert
 // contract drifted four minor versions (issue #106) while docs/ did not.
 //
-// The gate here is deliberately weaker than byte-equality and stronger than a
-// top-level key check:
+// # How the gate works: PATH-ANCHORING (not fuzzy matching)
 //
 //   - It runs the CLI IN-PROCESS over each plugin's own assets/sample-corpus/
 //     and indexes the key set of every documented result shape from live output.
 //   - It extracts every fenced json/jsonc block from plugins/**/*.md (globbed,
 //     not hardcoded to okf-convert) — indented fences inside list items included.
-//   - It asserts KEY-SET EQUALITY at every nesting level, not byte-equality:
-//     the examples use illustrative values (docs/guide, human:alice) and jsonc
-//     comments that carry teaching weight, and byte-equality would force those
-//     out and make the docs worse. Key-set equality catches exactly the #106
-//     class — a documented object missing a key the binary emits, or carrying a
-//     key the binary retired — and nothing else.
-//   - It WALKS nested objects. A top-level-only checker passes every instance in
-//     #106 (the drift sat one level down, in .result.values and concepts[]); the
-//     audit's own first instrument did exactly that and produced a false CLEAN.
+//   - For each block it ROUTES the root to a known shape (an envelope by its
+//     command/schema, or a bare result payload by key overlap), then DESCENDS
+//     the object tree in lockstep with a declared anchor tree, mapping every
+//     nested object to its live shape by its STRUCTURAL PATH — e.g. a values map
+//     reached at $.result.values under a config envelope is always checked
+//     against config.result.values, regardless of how badly that object itself
+//     has drifted. At each anchored object it asserts KEY-SET EQUALITY (missing
+//     or extra keys) against the live shape; illustrative values and jsonc
+//     comments are ignored, so byte-equality is not imposed on the teaching text.
 //
-// KNOWN LIMIT — version literals are NOT checked. The gate compares key SETS,
-// not values, and in particular not the `binder/<version>` value. Two reasons,
-// both structural rather than incidental:
+// # Why path-anchoring rather than best-overlap matching
+//
+// The first cut of this gate matched every object to its best-overlapping live
+// shape and skipped anything below a Jaccard floor. That inverted the gate: the
+// worse a block had drifted, the lower its overlap, so past the floor it was
+// skipped SILENTLY — loudest on trivial drift, quiet on catastrophic drift. It
+// also MISATTRIBUTED: a review concept stripped to {id,type,tier,stale} matched
+// graph.nodes[] and reported a missing "title", a key concepts never had. Both
+// failures were measured against the live binary (issue #106, round-2 review).
+// Anchoring by path removes the fuzzy per-object step below the root: a
+// catastrophically drifted object is still checked because we know WHAT it is
+// from its position, and it can only ever be compared to its own live shape.
+//
+// # Completeness and exemptions (the anchoring escape hatch, closed)
+//
+// Path-anchoring moves the risk rather than removing it: an object at a path no
+// anchor describes would go unchecked. So the gate is COMPLETE by construction —
+// every JSON object under plugins/ must resolve to an anchor or to an explicit
+// exemption, and anything that is neither is reported as UNANCHORED and fails
+// TestPluginDocs_EveryBlockAnchored. The exemption list is deliberately tiny and
+// each entry is commented with why it is free-form DATA (keys are values, not a
+// schema) rather than a shape — an exemption is a fail-open surface, so adding to
+// it must be a conscious, reviewed act.
+//
+// # KNOWN LIMIT — version literals are NOT checked
+//
+// The gate compares key SETS, not values, and in particular not the
+// `binder/<version>` value. Two reasons, both structural:
 //
 //  1. An in-process test build is unstamped: it reports `binder/dev`, because
 //     goreleaser injects the real tag via -ldflags only at release time. So
 //     inside `go test` there is no trustworthy current version to compare a doc
-//     literal against — a check would either misflag the correct release
-//     literal or degrade to a no-op.
+//     literal against — a check would either misflag the correct release literal
+//     or degrade to a no-op.
 //  2. Prose version references cannot be blanket-checked. The contract docs
 //     legitimately cite older versions (the minimum-version floor, historical
 //     "as of binder/0.3.1" notes); telling those apart from a stale
-//     capture-provenance claim is a semantic judgment, not a mechanical one, so
-//     a blanket "must equal current" check false-positives and gets disabled.
+//     capture-provenance claim is a semantic judgment, not a mechanical one.
 //
-// Version-literal drift in transcripts is therefore a known gap, tracked here
-// rather than pretended-covered (#106). It is caught today by the human sweep
-// instrument (sweep-106-keydrift.py), which runs against a stamped release
-// binary; wiring that into CI would mean building a stamped binary as a test
-// fixture, which is heavier than this in-process gate.
+// Version-literal drift in transcripts is therefore a known gap, tracked in #169
+// rather than pretended-covered. It is caught today by the human sweep instrument
+// (sweep-106-keydrift.py), which runs against a stamped release binary.
 //
 // This test is part of `make check` automatically: `make check` runs
 // `go test ./...`, which includes this package.
@@ -150,6 +171,15 @@ func keySet(m map[string]any) map[string]bool {
 	return s
 }
 
+func sortedKeys(m map[string]any) []string {
+	ks := make([]string, 0, len(m))
+	for k := range m {
+		ks = append(ks, k)
+	}
+	sort.Strings(ks)
+	return ks
+}
+
 // register records the key set of obj under name. Empty objects are ignored:
 // they carry no key contract to compare against (e.g. an envelope's "result":{}
 // placeholder).
@@ -166,21 +196,164 @@ func (idx shapeIndex) registerElem(name string, arr any) {
 	}
 }
 
-// finding is one key-set mismatch between a documented object and the closest
+// --- anchors ----------------------------------------------------------------
+
+// anchor is a node in the expected-shape tree the gate descends in lockstep with
+// a documented object. shape names the live shape to key-check this object
+// against ("" = a structural node that is not itself key-checked, e.g. an
+// envelope placeholder). fields maps a child key to its anchor; elem is the
+// anchor for array ELEMENTS and, for a value-map like config.result.values, the
+// anchor shared by every map child. exempt marks a free-form subtree: covered,
+// but neither checked nor descended.
+type anchor struct {
+	shape  string
+	exempt bool
+	fields map[string]*anchor
+	elem   *anchor
+}
+
+// arr wraps an array-valued object field: the field itself is not key-checked,
+// its elements carry shape `elem`.
+func arr(elem *anchor) *anchor { return &anchor{elem: elem} }
+
+// exempt marks a free-form data map (keys are DATA, not a schema).
+func exemptAnchor() *anchor { return &anchor{exempt: true} }
+
+// Shared leaf/element anchors.
+var (
+	aVerified      = &anchor{shape: "result.verified"} // convert & enrich verified are identical
+	aConfigValueK  = &anchor{shape: "config.result.values.<k>"}
+	aConvConcept   = &anchor{shape: "convert.result.concepts[]"}
+	aUnresolvedC   = &anchor{shape: "convert.result.unresolved[]"}
+	aUnresolvedR   = &anchor{shape: "review.result.unresolved[]"}
+	aFindings      = &anchor{shape: "validate.result.findings[]"}
+	aReviewConcept = &anchor{shape: "review.result.concepts[]"}
+	aBrokenLinks   = &anchor{shape: "lint.result.broken_links[]"}
+	aSchemaViol    = &anchor{shape: "lint.result.schema_violations[]"}
+	aEnrichFiles   = &anchor{shape: "enrich.result.files[]"}
+	aGraphNodes    = &anchor{shape: "graph.nodes[]"}
+	aGraphEdges    = &anchor{shape: "graph.edges[]"}
+	aInferMap      = &anchor{shape: "infer.result.mappings[]"}
+)
+
+// config .result.values is a value-MAP: its own key set is a schema (the setting
+// names, checked against config.result.values) and every child is a {value,source}.
+var aConfigValues = &anchor{shape: "config.result.values", elem: aConfigValueK}
+
+var aConfigResult = &anchor{shape: "config.result", fields: map[string]*anchor{
+	"values": aConfigValues,
+}}
+
+var aConfigEnvelope = &anchor{shape: "config.envelope", fields: map[string]*anchor{
+	"result": aConfigResult,
+}}
+
+// report envelope: per-command result payloads are documented as their own bare
+// blocks, so here result is shown as an empty placeholder. shape:"" is a
+// structural node (not key-checked); with no fields/elem a NON-empty result
+// surfaces as UNANCHORED and forces it to be anchored (fail-closed).
+var aReportResult = &anchor{shape: ""}
+var aReportEnvelope = &anchor{shape: "report.envelope", fields: map[string]*anchor{
+	"result": aReportResult,
+}}
+
+// Bare result payloads (no envelope), keyed for root routing.
+var aConvertResult = &anchor{shape: "convert.result", fields: map[string]*anchor{
+	"concepts":   arr(aConvConcept),
+	"unresolved": arr(aUnresolvedC),
+	"verified":   aVerified,
+}}
+var aValidateResult = &anchor{shape: "validate.result", fields: map[string]*anchor{
+	"findings": arr(aFindings),
+}}
+var aReviewResult = &anchor{shape: "review.result", fields: map[string]*anchor{
+	"concepts":   arr(aReviewConcept),
+	"unresolved": arr(aUnresolvedR),
+
+	// --- EXEMPTIONS (fail-open surface; keep tiny, each justified) ---
+	// Free-form data maps whose KEYS are data, not a schema, so a fixed
+	// key-set contract does not apply and checking them would false-positive.
+	"by_type": exemptAnchor(), // {"Guide":2,"Note":1} — keys are concept-type names
+	"tiers":   exemptAnchor(), // {"unverified":3}     — keys are tier names
+}}
+var aLintResult = &anchor{shape: "lint.result", fields: map[string]*anchor{
+	"broken_links":      arr(aBrokenLinks),
+	"schema_violations": arr(aSchemaViol),
+}}
+var aEnrichResult = &anchor{shape: "enrich.result", fields: map[string]*anchor{
+	"files":    arr(aEnrichFiles),
+	"verified": aVerified,
+}}
+var aGraphRaw = &anchor{shape: "graph.raw", fields: map[string]*anchor{
+	"nodes": arr(aGraphNodes),
+	"edges": arr(aGraphEdges),
+}}
+var aInferResult = &anchor{shape: "infer.result", fields: map[string]*anchor{
+	"mappings": arr(aInferMap),
+}}
+
+// bareRoots are the candidate root shapes for a block that is not an envelope.
+// A block whose root matches none of these (zero key overlap) is UNANCHORED.
+var bareRoots = map[string]*anchor{
+	"convert.result":  aConvertResult,
+	"validate.result": aValidateResult,
+	"review.result":   aReviewResult,
+	"lint.result":     aLintResult,
+	"enrich.result":   aEnrichResult,
+	"infer.result":    aInferResult,
+	"graph.raw":       aGraphRaw,
+	"result.verified": aVerified, // the standalone .result.verified block in SKILL.md
+}
+
+// routeRoot picks the anchor tree for a block's root object. Envelopes are
+// identified structurally (binder/schema/result) and split by command value;
+// bare payloads are routed to the best key-overlap root. On no match it returns
+// nil with a reason, which the caller records as UNANCHORED — never silence.
+func routeRoot(root any, idx shapeIndex) (*anchor, string) {
+	m, ok := root.(map[string]any)
+	if !ok {
+		return nil, "root is not a JSON object"
+	}
+	keys := keySet(m)
+	if keys["binder"] && keys["schema"] && keys["result"] {
+		if cmd, _ := m["command"].(string); cmd == "config" {
+			return aConfigEnvelope, "config.envelope"
+		}
+		return aReportEnvelope, "report.envelope"
+	}
+	var best *anchor
+	bestName, bestScore := "", 0.0
+	for name, a := range bareRoots {
+		live, ok := idx[a.shape]
+		if !ok {
+			continue
+		}
+		if s := jaccard(keys, live); s > bestScore {
+			best, bestName, bestScore = a, name, s
+		}
+	}
+	if best == nil || bestScore <= 0 {
+		return nil, "unroutable (matches no known result shape)"
+	}
+	return best, bestName
+}
+
+// --- descent, findings, coverage --------------------------------------------
+
+// finding is one key-set mismatch between a documented object and its anchored
 // live shape.
 type finding struct {
 	file    string
 	line    int
 	path    string
 	shape   string
-	score   float64
 	missing []string // keys the binary emits but the doc omits (the #106 class)
 	extra   []string // keys the doc carries but the binary does not (retired keys)
 }
 
 func (f finding) String() string {
-	return fmt.Sprintf("%s:%d: %s vs live %s (key overlap %.2f): MISSING-FROM-DOC=%v NOT-IN-BINARY=%v",
-		f.file, f.line, f.path, f.shape, f.score, orDash(f.missing), orDash(f.extra))
+	return fmt.Sprintf("%s:%d: %s vs live %s: MISSING-FROM-DOC=%v NOT-IN-BINARY=%v",
+		f.file, f.line, f.path, f.shape, orDash(f.missing), orDash(f.extra))
 }
 
 func orDash(s []string) any {
@@ -190,73 +363,99 @@ func orDash(s []string) any {
 	return s
 }
 
-// matchThreshold is the minimum Jaccard key-overlap for a documented object to
-// be considered a candidate for a live shape. It must be <= 0.33 so the sharpest
-// real instance (config --json values missing 4 of 6 keys, overlap 2/6 = 0.33)
-// is still matched and flagged; below it, an object matching no live shape well
-// (a free-form data map such as review.result.by_type, or a partial excerpt) is
-// left alone rather than reported, so the gate has no false positives.
-const matchThreshold = 0.30
+// coverage records, for every object the gate walks, how it was accounted for:
+// checked against a shape, exempted, a structural node, or UNANCHORED. The
+// completeness gate fails on any UNANCHORED entry.
+type coverage struct {
+	file, path, status string
+	line               int
+}
 
-// scanText walks every nested object in every fenced json/jsonc block of text,
-// matches each to the closest live shape by key overlap, and reports key-set
-// inequality for confident matches. file is used only for diagnostics.
-func scanText(file, text string, idx shapeIndex) []finding {
-	var findings []finding
+func (c coverage) unanchored() bool { return strings.HasPrefix(c.status, "UNANCHORED") }
+
+// container reports whether x is worth descending into: an object, or an array
+// whose first element is a container. Scalars and scalar arrays are ignored.
+func container(x any) bool {
+	switch v := x.(type) {
+	case map[string]any:
+		return true
+	case []any:
+		return len(v) > 0 && container(v[0])
+	}
+	return false
+}
+
+// scanDoc routes and descends every fenced json/jsonc block of text, returning
+// key-set drift findings and a coverage entry for every object walked.
+func scanDoc(file, text string, idx shapeIndex) (findings []finding, cov []coverage) {
 	for _, blk := range extractBlocks(text) {
 		var root any
 		if err := json.Unmarshal([]byte(stripJSONC(blk.body)), &root); err != nil {
-			findings = append(findings, finding{
-				file: file, line: blk.line, path: "$", shape: "(unparseable)",
-				missing: []string{"block did not parse as JSON after jsonc strip: " + err.Error()},
-			})
+			findings = append(findings, finding{file: file, line: blk.line, path: "$", shape: "(unparseable)",
+				missing: []string{"block did not parse as JSON after jsonc strip: " + err.Error()}})
+			cov = append(cov, coverage{file: file, path: "$", status: "UNANCHORED (unparseable)", line: blk.line})
 			continue
 		}
-		walk(root, "$", func(path string, keys map[string]bool) {
-			if len(keys) == 0 {
-				return
-			}
-			best, score := "", 0.0
-			for name, live := range idx {
-				if j := jaccard(keys, live); j > score {
-					best, score = name, j
-				}
-			}
-			if best == "" || score < matchThreshold {
-				return // no confident match: free-form map or partial excerpt
-			}
-			missing := diff(idx[best], keys)
-			extra := diff(keys, idx[best])
-			if len(missing) > 0 || len(extra) > 0 {
-				findings = append(findings, finding{
-					file: file, line: blk.line, path: path, shape: best,
-					score: score, missing: missing, extra: extra,
-				})
-			}
-		})
+		a, status := routeRoot(root, idx)
+		if a == nil {
+			cov = append(cov, coverage{file: file, path: "$", status: "UNANCHORED (" + status + ")", line: blk.line})
+			continue
+		}
+		descend(root, "$", a, idx, file, blk.line, &findings, &cov)
 	}
-	return findings
+	return
 }
 
-// walk visits every object nested anywhere in o, calling fn with its path and
-// key set. Arrays are represented by their first element (shapes are uniform),
-// matching the audit instrument's behaviour.
-func walk(o any, path string, fn func(path string, keys map[string]bool)) {
+// descend walks o against anchor a, appending findings and coverage.
+func descend(o any, path string, a *anchor, idx shapeIndex, file string, line int, findings *[]finding, cov *[]coverage) {
 	switch v := o.(type) {
 	case map[string]any:
-		fn(path, keySet(v))
-		keys := make([]string, 0, len(v))
-		for k := range v {
-			keys = append(keys, k)
+		switch {
+		case a == nil:
+			*cov = append(*cov, coverage{file: file, path: path, status: "UNANCHORED", line: line})
+			return
+		case a.exempt:
+			*cov = append(*cov, coverage{file: file, path: path, status: "exempt", line: line})
+			return
+		case a.shape == "":
+			*cov = append(*cov, coverage{file: file, path: path, status: "structural", line: line})
+		default:
+			*cov = append(*cov, coverage{file: file, path: path, status: "checked:" + a.shape, line: line})
+			live, ok := idx[a.shape]
+			if !ok {
+				*findings = append(*findings, finding{file: file, line: line, path: path, shape: a.shape,
+					missing: []string{"live shape not indexed (test bug): " + a.shape}})
+			} else {
+				keys := keySet(v)
+				if missing, extra := diff(live, keys), diff(keys, live); len(missing) > 0 || len(extra) > 0 {
+					*findings = append(*findings, finding{file: file, line: line, path: path,
+						shape: a.shape, missing: missing, extra: extra})
+				}
+			}
 		}
-		sort.Strings(keys)
-		for _, k := range keys {
-			walk(v[k], path+"."+k, fn)
+		for _, k := range sortedKeys(v) {
+			child := v[k]
+			if !container(child) {
+				continue
+			}
+			var ca *anchor
+			if a.fields != nil {
+				ca = a.fields[k]
+			}
+			if ca == nil {
+				ca = a.elem // wildcard child of a value-map
+			}
+			descend(child, path+"."+k, ca, idx, file, line, findings, cov)
 		}
 	case []any:
-		if len(v) > 0 {
-			walk(v[0], path+"[]", fn)
+		if len(v) == 0 || !container(v[0]) {
+			return
 		}
+		var ea *anchor
+		if a != nil {
+			ea = a.elem
+		}
+		descend(v[0], path+"[]", ea, idx, file, line, findings, cov)
 	}
 }
 
@@ -364,7 +563,7 @@ func copyTree(t *testing.T, src, dst string) {
 
 // buildLiveIndex runs the documented commands over each plugin corpus and
 // registers the key set of every documented result shape. The registered names
-// mirror the shapes that actually appear as fenced blocks in the contract docs.
+// mirror the shapes the anchor trees reference.
 func buildLiveIndex(t *testing.T, repoRoot string) shapeIndex {
 	t.Helper()
 	// Deterministic, config-free environment: no global or repo-local config,
@@ -397,6 +596,7 @@ func buildLiveIndex(t *testing.T, repoRoot string) shapeIndex {
 		idx.registerElem("convert.result.concepts[]", cr["concepts"])
 		idx.registerElem("convert.result.unresolved[]", cr["unresolved"])
 		idx.register("convert.result.verified", cr["verified"])
+		idx.register("result.verified", cr["verified"]) // canonical; enrich's is identical
 
 		val := result(runJSON(t, "validate", bundle, "--json"))
 		idx.register("validate.result", val)
@@ -412,9 +612,12 @@ func buildLiveIndex(t *testing.T, repoRoot string) shapeIndex {
 		rev := result(runJSON(t, "review", bundle, "--json"))
 		idx.register("review.result", rev)
 		idx.registerElem("review.result.concepts[]", rev["concepts"])
+		idx.registerElem("review.result.unresolved[]", rev["unresolved"])
 
 		lin := result(runJSON(t, "lint", corpus, "--json"))
 		idx.register("lint.result", lin)
+		idx.registerElem("lint.result.broken_links[]", lin["broken_links"])
+		idx.registerElem("lint.result.schema_violations[]", lin["schema_violations"])
 
 		enr := result(runJSON(t, "enrich", corpus, "--dry-run", "--json"))
 		idx.register("enrich.result", enr)
@@ -503,36 +706,73 @@ func pluginMarkdown(t *testing.T, repoRoot string) []string {
 	return out
 }
 
-// --- the gate ---------------------------------------------------------------
-
-// TestPluginDocs_NoDrift is the gate. It fails when any fenced json/jsonc block
-// in plugins/**/*.md documents an object whose key set (at any nesting level)
-// disagrees with what the live binary emits for that shape. That is the #106
-// class: a documented example missing a key the binary emits (or carrying one it
-// retired). Regenerate by recapturing the drifted block from a live run against
-// the plugin's assets/sample-corpus/ — do NOT hand-edit the missing key in, that
-// is how the transcript drifted from the binary in the first place (#106, #112).
-func TestPluginDocs_NoDrift(t *testing.T) {
+// scanPlugins runs the gate over every plugin markdown file and returns all
+// findings and coverage entries.
+func scanPlugins(t *testing.T) ([]finding, []coverage) {
+	t.Helper()
 	root := repoRoot(t)
 	idx := buildLiveIndex(t, root)
-
-	var all []finding
+	var findings []finding
+	var cov []coverage
 	for _, f := range pluginMarkdown(t, root) {
 		b, err := os.ReadFile(f)
 		if err != nil {
 			t.Fatalf("read %s: %v", f, err)
 		}
 		rel, _ := filepath.Rel(root, f)
-		all = append(all, scanText(rel, string(b), idx)...)
+		fs, cv := scanDoc(rel, string(b), idx)
+		findings = append(findings, fs...)
+		cov = append(cov, cv...)
 	}
+	return findings, cov
+}
 
-	if len(all) > 0 {
+// --- the gates --------------------------------------------------------------
+
+// TestPluginDocs_NoDrift is the drift gate. It fails when any fenced json/jsonc
+// block in plugins/**/*.md documents an object whose key set (at any anchored
+// nesting level) disagrees with what the live binary emits for that shape. That
+// is the #106 class: a documented example missing a key the binary emits (or
+// carrying one it retired). Regenerate by recapturing the drifted block from a
+// live run against the plugin's assets/sample-corpus/ — do NOT hand-edit the
+// missing key in, that is how the transcript drifted in the first place (#106,
+// #112).
+func TestPluginDocs_NoDrift(t *testing.T) {
+	findings, _ := scanPlugins(t)
+	if len(findings) > 0 {
 		var msg strings.Builder
 		msg.WriteString("plugin doc JSON has drifted from live binder output.\n")
 		msg.WriteString("Recapture the affected block from a live run against the plugin's\n")
 		msg.WriteString("assets/sample-corpus/ (do NOT hand-edit the key in). Findings:\n")
-		for _, f := range all {
+		for _, f := range findings {
 			msg.WriteString("  " + f.String() + "\n")
+		}
+		t.Fatal(msg.String())
+	}
+}
+
+// TestPluginDocs_EveryBlockAnchored is the completeness gate. Path-anchoring
+// only checks objects it can place; an object at a path no anchor describes
+// would go unchecked forever with nothing saying so. This fails if any object in
+// any plugin JSON block is neither anchored to a live shape nor explicitly
+// exempted — so a newly added transcript block cannot slip in unchecked, and the
+// only way to silence an object is to add it to the (reviewed, commented)
+// exemption list in the anchor trees above.
+func TestPluginDocs_EveryBlockAnchored(t *testing.T) {
+	_, cov := scanPlugins(t)
+	var bad []coverage
+	for _, c := range cov {
+		if c.unanchored() {
+			bad = append(bad, c)
+		}
+	}
+	if len(bad) > 0 {
+		var msg strings.Builder
+		msg.WriteString("plugin doc JSON has objects the gate cannot verify (not anchored, not exempt).\n")
+		msg.WriteString("Add an anchor for the shape, or — only if it is genuinely free-form DATA —\n")
+		msg.WriteString("an explicit, commented exemption. Unanchored:\n")
+		for _, c := range bad {
+			msg.WriteString(fmt.Sprintf("  %s:%d: %s [%s]\n", c.file, c.line, c.path, c.status))
 		}
 		t.Fatal(msg.String())
 	}
