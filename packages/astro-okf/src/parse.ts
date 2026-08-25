@@ -26,25 +26,54 @@ export interface SplitFile {
 
 const FRONTMATTER_RE = /^﻿?---\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/;
 
+// A document that opens a frontmatter fence: its first line is exactly `---`
+// (optionally preceded by a BOM). Used only to tell "no frontmatter at all"
+// apart from "a fence that was opened but never closed".
+const OPENS_FENCE_RE = /^﻿?---(?:\r?\n|$)/;
+
 /**
  * Splits a markdown file into frontmatter data and body.
  *
  * A file with no leading `---` block is returned verbatim as the body with an
  * empty `data` — reserved files such as a per-directory `index.md` carry no
  * frontmatter at all (spec §8), so "no frontmatter" is normal, not an error.
+ *
+ * Malformed frontmatter, however, is an error, not "empty frontmatter". This
+ * throws — matching binder's Go codec (`internal/okf/native`) and its wording —
+ * for an unterminated fence, a top level that is a sequence, and a top level
+ * that is a scalar (issue #164). Presenting any of these as `data: {}` would let
+ * a document nobody parsed be rendered with derived facts (`_okf.stale`,
+ * `_okf.tier`) as if its frontmatter had been read and found empty.
  */
 export function splitFrontmatter(text: string): SplitFile {
   const match = FRONTMATTER_RE.exec(text);
   if (!match) {
+    // No closing fence was found. If the document nonetheless opened a fence,
+    // the block is unterminated — an error, not "no frontmatter" (the Go codec
+    // rejects it as "invalid frontmatter: unterminated '---' block").
+    if (OPENS_FENCE_RE.test(text)) {
+      throw new Error("invalid frontmatter: unterminated '---' block");
+    }
     return { data: {}, body: stripBOM(text), hasFrontmatter: false };
   }
   const raw = match[1] ?? "";
   const parsed = raw.trim() === "" ? {} : YAML.parse(raw);
-  const data =
-    parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>)
-      : {};
-  return { data, body: text.slice(match[0].length), hasFrontmatter: true };
+  // A comment-only or empty block is legitimately empty frontmatter: the Go
+  // codec yields an empty map here, not an error.
+  if (parsed === null || parsed === undefined) {
+    return { data: {}, body: text.slice(match[0].length), hasFrontmatter: true };
+  }
+  // A top level that is not a mapping — a sequence or a scalar — is invalid
+  // frontmatter. The Go codec errors ("invalid frontmatter: expected a mapping
+  // at the top level") rather than silently collapsing it to `{}`.
+  if (typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("invalid frontmatter: expected a mapping at the top level");
+  }
+  return {
+    data: parsed as Record<string, unknown>,
+    body: text.slice(match[0].length),
+    hasFrontmatter: true,
+  };
 }
 
 function stripBOM(s: string): string {

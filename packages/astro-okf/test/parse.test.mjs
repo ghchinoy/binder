@@ -4,7 +4,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { normalizeActorstamp, normalizeActorstamps, splitFrontmatter } from "../dist/index.js";
+import {
+  deriveTier,
+  normalizeActorstamp,
+  normalizeActorstamps,
+  splitFrontmatter,
+} from "../dist/index.js";
 
 test("splits a frontmatter block from the body", () => {
   const { data, body, hasFrontmatter } = splitFrontmatter(
@@ -21,6 +26,54 @@ test("a file with no frontmatter is all body, and that is not an error", () => {
   assert.equal(hasFrontmatter, false);
   assert.deepEqual(data, {});
   assert.equal(body, "# Concepts\n\n* [a](a.md)\n");
+});
+
+// Issue #164 — malformed frontmatter must fail closed, matching binder's Go
+// codec (internal/okf/native) rather than being presented as empty frontmatter
+// (`data: {}`). Before the fix these three cases returned quietly and let a
+// document nobody parsed reach Zod as `{}`, so a maintainer saw "type Required"
+// instead of the real defect and a consumer with a permissive schema got
+// derived trust facts about an unread document. Each of these three throws only
+// after the fix — they are the negative fixtures.
+
+test("#164 case C: an unterminated frontmatter fence throws, not silently treated as no-frontmatter", () => {
+  // The Go codec: "invalid frontmatter: unterminated '---' block".
+  assert.throws(
+    () => splitFrontmatter("---\ntype: Note\ntitle: Hello\n\n# Body with no closing fence\n"),
+    /unterminated '---' block/,
+  );
+});
+
+test("#164 case D: a top-level YAML sequence throws, not silently emptied", () => {
+  // The Go codec: "invalid frontmatter: expected a mapping at the top level".
+  assert.throws(
+    () => splitFrontmatter("---\n- one\n- two\n---\n\n# Body\n"),
+    /expected a mapping at the top level/,
+  );
+});
+
+test("#164 case E: a top-level YAML scalar throws, not silently emptied", () => {
+  assert.throws(
+    () => splitFrontmatter("---\njust a bare string\n---\n\n# Body\n"),
+    /expected a mapping at the top level/,
+  );
+});
+
+test("#164 case A (positive control): valid human-reviewed frontmatter still parses and derives human-reviewed", () => {
+  const { data, hasFrontmatter } = splitFrontmatter(
+    "---\ntype: Note\nverified:\n  - by: human:alice\n---\n\n# Body\n",
+  );
+  assert.equal(hasFrontmatter, true);
+  assert.equal(data.type, "Note");
+  const tier = deriveTier(normalizeActorstamps(data.verified));
+  assert.equal(tier, "human-reviewed");
+});
+
+test("a comment-only frontmatter block is legitimately empty, not an error", () => {
+  // The Go codec yields an empty map here (doc has no content), not an error.
+  const { data, hasFrontmatter } = splitFrontmatter("---\n# just a comment\n---\n\n# Body\n");
+  assert.equal(hasFrontmatter, true);
+  assert.deepEqual(data, {});
 });
 
 test("a --- horizontal rule inside the body is not mistaken for frontmatter", () => {
