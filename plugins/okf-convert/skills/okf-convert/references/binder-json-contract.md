@@ -2,11 +2,11 @@
 
 Load this when you need the exact shape of what a binder command emits, so you
 **parse structured output with `jq`** and never scrape prose. Every shape below
-was captured from real `binder/0.5.1` output. These transcripts are now
-mechanically checked against the live binary by the `internal/plugindocs` drift
-gate (key-set equality at every nesting level), so a checked-in block can no
-longer silently drift from what the binary emits — regenerate one by recapturing
-it, never by hand (issue #106).
+was captured from real `binder/0.5.1` output. The `internal/plugindocs` drift
+gate mechanically checks each block's **shape** — its key set at every nesting
+level — against the live binary, but not its **values**: version literals like
+the `binder` field above are not verified and can go stale (tracked in #169), so
+regenerate a block by recapturing it rather than hand-editing (issue #106).
 
 ## The report envelope (`binder.report/v1`)
 
