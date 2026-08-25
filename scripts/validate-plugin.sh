@@ -84,6 +84,13 @@ for skill_md in plugins/*/skills/*/SKILL.md; do
   # The fence/mapping semantics below mirror the Go codec's splitFrontmatter +
   # parseFrontmatterNode (internal/okf/native/native.go) so binder and this gate
   # agree on what "valid frontmatter" means and use the same wording.
+  #
+  # Only stdout is captured here, and only stdout carries the JSON contract the
+  # shell parses below. Python's stderr is routed to a temp file (NOT merged into
+  # stdout, which would corrupt that JSON stream) and surfaced on failure, so a
+  # future crash shows its traceback instead of a bare "python execution failed"
+  # (issue #89, round 3).
+  py_stderr="$(mktemp)"
   read_res="$(SKILL_MD="$skill_md" python3 -c "
 import json, sys, os, re
 
@@ -137,13 +144,22 @@ desc = as_str(data.get('description', ''))
 lic = as_str(data.get('license', ''))
 
 print(json.dumps({'name': name, 'desc': desc, 'desc_len': len(desc), 'license': lic}))
-" 2>/dev/null || echo '{"error": "python execution failed"}')"
+" 2>"$py_stderr" || echo '{"error": "python execution failed"}')"
 
   has_err="$(echo "$read_res" | python3 -c "import json,sys; print(json.load(sys.stdin).get('error',''))" 2>/dev/null || true)"
   if [ -n "$has_err" ]; then
     err "Skill '$expected_name' at '$skill_md': $has_err"
+    # Surface any interpreter diagnostics (e.g. a traceback) captured on the
+    # python process's stderr, so a crash is debuggable instead of opaque. Goes
+    # to stderr to keep it clear of anything parsed as data.
+    if [ -s "$py_stderr" ]; then
+      echo "      python stderr (diagnostics):" >&2
+      sed 's/^/        /' "$py_stderr" >&2
+    fi
+    rm -f "$py_stderr"
     continue
   fi
+  rm -f "$py_stderr"
 
   name_in_fm="$(echo "$read_res" | python3 -c "import json,sys; print(json.load(sys.stdin).get('name',''))" 2>/dev/null || true)"
   desc_len="$(echo "$read_res" | python3 -c "import json,sys; print(json.load(sys.stdin).get('desc_len',0))" 2>/dev/null || echo 0)"
