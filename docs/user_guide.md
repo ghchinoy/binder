@@ -1152,8 +1152,14 @@ toward a frontmatter type majority and is never listed in a mapping's
 `sample_files`, because `infer` read no authored value from it. Each such file
 is instead disclosed in the report's `warnings` array. Its filename still feeds
 the Tier-2 filename/heading heuristics **only when its directory also holds at
-least one file that did parse** — a directory whose files are *all* unparseable
-produces no mapping at all (there was no parseable file to anchor one).
+least one file that did parse** — the deterministic tiers (folder, pattern,
+frontmatter) only propose for a directory that contributed at least one parsed
+file, so on those tiers a directory whose files are *all* unparseable produces no
+mapping at all. The opt-in `--gemini` tier is the exception: directory names are
+handed to Gemini regardless of whether any file parsed, so it may still propose a
+type for an all-unparseable directory — that mapping carries `source: gemini` and
+an empty `sample_files`, and the per-file `warnings` persist alongside it. Either
+way, no unparsed file is ever cited in `sample_files`.
 
 By default `infer` still exits 0. Under `--strict`, however, these warnings gate
 like any other: running `binder infer --strict` over a corpus that contains a

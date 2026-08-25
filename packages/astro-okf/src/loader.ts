@@ -121,10 +121,8 @@ export function okfLoader(options: OkfLoaderOptions): Loader {
           // file here — a bundle load that aborts mid-way without saying WHICH
           // file is as unhelpful as the "type Required" diagnostic N-1 set out
           // to replace.
-          throw new Error(
-            `astro-okf: ${id}.md: ${(err as Error).message}`,
-            { cause: err },
-          );
+          const detail = err instanceof Error ? err.message : String(err);
+          throw new Error(`astro-okf: ${id}.md: ${detail}`, { cause: err });
         }
 
         const verified = normalizeActorstamps(frontmatter.verified);

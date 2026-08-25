@@ -39,11 +39,15 @@ const OPENS_FENCE_RE = /^﻿?---(?:\r?\n|$)/;
  * frontmatter at all (spec §8), so "no frontmatter" is normal, not an error.
  *
  * Malformed frontmatter, however, is an error, not "empty frontmatter". This
- * throws — matching binder's Go codec (`internal/okf/native`) and its wording —
- * for an unterminated fence, a top level that is a sequence, and a top level
- * that is a scalar (issue #164). Presenting any of these as `data: {}` would let
- * a document nobody parsed be rendered with derived facts (`_okf.stale`,
- * `_okf.tier`) as if its frontmatter had been read and found empty.
+ * throws — matching binder's Go codec (`internal/okf/native`, the source of
+ * truth for this wording) — for an unterminated fence, a top level that is a
+ * sequence, and a top level that is a scalar (issue #164). Presenting any of
+ * these as `data: {}` would let a document nobody parsed be rendered with
+ * derived facts (`_okf.stale`, `_okf.tier`) as if its frontmatter had been read
+ * and found empty.
+ *
+ * The error strings below are hand-copied from that Go codec and are NOT
+ * enforced against it by any automated cross-check — see #171.
  */
 export function splitFrontmatter(text: string): SplitFile {
   const match = FRONTMATTER_RE.exec(text);
