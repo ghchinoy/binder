@@ -29,7 +29,10 @@ fmt-check:
 	else echo "gofmt: clean"; fi
 
 # Verification gate: everything that needs only the Go toolchain (deps pinned
-# via go.mod/go.sum, fetched from the module proxy).
+# via go.mod/go.sum, fetched from the module proxy). `test` (go test ./...)
+# includes the two derived-doc drift gates: internal/gendocs (byte-equality for
+# docs/commands/) and internal/plugindocs (key-set equality for the plugin skill
+# JSON transcripts under plugins/, issue #106).
 check: fmt-check vet test
 
 # Regenerate the CLI command reference (docs/commands/) from binder's own Cobra
