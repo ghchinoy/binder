@@ -165,6 +165,51 @@ func TestProjectNoDanglingForeignKey(t *testing.T) {
 	}
 }
 
+// TestIndexRootVersionNotAdoptedFromInvalidFrontmatter is the #163 negative
+// fixture at the CLI: an index.md whose frontmatter is invalid YAML must not have
+// its bogus okf_version written back on regeneration, and the drop must be
+// disclosed on stderr.
+func TestIndexRootVersionNotAdoptedFromInvalidFrontmatter(t *testing.T) {
+	bundle := writeTree(t, map[string]string{
+		"good.md":  "---\ntype: guide\ntitle: Good\n---\n\n# Good\n",
+		"index.md": "---\ntitle: Index: with a colon\nokf_version: v0.9-bogus\n---\n\n# Index\n",
+	})
+	_, stderr, code := runCLISplit(t, "index", bundle)
+	if code != clijson.ExitSuccess {
+		t.Fatalf("index exit = %d, want 0", code)
+	}
+	got, err := os.ReadFile(filepath.Join(bundle, "index.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(got), "v0.9-bogus") {
+		t.Fatalf("okf_version v0.9-bogus was adopted from unparseable frontmatter (#163):\n%s", got)
+	}
+	if !strings.Contains(stderr, "okf_version not adopted") {
+		t.Fatalf("index must disclose that the root version was not adopted (#163); stderr:\n%s", stderr)
+	}
+}
+
+// TestIndexRootVersionNotAdoptedFromBody is the second #163 CLI fixture:
+// okf_version appearing only in the body (inside a fenced code block) must never
+// be scraped and written back.
+func TestIndexRootVersionNotAdoptedFromBody(t *testing.T) {
+	bundle := writeTree(t, map[string]string{
+		"good.md":  "---\ntype: guide\ntitle: Good\n---\n\n# Good\n",
+		"index.md": "---\ntype: index\n---\n\n# Index\n\n```yaml\nokf_version: v9.9-from-body-codeblock\n```\n",
+	})
+	if _, code := runCLI(t, "index", bundle); code != clijson.ExitSuccess {
+		t.Fatalf("index exit = %d, want 0", code)
+	}
+	got, err := os.ReadFile(filepath.Join(bundle, "index.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(got), "v9.9-from-body-codeblock") {
+		t.Fatalf("okf_version was scraped from the body/code block (#163):\n%s", got)
+	}
+}
+
 // csvColumn reads a header CSV and returns the set of values under the named
 // column. It is a minimal reader adequate for the credential-free DDL row files
 // (no embedded newlines/quotes in these fixtures).

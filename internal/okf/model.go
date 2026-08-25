@@ -84,6 +84,13 @@ type Bundle struct {
 	// over a set that excludes it (never-reject WITH disclosure, spec §11 / #161).
 	// Empty (nil) when every concept parsed.
 	Unparsed []UnparsedConcept
+
+	// RootVersionUnparsed is set when the bundle-root index.md exists but its
+	// frontmatter could not be parsed as YAML, so its declared okf_version was NOT
+	// adopted (OKFVersion keeps the default). It is a disclosure, not a rejection:
+	// the loader never scrapes a version out of unparseable or body text (#163).
+	// nil when the root index.md is absent, or parsed cleanly.
+	RootVersionUnparsed *UnparsedConcept
 }
 
 // UnparsedConcept records a file whose frontmatter could not be parsed, so the

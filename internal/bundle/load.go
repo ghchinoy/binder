@@ -63,7 +63,7 @@ func Load(root string, codec okf.Codec) (*okf.Bundle, error) {
 	for _, rel := range rels {
 		if codec.IsReservedFile(rel) {
 			if rel == "index.md" {
-				b.OKFVersion = rootOKFVersion(filepath.Join(root, "index.md"), b.OKFVersion)
+				b.OKFVersion = rootOKFVersion(codec, filepath.Join(root, "index.md"), b.OKFVersion, b)
 			}
 			continue
 		}
@@ -106,23 +106,32 @@ func recoveredConcept(codec okf.Codec, rel string, raw []byte) *okf.Concept {
 	}
 }
 
-// rootOKFVersion reads okf_version from the bundle-root index.md frontmatter if
-// present (spec §12), falling back to def.
-func rootOKFVersion(path string, def okf.SpecVersion) okf.SpecVersion {
+// rootOKFVersion reads okf_version from the bundle-root index.md FRONTMATTER
+// (spec §12), falling back to def. It parses the frontmatter with the codec
+// rather than scraping lines: a version is adopted ONLY from a value that lives
+// in a frontmatter block that actually parses as YAML. An index.md whose
+// frontmatter is invalid YAML, or one where `okf_version:` appears only in the
+// body (including inside a fenced code block), never contributes a version — the
+// drop is disclosed on the bundle instead of silently adopting unchecked input
+// (#163).
+func rootOKFVersion(codec okf.Codec, path string, def okf.SpecVersion, b *okf.Bundle) okf.SpecVersion {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return def
 	}
-	lines := strings.Split(strings.ReplaceAll(string(raw), "\r\n", "\n"), "\n")
-	for _, line := range lines {
-		t := strings.TrimSpace(line)
-		if strings.HasPrefix(t, "okf_version:") {
-			v := strings.TrimSpace(strings.TrimPrefix(t, "okf_version:"))
-			v = strings.Trim(v, `"'`)
-			if v != "" {
-				return okf.SpecVersion(v)
-			}
-		}
+	c, err := codec.ParseConcept("index.md", raw)
+	if err != nil {
+		// The root index.md frontmatter did not parse. Do NOT adopt a version from
+		// unchecked bytes; disclose that the declared version could not be read.
+		b.RootVersionUnparsed = &okf.UnparsedConcept{RelPath: "index.md", Err: err.Error()}
+		return def
+	}
+	v, ok := c.Frontmatter.Get("okf_version")
+	if !ok {
+		return def
+	}
+	if s := strings.TrimSpace(okf.AsString(v)); s != "" {
+		return okf.SpecVersion(s)
 	}
 	return def
 }

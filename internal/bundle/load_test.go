@@ -126,6 +126,79 @@ func TestLoadRecoversAndDisclosesUnparseableConcept(t *testing.T) {
 	}
 }
 
+// TestRootVersionNotAdoptedFromInvalidFrontmatter is the #163 negative fixture:
+// an index.md whose frontmatter is invalid YAML must NOT contribute an
+// okf_version — the pre-fix line-prefix scrape adopted "v0.9-bogus" from a
+// document it never parsed. The default version stands and the drop is disclosed.
+func TestRootVersionNotAdoptedFromInvalidFrontmatter(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "good.md", "---\ntype: Note\ntitle: Good\n---\n# Good\n")
+	// Invalid YAML frontmatter (unquoted colon) carrying a bogus version.
+	write(t, root, "index.md", "---\ntitle: Index: with a colon\nokf_version: v0.9-bogus\n---\n\n# Index\n")
+
+	b, err := bundle.Load(root, native.New())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b.OKFVersion == "v0.9-bogus" {
+		t.Errorf("okf_version was adopted from unparseable frontmatter (#163); want the default %q", okf.DefaultSpecVersion)
+	}
+	if b.OKFVersion != okf.DefaultSpecVersion {
+		t.Errorf("OKFVersion = %q, want default %q", b.OKFVersion, okf.DefaultSpecVersion)
+	}
+	if b.RootVersionUnparsed == nil {
+		t.Fatalf("RootVersionUnparsed must disclose that index.md frontmatter did not parse")
+	}
+	if b.RootVersionUnparsed.RelPath != "index.md" || b.RootVersionUnparsed.Err == "" {
+		t.Errorf("RootVersionUnparsed = %+v, want index.md with a parse error", b.RootVersionUnparsed)
+	}
+}
+
+// TestRootVersionNotAdoptedFromBody is the second #163 negative fixture: an
+// okf_version that appears only in the BODY, including inside a fenced code
+// block, must NOT be adopted — the pre-fix scrape matched any line prefix
+// anywhere in the file. Here the frontmatter parses cleanly and declares no
+// version, so the default stands and there is no disclosure (nothing failed).
+func TestRootVersionNotAdoptedFromBody(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "good.md", "---\ntype: Note\ntitle: Good\n---\n# Good\n")
+	write(t, root, "index.md", "---\ntype: index\n---\n\n# Index\n\n```yaml\nokf_version: v9.9-from-body-codeblock\n```\n")
+
+	b, err := bundle.Load(root, native.New())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(b.OKFVersion) == "v9.9-from-body-codeblock" {
+		t.Errorf("okf_version was scraped from the body/code block (#163); want the default %q", okf.DefaultSpecVersion)
+	}
+	if b.OKFVersion != okf.DefaultSpecVersion {
+		t.Errorf("OKFVersion = %q, want default %q", b.OKFVersion, okf.DefaultSpecVersion)
+	}
+	if b.RootVersionUnparsed != nil {
+		t.Errorf("frontmatter parsed cleanly; RootVersionUnparsed must be nil, got %+v", b.RootVersionUnparsed)
+	}
+}
+
+// TestRootVersionAdoptedFromValidFrontmatter guards the happy path: a version
+// declared in frontmatter that parses is still adopted (the fix must not stop
+// reading legitimately-declared versions).
+func TestRootVersionAdoptedFromValidFrontmatter(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "good.md", "---\ntype: Note\ntitle: Good\n---\n# Good\n")
+	write(t, root, "index.md", "---\ntype: index\nokf_version: \"0.2\"\n---\n\n# Index\n")
+
+	b, err := bundle.Load(root, native.New())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b.OKFVersion != "0.2" {
+		t.Errorf("OKFVersion = %q, want 0.2 (declared in valid frontmatter)", b.OKFVersion)
+	}
+	if b.RootVersionUnparsed != nil {
+		t.Errorf("RootVersionUnparsed must be nil when frontmatter parses, got %+v", b.RootVersionUnparsed)
+	}
+}
+
 func TestLoadErrorsOnMissingRoot(t *testing.T) {
 	if _, err := bundle.Load(filepath.Join(t.TempDir(), "nope"), native.New()); err == nil {
 		t.Fatal("expected error for missing root")
