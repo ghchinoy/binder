@@ -263,8 +263,9 @@ optional fields are **legal** — fix only what is genuinely wrong. Decision tab
   what it will stamp, and `verified` also appears in that file's `added`:
 
   ```json
-  { "actor": "human:you", "source": "config", "num_stamped": 3,
-    "skipped": [], "num_skipped": 0 }
+  { "actor": "human:you", "source": "config",
+    "stamped": ["README.md", "notes/scratch.md", "topics/architecture.md"],
+    "num_stamped": 3, "skipped": [], "num_skipped": 0 }
   ```
 
   Add `--verified-by ""` to **suppress** a global default you cannot vouch
