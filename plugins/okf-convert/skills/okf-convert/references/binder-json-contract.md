@@ -11,7 +11,7 @@ result in the same envelope:
 
 ```json
 {
-  "binder":  "binder/0.3.1",
+  "binder":  "binder/0.5.1",
   "command": "convert",
   "schema":  "binder.report/v1",
   "result":  { }
@@ -212,7 +212,7 @@ binder graph <bundle> --json | jq '{n: (.nodes|length), e: (.edges|length)}'
 
 ```jsonc
 {
-  "binder": "binder/0.3.1", "command": "config", "schema": "binder.config/v1",
+  "binder": "binder/0.5.1", "command": "config", "schema": "binder.config/v1",
   "result": {
     "config_file": "/home/u/.config/binder/config.yaml",   // "" when none
     "values": {
