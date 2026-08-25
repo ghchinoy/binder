@@ -1150,9 +1150,15 @@ A source file whose frontmatter does not parse (invalid YAML, or an
 unterminated `---` fence) is **not** read for type evidence: it never counts
 toward a frontmatter type majority and is never listed in a mapping's
 `sample_files`, because `infer` read no authored value from it. Each such file
-is instead disclosed in the report's `warnings` array (its filename remains
-available for the filename/heading heuristics of Tier 2). `infer` still exits 0
-by default; under `--strict` these warnings gate like any other.
+is instead disclosed in the report's `warnings` array. Its filename still feeds
+the Tier-2 filename/heading heuristics **only when its directory also holds at
+least one file that did parse** — a directory whose files are *all* unparseable
+produces no mapping at all (there was no parseable file to anchor one).
+
+By default `infer` still exits 0. Under `--strict`, however, these warnings gate
+like any other: running `binder infer --strict` over a corpus that contains a
+file with unparseable frontmatter now exits 1 where a clean corpus exits 0.
+Plain `binder infer` and `binder infer --json` are unaffected.
 
 `infer` is strictly **proposal-only** and writes nothing to disk. Review the
 proposal, then apply it with `convert` or `enrich`:
