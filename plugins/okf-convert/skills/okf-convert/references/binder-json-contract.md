@@ -112,7 +112,8 @@ binder validate <bundle> --json | jq -c '.result | {findings, reserved_structure
   "unresolved": [ { "from": "docs/guide", "raw_target": "/docs/nope.md", "text": "missing" } ],
   "unparsed_frontmatter": [],
   "concepts": [ { "id": "docs/guide", "type": "Guide", "tier": "unverified",
-                  "stale": false, "attested": false, "orphan": true } ]
+                  "stale": false, "attested": false, "orphan": true,
+                  "entrypoint": false } ]              // entrypoint: reachable root vs orphan
 }
 ```
 
