@@ -122,7 +122,7 @@ reject the flag.) Of those, **six** print the deterministic `binder.report/v1`
 envelope — `convert`, `enrich`, `validate`, `review`, `lint`, and `infer`:
 
 ```json
-{ "binder": "binder/0.3.1", "command": "convert",
+{ "binder": "binder/0.5.1", "command": "convert",
   "schema": "binder.report/v1", "result": { } }
 ```
 
@@ -263,8 +263,9 @@ optional fields are **legal** — fix only what is genuinely wrong. Decision tab
   what it will stamp, and `verified` also appears in that file's `added`:
 
   ```json
-  { "actor": "human:you", "source": "config", "num_stamped": 3,
-    "skipped": [], "num_skipped": 0 }
+  { "actor": "human:you", "source": "config",
+    "stamped": ["README.md", "notes/scratch.md", "topics/architecture.md"],
+    "num_stamped": 3, "skipped": [], "num_skipped": 0 }
   ```
 
   Add `--verified-by ""` to **suppress** a global default you cannot vouch

@@ -2,7 +2,18 @@
 
 Load this when you need the exact shape of what a binder command emits, so you
 **parse structured output with `jq`** and never scrape prose. Every shape below
-was taken from real `binder/0.3.1` output.
+was captured from real `binder/0.5.1` output. The `internal/plugindocs` drift
+gate mechanically checks each block's **shape** — its key set at every nesting
+level — against the live binary. It routes each block's **root** to a live
+shape by key overlap (envelopes are keyed on their `command`/`schema`), then
+matches every **nested** object — including each element of an array — to its
+live shape by structural position, not key similarity, so a nested object stays
+checked however far it has drifted. A root it cannot route, or a nested object
+at a path no live shape describes, is reported UNANCHORED, never silently
+skipped. It does **not** check **values**: version literals like the `binder`
+field below are not verified and can go stale (tracked in #169). Free-form data
+maps whose keys are data, not schema (`by_type`, `tiers`), are exempt.
+Regenerate a block by recapturing it rather than hand-editing (issue #106).
 
 ## The report envelope (`binder.report/v1`)
 
@@ -11,7 +22,7 @@ result in the same envelope:
 
 ```json
 {
-  "binder":  "binder/0.3.1",
+  "binder":  "binder/0.5.1",
   "command": "convert",
   "schema":  "binder.report/v1",
   "result":  { }
@@ -112,7 +123,8 @@ binder validate <bundle> --json | jq -c '.result | {findings, reserved_structure
   "unresolved": [ { "from": "docs/guide", "raw_target": "/docs/nope.md", "text": "missing" } ],
   "unparsed_frontmatter": [],
   "concepts": [ { "id": "docs/guide", "type": "Guide", "tier": "unverified",
-                  "stale": false, "attested": false, "orphan": true } ]
+                  "stale": false, "attested": false, "orphan": true,
+                  "entrypoint": false } ]              // entrypoint: reachable root vs orphan
 }
 ```
 
@@ -211,12 +223,16 @@ binder graph <bundle> --json | jq '{n: (.nodes|length), e: (.edges|length)}'
 
 ```jsonc
 {
-  "binder": "binder/0.3.1", "command": "config", "schema": "binder.config/v1",
+  "binder": "binder/0.5.1", "command": "config", "schema": "binder.config/v1",
   "result": {
     "config_file": "/home/u/.config/binder/config.yaml",   // "" when none
     "values": {
-      "default_type": { "value": "Note",        "source": "default" },
-      "verified_by":  { "value": "human:alice", "source": "file" }
+      "default_type":    { "value": "Note",                  "source": "default" },
+      "gemini_backend":  { "value": "auto",                  "source": "default" },
+      "gemini_location": { "value": "global",                "source": "default" },
+      "gemini_model":    { "value": "gemini-3.5-flash-lite", "source": "default" },
+      "gemini_project":  { "value": "",                      "source": "default" },
+      "verified_by":     { "value": "human:alice",           "source": "file"    }
     }
   }
 }
