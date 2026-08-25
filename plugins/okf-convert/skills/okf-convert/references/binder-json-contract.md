@@ -215,8 +215,12 @@ binder graph <bundle> --json | jq '{n: (.nodes|length), e: (.edges|length)}'
   "result": {
     "config_file": "/home/u/.config/binder/config.yaml",   // "" when none
     "values": {
-      "default_type": { "value": "Note",        "source": "default" },
-      "verified_by":  { "value": "human:alice", "source": "file" }
+      "default_type":    { "value": "Note",                  "source": "default" },
+      "gemini_backend":  { "value": "auto",                  "source": "default" },
+      "gemini_location": { "value": "global",                "source": "default" },
+      "gemini_model":    { "value": "gemini-3.5-flash-lite", "source": "default" },
+      "gemini_project":  { "value": "",                      "source": "default" },
+      "verified_by":     { "value": "human:alice",           "source": "file"    }
     }
   }
 }
