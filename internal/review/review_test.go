@@ -136,6 +136,18 @@ func TestReviewReportsResolvedButNonexistentTarget(t *testing.T) {
 }
 
 func TestReviewDetectsRecoveredFrontmatterBody(t *testing.T) {
+	// NOTE (#161): this test exercises ONLY the persisted-marker source of the
+	// unparsed_frontmatter disclosure. It is deliberately BLIND to the I-2 defect
+	// it superficially resembles: it builds concepts in memory and stamps
+	// okf.MarkRecovered by hand, so it never puts a genuinely-unparseable file on
+	// disk and never goes through bundle.Load — the exact path where the defect
+	// lived (Load dropped the file, so it never reached review at all). Keep this
+	// test for what it does prove (marker-driven reporting is uniform and does not
+	// false-positive on a thematic-break body), but the end-to-end regression is
+	// covered by TestReviewDiscloseUnparsedFromBundleField below and by the
+	// cmd-level TestReviewStrictGatesOnUnparseableConcept — do NOT trust this one
+	// to guard the load-time drop.
+
 	// Recovery is reported from the persisted marker `binder convert` stamps, NOT
 	// from body shape — so it is uniform across recovery kinds and never fires on a
 	// clean file whose body merely opens with a "---" rule and a colon-bearing line.
@@ -163,6 +175,47 @@ func TestReviewDetectsRecoveredFrontmatterBody(t *testing.T) {
 	if len(r.UnparsedFrontmatter) != 2 ||
 		r.UnparsedFrontmatter[0] != "bad" || r.UnparsedFrontmatter[1] != "unterm" {
 		t.Errorf("UnparsedFrontmatter = %v, want [bad unterm] (marker-driven, no false positive)", r.UnparsedFrontmatter)
+	}
+}
+
+// TestReviewDiscloseUnparsedFromBundleField is the review-side #161 regression
+// the blind test above misses: it proves review reports a file the LOADER
+// recorded as unparsed (Bundle.Unparsed) even when the concept carries NO
+// persisted recovery marker. This is the genuinely-unparseable-file case — the
+// file that used to be dropped before it could ever reach review. Before the fix,
+// UnparsedFrontmatter was populated ONLY from the marker, so a bundle with an
+// Unparsed entry but no marker reported an empty list; this test fails then and
+// passes now.
+func TestReviewDiscloseUnparsedFromBundleField(t *testing.T) {
+	// A recovered concept as the loader produces it: no marker set here, to prove
+	// the disclosure does not depend on the marker being present.
+	rec := concept("bad", "", "")
+	rec.Frontmatter = okf.NewOrderedMap() // deliberately unmarked
+	b := &okf.Bundle{
+		Root:     "/b",
+		Concepts: []*okf.Concept{rec},
+		Unparsed: []okf.UnparsedConcept{{ID: "bad", RelPath: "bad.md", Err: "invalid frontmatter"}},
+	}
+	r := Review(b, "2026-08-15", nil)
+	if len(r.UnparsedFrontmatter) != 1 || r.UnparsedFrontmatter[0] != "bad" {
+		t.Fatalf("UnparsedFrontmatter = %v, want [bad] (from Bundle.Unparsed, marker-independent)", r.UnparsedFrontmatter)
+	}
+}
+
+// TestReviewUnparsedDedupesMarkerAndField proves a load-time recovery — which is
+// BOTH recorded in Bundle.Unparsed AND marker-stamped by the loader — is counted
+// exactly once, so --strict's finding count is not inflated by double-reporting.
+func TestReviewUnparsedDedupesMarkerAndField(t *testing.T) {
+	rec := concept("bad", "", "")
+	okf.MarkRecovered(rec.Frontmatter, "unparseable-frontmatter")
+	b := &okf.Bundle{
+		Root:     "/b",
+		Concepts: []*okf.Concept{rec},
+		Unparsed: []okf.UnparsedConcept{{ID: "bad", RelPath: "bad.md", Err: "invalid frontmatter"}},
+	}
+	r := Review(b, "2026-08-15", nil)
+	if len(r.UnparsedFrontmatter) != 1 || r.UnparsedFrontmatter[0] != "bad" {
+		t.Fatalf("UnparsedFrontmatter = %v, want [bad] counted once (marker+field dedup)", r.UnparsedFrontmatter)
 	}
 }
 
