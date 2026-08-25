@@ -53,12 +53,16 @@ type Report struct {
 	Stale       []string `json:"stale"`
 	Attested    []string `json:"attested"`
 	Unresolved  []Edge   `json:"unresolved"`
-	// UnparsedFrontmatter lists concepts carrying the binder recovery marker
-	// (okf.RecoveryMarkerKey) — a file whose original frontmatter would not parse
-	// and was preserved as body by `binder convert` (never-reject, design-v2 §4.6).
-	// review reads the same persisted marker the converter stamped and warned
-	// about, so the two surfaces can never disagree and no body-shape heuristic
-	// (which cannot tell a recovered fence from a legit thematic break) is needed.
+	// UnparsedFrontmatter lists concepts whose frontmatter could not be parsed and
+	// were preserved as body (never-reject, design-v2 §4.6). It is the UNION of two
+	// sources so it reports state, not just history: (1) the drops the loader
+	// recorded on Bundle.Unparsed for files that would not parse at load time
+	// (#161) — a file broken after conversion, authored by hand, or produced by
+	// another OKF tool now surfaces here where it previously vanished from the whole
+	// read side; and (2) concepts carrying the persisted binder recovery marker
+	// (okf.RecoveryMarkerKey) that `binder convert` stamped, so a bundle converted
+	// earlier still discloses its recoveries. The two are deduplicated, so a
+	// load-time recovery (which is both recorded AND marker-stamped) is counted once.
 	UnparsedFrontmatter []string      `json:"unparsed_frontmatter"`
 	Concepts            []ConceptView `json:"concepts"`
 }
@@ -112,6 +116,21 @@ func Review(b *okf.Bundle, today string, entrypoints []string) *Report {
 			}
 		}
 	}
+	// Unparsed-frontmatter disclosure set (#161): seed it with the loader's
+	// recorded drops (files that would not parse at load time) so a genuinely
+	// unparseable file — which never carried a persisted marker — is reported here
+	// rather than vanishing from the read side. The concept loop below adds any
+	// concept carrying the persisted recovery marker; the set deduplicates the
+	// overlap (a load-time recovery is both recorded and marker-stamped).
+	unparsedSet := make(map[string]bool, len(b.Unparsed))
+	for _, u := range b.Unparsed {
+		id := u.ID
+		if id == "" {
+			id = u.RelPath
+		}
+		unparsedSet[id] = true
+	}
+
 	// Concepts the user designated as entrypoints (by id or path), in addition to
 	// the general rule and the recognized root entrypoints.
 	designated := linkcheck.EntrypointSet(entrypoints)
@@ -156,7 +175,7 @@ func Review(b *okf.Bundle, today string, entrypoints []string) *Report {
 			r.Attested = append(r.Attested, c.ID)
 		}
 		if okf.IsRecovered(c.Frontmatter) {
-			r.UnparsedFrontmatter = append(r.UnparsedFrontmatter, c.ID)
+			unparsedSet[c.ID] = true
 		}
 		for _, l := range c.Links {
 			// A "broken" edge is a CONCEPT reference whose target concept does not
@@ -185,6 +204,11 @@ func Review(b *okf.Bundle, today string, entrypoints []string) *Report {
 			r.Unresolved = append(r.Unresolved, Edge{From: c.ID, RawTarget: "[[" + target + "]]", Text: target})
 		}
 	}
+
+	for id := range unparsedSet {
+		r.UnparsedFrontmatter = append(r.UnparsedFrontmatter, id)
+	}
+	sort.Strings(r.UnparsedFrontmatter)
 
 	sort.Slice(r.Unresolved, func(i, j int) bool {
 		if r.Unresolved[i].From != r.Unresolved[j].From {

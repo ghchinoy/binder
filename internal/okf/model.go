@@ -75,6 +75,25 @@ type Bundle struct {
 	Root       string
 	OKFVersion SpecVersion // declared ONLY in root index.md (spec §12)
 	Concepts   []*Concept
+
+	// Unparsed lists the non-reserved concept files whose original frontmatter
+	// could not be parsed. Each such file is NOT dropped: the loader recovers it
+	// as a body-only concept (with the recovery marker stamped, mirroring
+	// `binder convert`) so it still appears in Concepts, and records the drop here
+	// so every read-side surface can disclose it rather than silently computing
+	// over a set that excludes it (never-reject WITH disclosure, spec §11 / #161).
+	// Empty (nil) when every concept parsed.
+	Unparsed []UnparsedConcept
+}
+
+// UnparsedConcept records a file whose frontmatter could not be parsed, so the
+// fact of the parse failure is recoverable by any caller rather than lost. ID is
+// the path-derived concept id (empty for a reserved file such as index.md);
+// RelPath is the bundle-relative path; Err is the codec's parse-error text.
+type UnparsedConcept struct {
+	ID      string `json:"id,omitempty"`
+	RelPath string `json:"rel_path"`
+	Err     string `json:"error"`
 }
 
 // Concept is a single OKF concept document.

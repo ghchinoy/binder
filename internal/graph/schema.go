@@ -26,6 +26,13 @@ const edgeLabel = "LINKS"
 // project from an OKF corpus. The first slice is always a single local graph.
 type SchemaSet struct {
 	Graphs []Schema `json:"graphs"`
+
+	// Unparsed lists the ids of concepts whose original frontmatter could not be
+	// parsed and were recovered as body (never-reject, #161). It discloses the
+	// same drop the graph export reports, so an MCP client introspecting a bundle
+	// is not silently handed a schema derived partly from unparseable input.
+	// Omitted (nil) when the bundle parsed cleanly.
+	Unparsed []string `json:"unparsed,omitempty"`
 }
 
 // Schema is one projected graph's LPG schema descriptor.
@@ -181,5 +188,5 @@ func Describe(b *okf.Bundle, today, idKey string) *SchemaSet {
 			Properties: edgeProperties(),
 		}},
 	}
-	return &SchemaSet{Graphs: []Schema{g}}
+	return &SchemaSet{Graphs: []Schema{g}, Unparsed: m.Unparsed}
 }
