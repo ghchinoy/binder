@@ -111,7 +111,19 @@ export function okfLoader(options: OkfLoaderOptions): Loader {
         }
 
         const raw = await readFile(file, "utf8");
-        const { data: frontmatter, body } = splitFrontmatter(raw);
+        let frontmatter: Record<string, unknown>;
+        let body: string;
+        try {
+          ({ data: frontmatter, body } = splitFrontmatter(raw));
+        } catch (err) {
+          // splitFrontmatter throws on malformed frontmatter (issue #164). It
+          // is called in this loop with no id of its own, so name the offending
+          // file here — a bundle load that aborts mid-way without saying WHICH
+          // file is as unhelpful as the "type Required" diagnostic N-1 set out
+          // to replace.
+          const detail = err instanceof Error ? err.message : String(err);
+          throw new Error(`astro-okf: ${id}.md: ${detail}`, { cause: err });
+        }
 
         const verified = normalizeActorstamps(frontmatter.verified);
         const generated = normalizeActorstamp(frontmatter.generated);

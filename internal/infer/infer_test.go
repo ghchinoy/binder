@@ -2,8 +2,10 @@ package infer
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/ghchinoy/binder/internal/okf/native"
@@ -99,6 +101,137 @@ func TestInferDeterministic(t *testing.T) {
 	wantTypeMap := "custom=Proposal,ops=Runbook,subsystems=Subsystem"
 	if rep.TypeMap != wantTypeMap {
 		t.Errorf("TypeMap = %q, want %q", rep.TypeMap, wantTypeMap)
+	}
+}
+
+// TestInferDoesNotCiteUnparsedFrontmatter is the negative fixture for issue
+// #162: a file whose frontmatter does not parse must not be cited in
+// sample_files as evidence for source:frontmatter, must not count toward the
+// authored-type majority, and must be disclosed in warnings. Before the fix,
+// parseConceptSafe swallowed the parse error and returned empty frontmatter, so
+// guides/a.md landed in sample_files with no warning emitted — this test failed.
+func TestInferDoesNotCiteUnparsedFrontmatter(t *testing.T) {
+	dir := t.TempDir()
+	guides := filepath.Join(dir, "guides")
+	if err := os.MkdirAll(guides, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// a.md: `title: A: colon breaks this` is invalid YAML — frontmatter does not parse.
+	if err := os.WriteFile(filepath.Join(guides, "a.md"),
+		[]byte("---\ntype: Guide\ntitle: A: colon breaks this\n---\n\n# A\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// b.md: clean frontmatter with an authored type.
+	if err := os.WriteFile(filepath.Join(guides, "b.md"),
+		[]byte("---\ntype: Guide\ntitle: B\n---\n\n# B\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	rep, err := Infer(context.Background(), dir, native.New(), Options{DefaultType: "Note"})
+	if err != nil {
+		t.Fatalf("Infer failed: %v", err)
+	}
+
+	var guidesMapping *Mapping
+	for i := range rep.Mappings {
+		if rep.Mappings[i].Dir == "guides" {
+			guidesMapping = &rep.Mappings[i]
+		}
+	}
+	if guidesMapping == nil {
+		t.Fatalf("expected a mapping for guides/, got mappings: %+v", rep.Mappings)
+	}
+
+	// guides/a.md was never parsed, so it must not appear as evidence.
+	for _, s := range guidesMapping.SampleFiles {
+		if s == "guides/a.md" {
+			t.Errorf("guides/a.md cited in sample_files %v, but its frontmatter never parsed", guidesMapping.SampleFiles)
+		}
+	}
+
+	// The unparsed file must be disclosed in warnings.
+	found := false
+	for _, w := range rep.Warnings {
+		if strings.Contains(w, "guides/a.md") && strings.Contains(w, "did not parse") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected a warning disclosing guides/a.md's parse failure, got warnings: %v", rep.Warnings)
+	}
+}
+
+// TestInferAllUnparseableDirectory pins the behaviour of a directory whose
+// files ALL fail to parse, on both the deterministic path and the --gemini
+// path — the distinction #162's doc note must state correctly. It exists
+// because that doc sentence has now shipped inaccurate twice; the assertions
+// below are the observed truth, not a description reasoned from the code.
+func TestInferAllUnparseableDirectory(t *testing.T) {
+	dir := t.TempDir()
+	guides := filepath.Join(dir, "guides")
+	if err := os.MkdirAll(guides, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Both files have invalid YAML frontmatter (`title: X: colon`).
+	if err := os.WriteFile(filepath.Join(guides, "a.md"),
+		[]byte("---\ntype: Guide\ntitle: A: colon breaks this\n---\n\n# A\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(guides, "b.md"),
+		[]byte("---\ntype: Guide\ntitle: B: also broken\n---\n\n# B\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Deterministic path: no file parsed, so no frontmatter/pattern/folder
+	// mapping is anchored — mappings is empty — but both files are disclosed.
+	det, err := Infer(context.Background(), dir, native.New(), Options{DefaultType: "Note"})
+	if err != nil {
+		t.Fatalf("deterministic Infer failed: %v", err)
+	}
+	detJSON, _ := json.MarshalIndent(det, "", "  ")
+	t.Logf("deterministic path:\n%s", detJSON)
+	if len(det.Mappings) != 0 {
+		t.Errorf("deterministic: expected 0 mappings for an all-unparseable dir, got %d: %+v", len(det.Mappings), det.Mappings)
+	}
+	if len(det.Warnings) != 2 {
+		t.Errorf("deterministic: expected 2 disclosure warnings, got %d: %v", len(det.Warnings), det.Warnings)
+	}
+
+	// --gemini path: the directory's filenames are still handed to Gemini
+	// (dirFileNames includes unparseable files), so Gemini may propose a type
+	// from the directory name alone. That produces a mapping with source
+	// "gemini" and EMPTY sample_files, while the disclosure warnings persist.
+	gem, err := Infer(context.Background(), dir, native.New(), Options{
+		DefaultType:  "Note",
+		UseGemini:    true,
+		GeminiModel:  "mock",
+		GeminiClient: &mockGemini{response: map[string]string{"guides": "Guide"}},
+	})
+	if err != nil {
+		t.Fatalf("gemini Infer failed: %v", err)
+	}
+	gemJSON, _ := json.MarshalIndent(gem, "", "  ")
+	t.Logf("--gemini path:\n%s", gemJSON)
+
+	var guidesMapping *Mapping
+	for i := range gem.Mappings {
+		if gem.Mappings[i].Dir == "guides" {
+			guidesMapping = &gem.Mappings[i]
+		}
+	}
+	if guidesMapping == nil {
+		t.Fatalf("gemini: expected a guides mapping, got %+v", gem.Mappings)
+	}
+	if guidesMapping.Source != SourceGemini {
+		t.Errorf("gemini: expected source %q, got %q", SourceGemini, guidesMapping.Source)
+	}
+	if len(guidesMapping.SampleFiles) != 0 {
+		t.Errorf("gemini: expected empty sample_files (no file parsed), got %v", guidesMapping.SampleFiles)
+	}
+	// The #162 guarantee still holds under Gemini: no unparsed file is cited as
+	// a sample, and both are still disclosed.
+	if len(gem.Warnings) != 2 {
+		t.Errorf("gemini: expected the 2 disclosure warnings to persist, got %d: %v", len(gem.Warnings), gem.Warnings)
 	}
 }
 
