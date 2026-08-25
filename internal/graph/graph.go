@@ -35,6 +35,14 @@ type Edge struct {
 type Model struct {
 	Nodes []Node `json:"nodes"`
 	Edges []Edge `json:"edges"`
+
+	// Unparsed lists the ids of concepts whose original frontmatter could not be
+	// parsed and were recovered as body (never-reject, #161). It is present so a
+	// graph consumer — including the MCP graph/list_graphs/query_graph tools — is
+	// not silently handed nodes whose type/tier are defaults derived from
+	// unparseable input. Omitted (nil) when the bundle parsed cleanly, so a clean
+	// bundle's export is byte-identical to before.
+	Unparsed []string `json:"unparsed,omitempty"`
 }
 
 // EdgesFromConcepts returns the resolved directed edge set for the given
@@ -86,7 +94,28 @@ func Build(b *okf.Bundle, today string) *Model {
 		})
 	}
 	m.Edges = EdgesFromConcepts(b.Concepts)
+	m.Unparsed = unparsedIDs(b)
 	return m
+}
+
+// unparsedIDs returns the sorted ids (path-derived, or the rel path when a file
+// has no concept id) of the concepts the loader could not parse, for disclosure
+// on the graph model and its descendants. Returns nil (not an empty slice) when
+// nothing was unparsed, so `omitempty` keeps a clean bundle's output unchanged.
+func unparsedIDs(b *okf.Bundle) []string {
+	if len(b.Unparsed) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(b.Unparsed))
+	for _, u := range b.Unparsed {
+		id := u.ID
+		if id == "" {
+			id = u.RelPath
+		}
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return ids
 }
 
 // Export renders a loaded bundle in the requested format.

@@ -38,6 +38,11 @@ func newIndexCmd(codec okf.Codec) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			// Disclose files the loader could not parse (#161/#163): they are kept in
+			// the nav (recovered as body) rather than silently omitted, but the user
+			// must be told their frontmatter did not parse. Warnings go to stderr so
+			// the write manifest on stdout stays clean.
+			warnUnparsed(cmd.ErrOrStderr(), b)
 			indexes := convert.GenerateIndexes(b.Concepts, b.OKFVersion, convert.IndexOptions{
 				GroupByType:      groupByType,
 				IncludeBacklinks: includeBacklinks,

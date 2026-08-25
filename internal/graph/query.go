@@ -120,6 +120,10 @@ type LookupResult struct {
 	Nodes     []Node        `json:"nodes"`
 	Truncated *bool         `json:"truncated,omitempty"`
 	NotFound  *bool         `json:"not_found,omitempty"`
+	// Unparsed discloses concepts the loader could not parse (recovered as body,
+	// never-reject, #161), so a query result is never silently computed over a set
+	// that excludes them. Omitted when the bundle parsed cleanly.
+	Unparsed []string `json:"unparsed,omitempty"`
 }
 
 // NeighborsResult is the payload for op "neighbors".
@@ -131,6 +135,8 @@ type NeighborsResult struct {
 	Edges     []Edge         `json:"edges"`
 	Truncated bool           `json:"truncated"`
 	NotFound  bool           `json:"not_found"`
+	// Unparsed: see LookupResult.Unparsed (#161).
+	Unparsed []string `json:"unparsed,omitempty"`
 }
 
 // NeighborhoodResult is the payload for op "neighborhood".
@@ -143,6 +149,8 @@ type NeighborhoodResult struct {
 	Depths    []Depth           `json:"depths"`
 	Truncated bool              `json:"truncated"`
 	NotFound  bool              `json:"not_found"`
+	// Unparsed: see LookupResult.Unparsed (#161).
+	Unparsed []string `json:"unparsed,omitempty"`
 }
 
 // PatternResult is the payload for op "pattern". It has no not_found (there is no
@@ -155,6 +163,8 @@ type PatternResult struct {
 	Nodes     []Node        `json:"nodes"`
 	Edges     []Edge        `json:"edges"`
 	Truncated bool          `json:"truncated"`
+	// Unparsed: see LookupResult.Unparsed (#161).
+	Unparsed []string `json:"unparsed,omitempty"`
 }
 
 // PathResult is the payload for op "path": bounded existence plus the shortest
@@ -167,6 +177,8 @@ type PathResult struct {
 	Length   int           `json:"length"`
 	Path     []string      `json:"path"`
 	NotFound bool          `json:"not_found"`
+	// Unparsed: see LookupResult.Unparsed (#161).
+	Unparsed []string `json:"unparsed,omitempty"`
 }
 
 // Index is an additive adjacency index built from a *Model. out/in map a node id
@@ -276,7 +288,7 @@ func (idx *Index) steps(id, direction, rel string) []step {
 // (the handler enforces the one-of); by-id sets not_found when absent, by-label
 // is capped/truncated. Nodes are sorted by ID.
 func (idx *Index) Lookup(idKey, id, label string) *LookupResult {
-	r := &LookupResult{Op: "lookup", NodeKey: nodeKey(idKey), Nodes: []Node{}}
+	r := &LookupResult{Op: "lookup", NodeKey: nodeKey(idKey), Nodes: []Node{}, Unparsed: idx.model.Unparsed}
 	if id != "" {
 		r.Query = LookupQuery{ID: id}
 		nf := true
@@ -309,11 +321,12 @@ func (idx *Index) Lookup(idKey, id, label string) *LookupResult {
 // truncated, with edges filtered to retained endpoints.
 func (idx *Index) Neighbors(idKey, id, direction, rel string) *NeighborsResult {
 	r := &NeighborsResult{
-		Op:      "neighbors",
-		Query:   NeighborsQuery{ID: id, Direction: direction, Rel: rel},
-		NodeKey: nodeKey(idKey),
-		Nodes:   []Node{},
-		Edges:   []Edge{},
+		Op:       "neighbors",
+		Query:    NeighborsQuery{ID: id, Direction: direction, Rel: rel},
+		NodeKey:  nodeKey(idKey),
+		Nodes:    []Node{},
+		Edges:    []Edge{},
+		Unparsed: idx.model.Unparsed,
 	}
 	if _, ok := idx.byID[id]; !ok {
 		r.NotFound = true
@@ -352,12 +365,13 @@ func (idx *Index) Neighbors(idKey, id, direction, rel string) *NeighborsResult {
 // set, so cycles terminate and each node is emitted once at its minimum depth.
 func (idx *Index) Neighborhood(idKey, id string, depth int, direction, rel string) *NeighborhoodResult {
 	r := &NeighborhoodResult{
-		Op:      "neighborhood",
-		Query:   NeighborhoodQuery{ID: id, Depth: depth, Direction: direction, Rel: rel},
-		NodeKey: nodeKey(idKey),
-		Nodes:   []Node{},
-		Edges:   []Edge{},
-		Depths:  []Depth{},
+		Op:       "neighborhood",
+		Query:    NeighborhoodQuery{ID: id, Depth: depth, Direction: direction, Rel: rel},
+		NodeKey:  nodeKey(idKey),
+		Nodes:    []Node{},
+		Edges:    []Edge{},
+		Depths:   []Depth{},
+		Unparsed: idx.model.Unparsed,
 	}
 	if _, ok := idx.byID[id]; !ok {
 		r.NotFound = true
@@ -426,11 +440,12 @@ func (idx *Index) Neighborhood(idKey, id string, depth int, direction, rel strin
 // present.
 func (idx *Index) Pattern(idKey, label, toLabel, rel string, where *WhereClause) *PatternResult {
 	r := &PatternResult{
-		Op:      "pattern",
-		Query:   PatternQuery{Label: label, ToLabel: toLabel, Rel: rel, Where: where},
-		NodeKey: nodeKey(idKey),
-		Nodes:   []Node{},
-		Edges:   []Edge{},
+		Op:       "pattern",
+		Query:    PatternQuery{Label: label, ToLabel: toLabel, Rel: rel, Where: where},
+		NodeKey:  nodeKey(idKey),
+		Nodes:    []Node{},
+		Edges:    []Edge{},
+		Unparsed: idx.model.Unparsed,
 	}
 	nodes := []Node{}
 	edges := []Edge{}
@@ -478,10 +493,11 @@ func (idx *Index) Pattern(idKey, label, toLabel, rel string, where *WhereClause)
 // the returned path is unique and stable (design §5, rule 5).
 func (idx *Index) Path(idKey, from, to, direction string, maxDepth int) *PathResult {
 	r := &PathResult{
-		Op:      "path",
-		Query:   PathQuery{From: from, To: to, MaxDepth: maxDepth, Direction: direction},
-		NodeKey: nodeKey(idKey),
-		Path:    []string{},
+		Op:       "path",
+		Query:    PathQuery{From: from, To: to, MaxDepth: maxDepth, Direction: direction},
+		NodeKey:  nodeKey(idKey),
+		Path:     []string{},
+		Unparsed: idx.model.Unparsed,
 	}
 	_, fromOK := idx.byID[from]
 	_, toOK := idx.byID[to]

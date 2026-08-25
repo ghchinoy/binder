@@ -61,6 +61,10 @@ func newGraphCmd(codec okf.Codec) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			// Disclose unparseable files on stderr (#161): the recovered node now
+			// exists so edges no longer dangle, but the user must be told its
+			// frontmatter did not parse. stderr keeps the exported graph clean.
+			warnUnparsed(cmd.ErrOrStderr(), b)
 			if today == "" {
 				today = resolveNow().Format("2006-01-02")
 			}

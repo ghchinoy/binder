@@ -1,0 +1,13 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "okf-fixture",
+  "version": "1.0.0",
+  "description": "Fixture plugin used by scripts/validate-plugin-fixtures.sh to exercise the frontmatter parser (issue #89). Not shipped.",
+  "author": {
+    "name": "ghchinoy",
+    "url": "https://github.com/ghchinoy"
+  },
+  "repository": "https://github.com/ghchinoy/binder",
+  "license": "Apache-2.0",
+  "keywords": ["okf", "binder", "test-fixture"]
+}

@@ -80,6 +80,11 @@ func newProjectCmd(codec okf.Codec) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			// Disclose unparseable files on stderr (#161): the recovered node now
+			// exists so the emitted edges.csv no longer carries a dangling FK, but
+			// the user must be told its frontmatter did not parse. stderr keeps the
+			// report envelope on stdout clean.
+			warnUnparsed(cmd.ErrOrStderr(), b)
 			if today == "" {
 				today = resolveNow().Format("2006-01-02")
 			}
