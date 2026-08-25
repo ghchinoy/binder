@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.5.2](https://github.com/ghchinoy/binder/compare/v0.5.1...v0.5.2) (2026-08-25)
+
+
+### Bug Fixes
+
+* **#106:** correct plugins/ JSON drift + add the missing derived-doc gate ([#166](https://github.com/ghchinoy/binder/issues/166)) ([06b1b71](https://github.com/ghchinoy/binder/commit/06b1b71ae16c949d8c47f4cefddeec00d2089752))
+* **#89:** plugin-validate parses frontmatter with a real YAML parser and fails closed ([#165](https://github.com/ghchinoy/binder/issues/165)) ([481a58b](https://github.com/ghchinoy/binder/commit/481a58b9155a264b9450e791da1eae3cb7e5ad22))
+* **bundle:** recover & disclose unparseable concepts and stop scraping root okf_version ([#161](https://github.com/ghchinoy/binder/issues/161), [#163](https://github.com/ghchinoy/binder/issues/163)) ([#168](https://github.com/ghchinoy/binder/issues/168)) ([85205b8](https://github.com/ghchinoy/binder/commit/85205b882f338e9fa6aae0391bb53f97d382c35d))
+* stop citing/deriving from frontmatter that never parsed ([#162](https://github.com/ghchinoy/binder/issues/162), [#164](https://github.com/ghchinoy/binder/issues/164)) ([#167](https://github.com/ghchinoy/binder/issues/167)) ([f7dfc31](https://github.com/ghchinoy/binder/commit/f7dfc31d3c646e1b0cfc0bf5fd42a1624f43b55a))
+
 ## [0.5.1](https://github.com/ghchinoy/binder/compare/v0.5.0...v0.5.1) (2026-08-21)
 
 
