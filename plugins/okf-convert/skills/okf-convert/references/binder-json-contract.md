@@ -5,7 +5,7 @@ Load this when you need the exact shape of what a binder command emits, so you
 was captured from real `binder/0.5.1` output. The `internal/plugindocs` drift
 gate mechanically checks each block's **shape** — its key set at every nesting
 level — against the live binary, but not its **values**: version literals like
-the `binder` field above are not verified and can go stale (tracked in #169), so
+the `binder` field below are not verified and can go stale (tracked in #169), so
 regenerate a block by recapturing it rather than hand-editing (issue #106).
 
 ## The report envelope (`binder.report/v1`)
