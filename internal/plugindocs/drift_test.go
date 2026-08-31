@@ -222,6 +222,21 @@ func (idx shapeIndex) register(name string, obj any) {
 // (every documented array today), required == allowed and the check is exactly
 // the pre-#172 key-set equality — no detection is relaxed. Empty-object and
 // scalar elements carry no key contract and are skipped, matching register.
+//
+// INVARIANT this relies on (#172 FYI-1): every array-element type the gate
+// indexes has AT LEAST ONE non-omitempty JSON field, so across any live capture
+// `required` (the intersection) is non-empty and the per-element check keeps its
+// MISSING-key power. Verified structurally as of this writing — each type has a
+// mandatory field with no `,omitempty`: enrich.FileResult{path,status},
+// convert.ConceptReport{rel_path,type,title,num_links,num_unresolved},
+// convert.UnresolvedLink{from,raw_target,text}, review.ConceptView{id,type,tier,
+// stale,attested,orphan,entrypoint}, review.Edge{from,raw_target,text},
+// graph.Node{id,title,type,tier,stale}, graph.Edge{from,to},
+// infer.Mapping{dir,suggested_type,source}, okf.Finding{concept_id,severity,
+// message} (validate findings[]), lint.Finding{concept,detail}. If a future
+// element type is ever ALL-omitempty (or a multi-element live array shares no
+// common key), `required` degrades to empty and this check weakens to
+// extra-keys-only for that shape — so keep a mandatory field on these types.
 func (idx shapeIndex) registerElem(name string, arr any) {
 	a, ok := arr.([]any)
 	if !ok {
