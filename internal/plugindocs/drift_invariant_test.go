@@ -96,8 +96,11 @@ func collectArrayElemShapes() map[string]bool {
 // the point of indexing — there is no runtime path from a gate-indexed shape back
 // to its Go type. Completeness is NOT trusted to the hand-list, though: sub-test
 // (2) cross-checks these keys against the gate's own array-element anchors
-// (collectArrayElemShapes), so a newly registerElem-indexed element type fails
-// here until it is added to the map — the hand-list cannot silently drift.
+// (collectArrayElemShapes) BIDIRECTIONALLY — every discovered anchor shape must
+// be mapped (a new registerElem-indexed type fails until added) AND every mapped
+// shape must be a real anchor (a stale entry, or discovery returning nothing,
+// fails loudly). So the hand-list cannot silently drift and the guard cannot
+// pass by finding nothing.
 func TestRegisterElem_EveryIndexedElemTypeHasMandatoryField(t *testing.T) {
 	elemGoType := map[string]reflect.Type{
 		"enrich.result.files[]":           reflect.TypeOf(enrich.FileResult{}),
@@ -123,14 +126,42 @@ func TestRegisterElem_EveryIndexedElemTypeHasMandatoryField(t *testing.T) {
 		}
 	}
 
-	// (2) DRIFT GUARD: every array-element shape the gate's anchors actually carry
-	// must be mapped above, so a new registerElem-indexed type cannot slip in
-	// unenforced.
-	for shape := range collectArrayElemShapes() {
+	// (2) DRIFT GUARD, BIDIRECTIONAL. The anchor cross-check must not be able to
+	// pass by finding nothing: if collectArrayElemShapes() ever returned an empty
+	// set (the anchor structure changes, or the arr-wrapper heuristic stops
+	// matching), a one-way "every discovered shape is mapped" loop would iterate
+	// zero times and pass GREEN with the guard silently dead — the same
+	// discovery-finds-nothing-and-reports-success failure as #169.
+	anchorShapes := collectArrayElemShapes()
+
+	// (2a) discovery must find SOMETHING; an empty set means the walk is broken,
+	// reported as its own diagnostic rather than as N unmatched map keys.
+	if len(anchorShapes) == 0 {
+		t.Fatalf("collectArrayElemShapes() returned no array-element shapes: the anchor " +
+			"walk or the arr-wrapper heuristic (shape==\"\" && elem!=nil) is broken, so the " +
+			"drift guard below is not actually checking anything. Fix discovery before trusting " +
+			"this test.")
+	}
+
+	// (2b) forward: every shape the gate's anchors carry must be mapped, so a new
+	// registerElem-indexed type cannot slip in unenforced.
+	for shape := range anchorShapes {
 		if _, ok := elemGoType[shape]; !ok {
 			t.Errorf("gate anchors carry array-element shape %q with no Go type mapped in "+
 				"this test: add it to elemGoType so the non-empty-`required` invariant is "+
 				"enforced for it too.", shape)
+		}
+	}
+
+	// (2c) reverse: every mapped shape must correspond to a real gate anchor. This
+	// closes the empty-discovery hole for free (an empty anchorShapes leaves all
+	// map keys unmatched → loud RED) and also catches a stale map entry for a
+	// shape the gate no longer indexes, which the forward check alone misses.
+	for shape := range elemGoType {
+		if !anchorShapes[shape] {
+			t.Errorf("elemGoType maps shape %q but no gate anchor carries it as an array "+
+				"element: either the gate stopped indexing it (drop the stale entry) or "+
+				"collectArrayElemShapes() no longer discovers it (discovery is broken).", shape)
 		}
 	}
 }
