@@ -58,6 +58,22 @@ if [ "${FM_COUNT:-0}" -lt 1 ] || [ "${ACTOR_COUNT:-0}" -lt 1 ]; then
 fi
 echo "  ok   golden derived by executing the real Go code ($FM_COUNT frontmatter case(s), $ACTOR_COUNT actor case(s))"
 
+# 1b. Assert NON-VACUITY locally (issue #171 round 3). The count guard above only
+# proves the corpus is non-empty; it does not prove the corpus still EXERCISES
+# each thing the suite claims to bind. Without this, non-vacuity for the error
+# strings was emergent — it held only because the prose check happened to require
+# the two structural cases. coverage-check.py asserts directly, from the
+# Go-derived golden, that both structural error strings were produced and that
+# each trust predicate yielded both true and false. It fails closed (naming what
+# was missing) the moment either stops being true, so the guarantee is local
+# rather than a coincidence of other checks lining up.
+section "Corpus coverage (non-vacuity asserted directly, not left emergent)"
+if python3 "$SELF_DIR/coverage-check.py" "$GOLDEN"; then
+  echo "  PASS corpus is non-vacuous for every property this suite binds."
+else
+  FAILS=$((FAILS + 1))
+fi
+
 # 2. The TS check runs against the shipped dist.
 if [ ! -f packages/astro-okf/dist/index.js ]; then
   echo

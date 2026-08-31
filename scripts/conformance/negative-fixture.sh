@@ -103,6 +103,15 @@ note "[2] MUTATE the Go error strings (source of truth) — expect RED per copy"
 # hand-copy must be named). This mirrors the pre-existing-bug demonstration,
 # where retaining that substring keeps the Go suite itself green — the point of
 # #171 being that the Go suite does NOT catch this drift.
+#
+# MAINTAINER NOTE: the two sed search patterns just below are the ONLY textual
+# copies of the Go error wording in this file. They are deliberately bound, not a
+# fourth unbound copy: if the Go wording in internal/okf/native/native.go changes
+# and these patterns are NOT updated to match, the sed no-ops, the conformance
+# check stays GREEN, and this fixture fails with "expected RED, got GREEN" (see
+# expect_red_naming). So a stale pattern is loud, not silent. Even so, when you
+# change the native.go wording you MUST update these two patterns to the new
+# search text in the same commit — do not delete them.
 sed -i \
   -e "s/unterminated '---' block/unterminated '---' fence/" \
   -e "s/expected a mapping at the top level/expected a mapping at the document root/" \
@@ -146,6 +155,41 @@ expect_red_naming "vacuous (empty) corpus" "$WORK/red3.txt" \
 note "[7] RESTORE the corpus — must be GREEN again"
 cp "$CORPUS_BAK" "$CORPUS"
 expect_pass "after restoring the corpus"
+
+# --- Round 3: prove the LOCAL non-vacuity assertions fail closed. -----------
+# A non-empty corpus can still stop exercising a thing the suite claims to bind
+# (a structural error path, or one polarity of a trust predicate). The coverage
+# check must catch that directly — not lean on the prose check happening to
+# require the same cases. Sections [8]-[11] neuter one bound property at a time,
+# keeping the corpus otherwise full, and require the suite to go RED naming what
+# stopped being exercised.
+
+note "[8] NEUTER one structural case (drop 'unterminated-fence') — expect RED naming the unexercised string"
+# Corpus stays non-empty (FM_COUNT/ACTOR_COUNT guard still passes), but no case
+# now produces the unterminated-fence error, so the coverage check must fail
+# closed and name it. Derived by filtering the backup so no literal is restated.
+python3 -c "import json; d=json.load(open('$CORPUS_BAK')); d['frontmatter']=[c for c in d['frontmatter'] if c['name']!='unterminated-fence']; json.dump(d, open('$CORPUS','w'))"
+expect_red_naming "coverage: unexercised structural error" "$WORK/red4.txt" \
+  "no corpus case produced the unterminated-fence structural error"
+
+note "[9] RESTORE the corpus — must be GREEN again"
+cp "$CORPUS_BAK" "$CORPUS"
+expect_pass "after restoring the corpus (post structural-coverage test)"
+
+note "[10] NEUTER predicate polarity (all-false actor set) — expect RED naming each predicate"
+# Reduce the actor corpus to a single actor that is neither human nor valid, so
+# isHumanActor and isValidActor each yield only 'false'. FM stays full. NOTHING
+# ELSE in the suite catches this — TS/Python compare whatever actors are present
+# and would happily agree on an all-false set. Only the local coverage assertion
+# does, which is the whole point of round 3.
+python3 -c "import json; d=json.load(open('$CORPUS_BAK')); d['actors']=['binder']; json.dump(d, open('$CORPUS','w'))"
+expect_red_naming "coverage: single-polarity predicates" "$WORK/red5.txt" \
+  "isHumanActor was not exercised with both true and false" \
+  "isValidActor was not exercised with both true and false"
+
+note "[11] RESTORE the corpus — must be GREEN again"
+cp "$CORPUS_BAK" "$CORPUS"
+expect_pass "after restoring the corpus (post predicate-coverage test)"
 
 echo
 echo "=================================================================="

@@ -45,8 +45,24 @@ type corpus struct {
 }
 
 type golden struct {
+	// Canonical is a Go-OBSERVED record of the two structural frontmatter error
+	// strings, produced by running the real codec over two minimal inputs whose
+	// ONLY job is to trigger each structural path. These are inputs, not error
+	// literals: the strings below are whatever Go actually emits, never restated
+	// here. The conformance suite uses them to assert LOCALLY that the shared
+	// corpus still exercises BOTH structural error paths — so the guarantee that
+	// each string is bound cannot silently become vacuous if the corpus changes
+	// (issue #171 round 3). If a future Go change stops producing an error for
+	// one of these inputs, the corresponding field goes empty and the coverage
+	// check fails closed.
+	Canonical   canonical           `json:"canonical"`
 	Frontmatter []frontmatterResult `json:"frontmatter"`
 	Actors      []actorResult       `json:"actors"`
+}
+
+type canonical struct {
+	UnterminatedError string `json:"unterminatedError"`
+	NonmappingError   string `json:"nonmappingError"`
 }
 
 type frontmatterResult struct {
@@ -58,6 +74,16 @@ type actorResult struct {
 	Actor   string `json:"actor"`
 	IsHuman bool   `json:"isHuman"`
 	IsValid bool   `json:"isValid"`
+}
+
+// observeErr runs the real codec over input and returns Go's actual error text
+// (or "" if it did not error). It never restates a literal — the returned string
+// is whatever native.go emitted.
+func observeErr(codec *native.Codec, input string) string {
+	if _, err := codec.ParseConcept("conformance.md", []byte(input)); err != nil {
+		return err.Error()
+	}
+	return ""
 }
 
 func main() {
@@ -83,6 +109,15 @@ func main() {
 
 	codec := native.New()
 	var g golden
+
+	// Observe the two structural errors Go produces from minimal triggering
+	// inputs. These inputs live here (not in the corpus) so the canonical record
+	// is independent of whatever the shared corpus happens to contain — that
+	// independence is exactly what lets the coverage check assert the corpus
+	// still reproduces both. observeErr records Go's actual err.Error(), so no
+	// literal is restated.
+	g.Canonical.UnterminatedError = observeErr(codec, "---\nname: unterminated fence, never closed\n")
+	g.Canonical.NonmappingError = observeErr(codec, "---\n- top-level node is a sequence, not a mapping\n---\n")
 
 	for _, fc := range c.Frontmatter {
 		// Observe what the real codec does; record its actual error text.
