@@ -45,6 +45,33 @@ func hasMandatoryJSONField(t reflect.Type) bool {
 	return false
 }
 
+// jsonTagNames returns the set of JSON key names t serializes: the tag name for
+// each exported field (the field name when the tag is absent or is just options
+// like `,omitempty`), excluding `json:"-"`. omitempty is irrelevant here — we
+// want every key the type COULD emit, so an observed live key can be checked
+// against it.
+func jsonTagNames(t reflect.Type) map[string]bool {
+	out := map[string]bool{}
+	for i := 0; i < t.NumField(); i++ {
+		f := t.Field(i)
+		if f.PkgPath != "" { // unexported
+			continue
+		}
+		name := f.Name
+		if tag, ok := f.Tag.Lookup("json"); ok {
+			n := strings.Split(tag, ",")[0]
+			if n == "-" {
+				continue // never serialized
+			}
+			if n != "" {
+				name = n // `json:",omitempty"` keeps the field name
+			}
+		}
+		out[name] = true
+	}
+	return out
+}
+
 // collectArrayElemShapes walks the gate's OWN anchor forest and returns every
 // shape reached as an ARRAY element. An arr(elem) wrapper is structurally
 // distinct from a value-map: arr() produces an anchor with an empty shape and a
@@ -92,15 +119,27 @@ func collectArrayElemShapes() map[string]bool {
 //
 // The shape -> Go type mapping below is hand-authored BY NECESSITY: buildLiveIndex
 // registers element shapes from live CLI output that has already round-tripped
-// through encoding/json into map[string]any, so the Go struct type is erased at
-// the point of indexing — there is no runtime path from a gate-indexed shape back
-// to its Go type. Completeness is NOT trusted to the hand-list, though: sub-test
-// (2) cross-checks these keys against the gate's own array-element anchors
-// (collectArrayElemShapes) BIDIRECTIONALLY — every discovered anchor shape must
-// be mapped (a new registerElem-indexed type fails until added) AND every mapped
-// shape must be a real anchor (a stale entry, or discovery returning nothing,
-// fails loudly). So the hand-list cannot silently drift and the guard cannot
-// pass by finding nothing.
+// through encoding/json into map[string]any, so there is no direct runtime
+// shape->type path. The hand-list is nonetheless guarded on BOTH axes so it
+// cannot silently drift:
+//
+//   - KEYS — sub-test (2) cross-checks the map keys against the gate's own
+//     array-element anchors (collectArrayElemShapes) BIDIRECTIONALLY: every
+//     discovered anchor shape must be mapped (a new registerElem-indexed type
+//     fails until added) AND every mapped shape must be a real anchor (a stale
+//     entry, or discovery returning nothing, fails loudly).
+//   - VALUES — sub-test (3) binds each mapped reflect.Type to its shape via LIVE
+//     observed data: every JSON key the binary actually emits on that shape's
+//     elements must exist in the mapped struct's JSON tag set (observed ⊆ tags).
+//     A wrong type (e.g. graph.nodes[] -> graph.Edge{}) is caught because the
+//     real element's keys are absent from the wrong struct's tags.
+//
+// So a wrong KEY and a wrong TYPE VALUE are both caught, and neither key nor
+// value guard can pass by examining nothing (each has its own non-empty check).
+// What is NOT machine-checked: that the mapped type is the specific struct the
+// producing command literally uses — only that it is JSON-tag-compatible with the
+// shape's live keys. Two structs with identical tag sets would be
+// interchangeable here; that residual is inherent to a data-observed binding.
 func TestRegisterElem_EveryIndexedElemTypeHasMandatoryField(t *testing.T) {
 	elemGoType := map[string]reflect.Type{
 		"enrich.result.files[]":           reflect.TypeOf(enrich.FileResult{}),
@@ -162,6 +201,43 @@ func TestRegisterElem_EveryIndexedElemTypeHasMandatoryField(t *testing.T) {
 			t.Errorf("elemGoType maps shape %q but no gate anchor carries it as an array "+
 				"element: either the gate stopped indexing it (drop the stale entry) or "+
 				"collectArrayElemShapes() no longer discovers it (discovery is broken).", shape)
+		}
+	}
+
+	// (3) VALUE CHECK. 2a/2b/2c verify only the KEYS of elemGoType; the reflect.Type
+	// VALUES — which struct's mandatory-field invariant sub-test (1) actually
+	// enforces — go unchecked, so re-mapping a shape to the wrong struct (e.g.
+	// graph.nodes[] -> graph.Edge{}) would pass. Bind the value to the shape via
+	// LIVE OBSERVED DATA: every JSON key the binary actually emits on a shape's
+	// array elements must exist in the mapped struct's JSON tag set. Under a
+	// correct mapping this holds by construction — omitempty only ever OMITS keys,
+	// so observed ⊆ tags; under a mis-map, the observed keys of the real element
+	// are absent from the wrong struct's tags → RED. This makes (1) provably check
+	// the right struct.
+	idx := buildLiveIndex(t, repoRoot(t))
+	for shape, typ := range elemGoType {
+		observed := idx[shape].allowed
+
+		// TRAP 1: a shape with no observed keys makes the subset check vacuously
+		// true — a fourth check-that-examines-nothing on a branch whose whole
+		// subject is that defect. Fail with its own diagnostic, as (2a) does.
+		if len(observed) == 0 {
+			t.Errorf("no live-observed keys for %s: buildLiveIndex registered nothing for it, so "+
+				"the type-value check for %s is vacuous. The corpus must exercise this shape with a "+
+				"non-empty array, or this mapping cannot be verified against live data.", shape, typ)
+			continue
+		}
+
+		// TRAP 2: observed ⊆ tags — NOT equality, NOT the reverse. A struct
+		// legitimately carries tags no live element populates; that is omitempty
+		// working, not drift.
+		tags := jsonTagNames(typ)
+		for k := range observed {
+			if !tags[k] {
+				t.Errorf("live %s emits key %q that %s has no JSON tag for: elemGoType maps this "+
+					"shape to the WRONG Go type, so sub-test (1) would enforce the mandatory-field "+
+					"invariant against the wrong struct.", shape, k, typ)
+			}
 		}
 	}
 }
