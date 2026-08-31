@@ -20,6 +20,11 @@
 // program ever hard-coded the strings, it would be a fourth copy rather than a
 // derivation — so it must only ever OBSERVE the Go functions, never restate
 // their literals.
+//
+// Scope / residual: this golden covers the two STRUCTURAL frontmatter error
+// strings and the two actor predicates named in #171. The parser-dependent
+// wrapped-YAML error path (native.go's `invalid frontmatter: %w`) and
+// okf.TrustTier / okf.IsStale are only transitively covered — tracked in #175.
 package main
 
 import (

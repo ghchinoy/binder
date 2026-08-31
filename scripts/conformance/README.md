@@ -64,5 +64,5 @@ This check binds the two structural error strings and the two actor predicates
 named in `#171`. The parser-dependent wrapped-YAML error path
 (`invalid frontmatter: <parser message>`) is intentionally **not** cross-checked
 — PyYAML, `yaml` (JS), and `gopkg.in/yaml.v3` word those differently — and
-`deriveTier` / `isStale` are covered only transitively. See the tracked residual
-referenced from the breadcrumb in `internal/okf/conformance/gogolden/main.go`.
+`deriveTier` / `isStale` are covered only transitively. Tracked as the residual
+in **#175** (breadcrumbed from `internal/okf/conformance/gogolden/main.go`).
