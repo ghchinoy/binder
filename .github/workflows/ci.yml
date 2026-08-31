@@ -54,6 +54,13 @@ jobs:
           chmod +x scripts/check-transcript-versions.sh
           ./scripts/check-transcript-versions.sh
 
+      - name: Transcript-version fixtures (vacuous-pass regression lock)
+        # Proves the gate fails LOUD when discovery breaks (empty/wrong docroot,
+        # renamed fence tag) instead of passing vacuously — the round-2 Critical.
+        run: |
+          chmod +x scripts/check-transcript-versions-fixtures.sh
+          ./scripts/check-transcript-versions-fixtures.sh
+
   plugin-validate:
     # Validates the okf-convert Agent Plugin/Skill bundle (plugins/,
     # .claude-plugin/) against Agent Plugins 1.0.0. Independent of the Go gate;

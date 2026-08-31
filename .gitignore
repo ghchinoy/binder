@@ -11,3 +11,8 @@ node_modules/
 packages/*/dist/
 packages/*/example/dist/
 packages/*/example/.astro/
+
+# Python bytecode cache from the CI helper scripts under scripts/ (e.g.
+# check-transcript-versions.py, issue #169). Never a committable artifact.
+__pycache__/
+*.pyc
