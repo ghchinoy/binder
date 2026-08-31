@@ -57,6 +57,13 @@ VERSION_LITERAL = re.compile(r"binder/(\d+\.\d+\.\d+)")
 # statement that MUST track the release — and structurally cannot match the
 # minimum-version-floor / historical / measured-with phrasings, which never use
 # this wording.
+#
+# KNOWN LIMIT (#176): this narrow pattern covers only the one known provenance
+# wording. A NEW capture-provenance sentence phrased differently (e.g. "sampled
+# from binder/X.Y.Z") would be a must-track claim this gate would NOT catch. That
+# is a deliberate, documented limit of the JSON-scoped / narrow-prose approach
+# #169 prescribes (broadening it risks false-positiving the six historical prose
+# refs), tracked in #176 rather than left as tribal knowledge.
 PROSE_PROVENANCE = re.compile(r"captured from real `binder/(\d+\.\d+\.\d+)` output")
 
 
