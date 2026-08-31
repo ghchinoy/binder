@@ -84,6 +84,27 @@ sed -i '124s/^```json$/```jsonX/' "$BROKEN/$SKILL_REL"                  # then h
 assert_exit "broken discovery (renamed fence) -> exit 1" "$BROKEN" 1 "MISSING-COVERAGE"
 rm -rf "$(dirname "$BROKEN")"
 
+# [4b] basename collision: a same-basename decoy in a different directory must
+#      NOT satisfy the real location's coverage entry (Optional-1, round-3). Break
+#      discovery of the real convert report envelope, then plant a decoy SKILL.md
+#      elsewhere carrying a valid report envelope. Under basename keying the decoy
+#      would vacuously satisfy coverage (exit 0); under path keying it must not.
+COLLISION="$(fresh_copy)"
+COL_SKILL="$COLLISION/$SKILL_REL"
+COL_REFDIR="$COLLISION/okf-convert/skills/okf-convert/references"
+sed -i '124s/^```json$/```jsonX/' "$COL_SKILL"        # hide the real report envelope
+cat > "$COL_REFDIR/SKILL.md" <<'DECOY'
+# decoy SKILL.md (different directory, same basename)
+
+```json
+{ "binder": "binder/0.5.2", "command": "convert",
+  "schema": "binder.report/v1", "result": { } }
+```
+DECOY
+assert_exit "basename collision (decoy must not cover real) -> exit 1" \
+  "$COLLISION" 1 "MISSING-COVERAGE: okf-convert/skills/okf-convert/SKILL.md"
+rm -rf "$(dirname "$COLLISION")"
+
 # [5] A1: empty docroot -> coverage failure
 EMPTY="$(mktemp -d)"
 assert_exit "empty docroot (A1) -> exit 1" "$EMPTY" 1 "MISSING-COVERAGE"

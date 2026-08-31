@@ -85,21 +85,35 @@ PROSE_PROVENANCE = re.compile(r"captured from real `binder/(\d+\.\d+\.\d+)` outp
 
 # Schema literal inside a JSON envelope, used to classify which must-track
 # envelope a discovered version literal belongs to (report vs config).
+#
+# ONE-SCHEMA-PER-BLOCK ASSUMPTION (Optional-2, round-3 review): .search() takes
+# the FIRST schema in a block. That is correct because each envelope is its own
+# fenced block — no block contains two envelopes today. If that ever changes,
+# only the first schema would classify the block and only its coverage key would
+# be credited; split such a block into one envelope per fence rather than relaxing
+# this.
 SCHEMA_RE = re.compile(r'"schema"\s*:\s*"([\w.]+/v\d+)"')
 
 # MINIMUM-COVERAGE INVENTORY (#169 Critical, round-2 review). The four must-track
-# locations, each as (file basename, coverage-key, human label). The gate asserts
-# every one of these was actually visited and its literal checked, so it can tell
-# "0 findings because everything is correct" apart from "0 findings because I
-# parsed nothing". This is an explicit per-location inventory, NOT a bare
-# aggregate floor: a floor like `blocks >= 10` can be satisfied coincidentally
-# while one specific file's discovery is broken (one file loses blocks as another
-# gains them). The inventory catches that; a floor does not.
+# locations, each as (docroot-relative path, coverage-key, human label). The gate
+# asserts every one of these was actually visited and its literal checked, so it
+# can tell "0 findings because everything is correct" apart from "0 findings
+# because I parsed nothing". This is an explicit per-location inventory, NOT a
+# bare aggregate floor: a floor like `blocks >= 10` can be satisfied
+# coincidentally while one specific file's discovery is broken (one file loses
+# blocks as another gains them). The inventory catches that; a floor does not.
+#
+# Keys are docroot-RELATIVE PATHS, not basenames (Optional-1, round-3 review): two
+# files sharing a basename in different directories must not let one satisfy the
+# other's coverage entry — a filename collision defeating the inventory would be
+# the same vacuous-pass class, reachable by a different route.
+_SKILL = "okf-convert/skills/okf-convert/SKILL.md"
+_CONTRACT = "okf-convert/skills/okf-convert/references/binder-json-contract.md"
 EXPECTED_COVERAGE = [
-    ("SKILL.md", "envelope:binder.report/v1", "convert report envelope literal"),
-    ("binder-json-contract.md", "envelope:binder.report/v1", "report envelope literal"),
-    ("binder-json-contract.md", "envelope:binder.config/v1", "config envelope literal"),
-    ("binder-json-contract.md", "prose-provenance", "prose provenance sentence"),
+    (_SKILL, "envelope:binder.report/v1", "convert report envelope literal"),
+    (_CONTRACT, "envelope:binder.report/v1", "report envelope literal"),
+    (_CONTRACT, "envelope:binder.config/v1", "config envelope literal"),
+    (_CONTRACT, "prose-provenance", "prose provenance sentence"),
 ]
 
 
@@ -138,7 +152,12 @@ def main() -> int:
     findings = []
     blocks = 0
     literals_checked = 0
-    visited = set()  # (basename, coverage-key) actually reached and checked
+    visited = set()  # (docroot-relative path, coverage-key) reached and checked
+
+    def relpath(f):
+        # docroot-relative, forward-slashed, so coverage keys are stable across
+        # OS and match EXPECTED_COVERAGE regardless of how docroot was spelled.
+        return f.relative_to(docroot).as_posix()
 
     def check_json_block(f, block_lines):
         """Classify a completed JSON block by its schema and check every version
@@ -150,7 +169,7 @@ def main() -> int:
         for lineno, text in block_lines:
             for m in VERSION_LITERAL.finditer(text):
                 literals_checked += 1
-                visited.add((f.name, key))
+                visited.add((relpath(f), key))
                 if ("binder/" + m.group(1)) != expected:
                     findings.append(
                         (str(f), lineno, "JSON-ENVELOPE",
@@ -174,7 +193,7 @@ def main() -> int:
                 # PROSE provenance check runs on non-fenced text only.
                 m = PROSE_PROVENANCE.search(line)
                 if m:
-                    visited.add((f.name, "prose-provenance"))
+                    visited.add((relpath(f), "prose-provenance"))
                     if ("binder/" + m.group(1)) != expected:
                         findings.append(
                             (str(f), lineno, "PROSE-PROVENANCE",
@@ -194,9 +213,9 @@ def main() -> int:
 
     # Vacuous-pass guard: assert every must-track location was actually reached.
     coverage_fail = [
-        (base, key, label)
-        for base, key, label in EXPECTED_COVERAGE
-        if (base, key) not in visited
+        (path, key, label)
+        for path, key, label in EXPECTED_COVERAGE
+        if (path, key) not in visited
     ]
 
     print(f"# version-literal gate: {len(md_files)} md files, {blocks} json "
@@ -208,8 +227,8 @@ def main() -> int:
         print("# COVERAGE FAILURE: expected must-track location(s) were never "
               "reached, so a green result would be VACUOUS. Likely cause: a "
               "moved file, a renamed/removed fence tag, or a changed path glob.")
-        for base, key, label in coverage_fail:
-            print(f"# MISSING-COVERAGE: {base} [{key}] ({label}) "
+        for path, key, label in coverage_fail:
+            print(f"# MISSING-COVERAGE: {path} [{key}] ({label}) "
                   f"not found under {docroot}")
     print(f"# {len(findings)} drift finding(s), "
           f"{len(coverage_fail)} coverage failure(s)")
