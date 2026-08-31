@@ -3,7 +3,11 @@
 // tier here and reports another from the producer, and one of the two is a
 // false statement about how much review the content has had.
 //
-// Each case below names the spec rule it pins.
+// Each case below names the spec rule it pins. These cases re-derive their
+// expected values in TS; the EXECUTING cross-check against the real Go
+// predicates (okf.IsHumanActor / okf.IsValidActor) lives in the #171 conformance
+// suite (scripts/conformance/cross-language-conformance.sh), which is what
+// actually fails when trust.ts and Go disagree.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";

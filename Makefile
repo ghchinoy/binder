@@ -8,7 +8,7 @@ BIN     := bin/binder
 OKF_VER := v0.3.0
 OKF_PKG := github.com/okfcli/okf/cmd/okf@$(OKF_VER)
 
-.PHONY: all build test vet fmt-check check gate interop okf-install golden-update docs clean
+.PHONY: all build test vet fmt-check check gate interop okf-install golden-update docs conformance clean
 
 all: build
 
@@ -49,6 +49,15 @@ golden-update:
 # Install the external, vendor-neutral OKF validator used by the interop gate.
 okf-install:
 	$(GO) install $(OKF_PKG)
+
+# Cross-language error-string + trust conformance (issue #171): binds the Go
+# source of truth to the astro-okf TS codec, the validate-plugin.sh Python copy,
+# and the two testdata prose fixtures. Derives its expected values live from Go,
+# so a Go string/rule change turns it red once per copy. Needs Node + Python
+# (with PyYAML) and a built astro-okf dist (npm run build --workspace astro-okf).
+conformance:
+	npm run build --workspace astro-okf
+	bash scripts/conformance/cross-language-conformance.sh
 
 # Differential-validation + viewer-edge gate against okfcli/okf.
 interop: build

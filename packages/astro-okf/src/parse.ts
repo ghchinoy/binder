@@ -46,8 +46,11 @@ const OPENS_FENCE_RE = /^﻿?---(?:\r?\n|$)/;
  * derived facts (`_okf.stale`, `_okf.tier`) as if its frontmatter had been read
  * and found empty.
  *
- * The error strings below are hand-copied from that Go codec and are NOT
- * enforced against it by any automated cross-check — see #171.
+ * The error strings below match that Go codec's wording. They are now ENFORCED
+ * against it by the cross-language conformance check (issue #171):
+ * scripts/conformance/cross-language-conformance.sh derives the expected text
+ * live from the Go codec and diffs this copy against it, so editing a Go string
+ * without updating this one turns that suite red instead of drifting silently.
  */
 export function splitFrontmatter(text: string): SplitFile {
   const match = FRONTMATTER_RE.exec(text);

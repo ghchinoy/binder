@@ -1,0 +1,41 @@
+{
+  "_note": "Shared INPUT corpus for the cross-language conformance check (issue #171). This file holds INPUTS ONLY. The expected outputs (error strings, actor booleans) are DERIVED LIVE from the Go source of truth by scripts/conformance/gogolden (which runs the real native.Codec.ParseConcept and the real okf.IsHumanActor / okf.IsValidActor). Nothing here restates the Go error literals: doing so would add a FOURTH hand-copy, which is exactly what #171 exists to remove. Editing a Go error string or actor rule changes the derived golden, which turns the conformance suite RED once per copy that failed to follow.",
+  "frontmatter": [
+    {
+      "name": "unterminated-fence",
+      "input": "---\nname: okf-fixture\ndescription: an opening fence that is never closed\n"
+    },
+    {
+      "name": "nonmapping-sequence",
+      "input": "---\n- name: okf-fixture\n- description: valid YAML, top-level node is a sequence\n---\n"
+    },
+    {
+      "name": "nonmapping-scalar",
+      "input": "---\njust a bare scalar, not a mapping\n---\n"
+    },
+    {
+      "name": "valid",
+      "input": "---\nname: okf-fixture\ndescription: well-formed frontmatter a real YAML parser accepts\nlicense: Apache-2.0\n---\n\n# Body\n"
+    }
+  ],
+  "actors": [
+    "human:alice",
+    "human:",
+    "Human:bob",
+    "not-human:bob",
+    "humans:bob",
+    "human",
+    "process:nightly",
+    "process:",
+    "team:data-platform",
+    "team:",
+    "binder/0.1.0",
+    "reference_agent/gemini-2.5-pro",
+    "/0.1.0",
+    "binder/",
+    "binder",
+    "binder 1/0.1.0",
+    "",
+    "   "
+  ]
+}

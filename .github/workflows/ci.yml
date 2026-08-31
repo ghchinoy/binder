@@ -89,3 +89,55 @@ jobs:
         run: |
           chmod +x scripts/validate-plugin-fixtures.sh
           ./scripts/validate-plugin-fixtures.sh
+
+  conformance:
+    # Cross-language error-string + trust conformance (issue #171). Binds the Go
+    # source of truth (internal/okf/native, internal/okf/trust) to the astro-okf
+    # TypeScript codec, the validate-plugin.sh Python copy, and the two testdata
+    # prose fixtures. The expected values are derived LIVE from the Go code, so
+    # editing a Go error string or actor rule turns this job red once per copy
+    # that failed to follow. Needs Go + Node + Python together, so it is its own
+    # job rather than folded into the Go-only or Node-only gates.
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install PyYAML
+        # The Python copy under test parses frontmatter with a real YAML parser
+        # (issue #89); setup-python's clean env does not ship PyYAML.
+        run: python3 -m pip install --disable-pip-version-check pyyaml
+
+      - name: Install Node deps
+        run: npm ci
+
+      - name: Build astro-okf (tsc -> dist)
+        run: npm run build --workspace astro-okf
+
+      - name: Cross-language conformance (#171)
+        run: |
+          chmod +x scripts/conformance/cross-language-conformance.sh
+          ./scripts/conformance/cross-language-conformance.sh
+
+      - name: Negative fixture — the check must go RED on divergence (#171)
+        run: |
+          chmod +x scripts/conformance/negative-fixture.sh
+          ./scripts/conformance/negative-fixture.sh
