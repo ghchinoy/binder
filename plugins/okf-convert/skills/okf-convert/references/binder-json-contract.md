@@ -2,7 +2,7 @@
 
 Load this when you need the exact shape of what a binder command emits, so you
 **parse structured output with `jq`** and never scrape prose. Every shape below
-was captured from real `binder/0.5.1` output. The `internal/plugindocs` drift
+was captured from real `binder/0.5.2` output. The `internal/plugindocs` drift
 gate mechanically checks each block's **shape** — its key set at every nesting
 level — against the live binary. It routes each block's **root** to a live
 shape by key overlap (envelopes are keyed on their `command`/`schema`), then
@@ -22,7 +22,7 @@ result in the same envelope:
 
 ```json
 {
-  "binder":  "binder/0.5.1",
+  "binder":  "binder/0.5.2",
   "command": "convert",
   "schema":  "binder.report/v1",
   "result":  { }
@@ -223,7 +223,7 @@ binder graph <bundle> --json | jq '{n: (.nodes|length), e: (.edges|length)}'
 
 ```jsonc
 {
-  "binder": "binder/0.5.1", "command": "config", "schema": "binder.config/v1",
+  "binder": "binder/0.5.2", "command": "config", "schema": "binder.config/v1",
   "result": {
     "config_file": "/home/u/.config/binder/config.yaml",   // "" when none
     "values": {

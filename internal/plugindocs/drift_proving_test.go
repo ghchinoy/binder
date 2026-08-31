@@ -227,11 +227,13 @@ func TestGate_FoundingDefectSurvivesShapeGrowth(t *testing.T) {
 	for k, v := range idx {
 		grown[k] = v
 	}
+	// config.result.values is a single-object value-MAP schema, so its live
+	// shape has required == allowed; grow both by one key to simulate N=7.
 	vals := map[string]bool{"gemini_new_setting": true}
-	for k := range idx["config.result.values"] {
+	for k := range idx["config.result.values"].allowed {
 		vals[k] = true
 	}
-	grown["config.result.values"] = vals // now N=7
+	grown["config.result.values"] = liveShape{required: vals, allowed: vals} // now N=7
 
 	fs, _ := scanDoc("fixture.md", fxValues2of6, grown)
 	for _, want := range []string{"gemini_backend", "gemini_location", "gemini_model", "gemini_project"} {

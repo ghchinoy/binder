@@ -29,6 +29,38 @@ jobs:
       - name: Gate (gofmt + vet + test)
         run: make check
 
+  transcript-version-gate:
+    # Pins the version literals inside the plugins/ JSON transcripts to the
+    # producing binary (issue #169). This is deliberately SEPARATE from the
+    # in-process `make check` gate: it needs a STAMPED binder (the real release
+    # tag via ldflags), and a `go test` build is unstamped (binder/dev), so the
+    # unit gate structurally cannot check version literals. fetch-depth: 0 is
+    # required so `git describe --tags` can resolve the current release tag.
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Pin transcript version literals to the stamped binary
+        run: |
+          chmod +x scripts/check-transcript-versions.sh
+          ./scripts/check-transcript-versions.sh
+
+      - name: Transcript-version fixtures (vacuous-pass regression lock)
+        # Proves the gate fails LOUD when discovery breaks (empty/wrong docroot,
+        # renamed fence tag) instead of passing vacuously — the round-2 Critical.
+        run: |
+          chmod +x scripts/check-transcript-versions-fixtures.sh
+          ./scripts/check-transcript-versions-fixtures.sh
+
   plugin-validate:
     # Validates the okf-convert Agent Plugin/Skill bundle (plugins/,
     # .claude-plugin/) against Agent Plugins 1.0.0. Independent of the Go gate;

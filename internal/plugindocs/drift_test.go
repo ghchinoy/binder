@@ -160,8 +160,20 @@ func stripJSONC(s string) string {
 
 // --- shape index ------------------------------------------------------------
 
-// shapeIndex maps a shape name to the set of keys the live binary emits for it.
-type shapeIndex map[string]map[string]bool
+// liveShape is the live key contract for one shape. `allowed` is the UNION of
+// keys seen across the live sample(s); `required` is the keys present in EVERY
+// live element (their INTERSECTION). For a single object — or a single-element
+// array — required == allowed, so the check is exact key-set equality. Only a
+// genuine MULTI-element live array can make required a proper subset of allowed,
+// and only for the keys the live output itself shows vary (i.e. omitempty
+// fields), which are then optional per element (#172).
+type liveShape struct {
+	required map[string]bool // present in every live element (must appear)
+	allowed  map[string]bool // union across live elements (may appear)
+}
+
+// shapeIndex maps a shape name to the live key contract the binary emits for it.
+type shapeIndex map[string]liveShape
 
 func keySet(m map[string]any) map[string]bool {
 	s := make(map[string]bool, len(m))
@@ -185,27 +197,82 @@ func sortedKeys(m map[string]any) []string {
 // placeholder).
 func (idx shapeIndex) register(name string, obj any) {
 	if m, ok := obj.(map[string]any); ok && len(m) > 0 {
-		idx[name] = keySet(m)
+		ks := keySet(m)
+		idx[name] = liveShape{required: ks, allowed: ks}
 	}
 }
 
-// registerElem records the shape of the first element of a JSON array, if any.
+// registerElem folds the key sets of ALL live elements of a JSON array into the
+// indexed shape: `allowed` is their union, `required` is their intersection.
 //
-// INVARIANT / KNOWN LIMIT (#172): only element ZERO's key set is registered. A
-// typed Go []T slice gives one anchor per array, but not one JSON key set — a
-// field tagged `omitempty` (e.g. enrich FileResult.added/reason, convert
-// ConceptReport.normalized, graph Edge.text, infer Mapping.rationale) is dropped
-// from any element whose value is the zero value. Since the doc-side descent now
-// walks every element (finding 1, #106), a faithful MULTI-element capture whose
-// non-first element legitimately differs in key set would be OVER-reported
-// against element zero's set. Every documented array is single-element today, so
-// there is no live exposure, and the failure is loud (a wrong finding on first
-// contact), not silent. The fix — registering the UNION of live element key
-// sets — touches index construction and is deferred to #172.
+// A typed Go []T slice gives one anchor per array (all elements are the same
+// struct), but NOT one JSON key set — a field tagged `omitempty` (e.g. enrich
+// FileResult.added/reason, convert ConceptReport.normalized, graph Edge.text,
+// infer Mapping.rationale) is dropped from any element whose value is the zero
+// value. Indexing element ZERO only (the pre-#172 behavior) over-reported a
+// faithful MULTI-element capture whose non-first element legitimately differed
+// (#172): the doc-side descent walks every element (finding 1, #106), so element
+// 1 was keyed against element 0's set and wrongly flagged.
+//
+// Folding every element instead lets the per-element check treat a key the live
+// output itself shows varying (present in `allowed`, absent from `required`) as
+// OPTIONAL, while a key present in EVERY live element stays MANDATORY and a key
+// no live element emits is still caught. The optional set is DERIVED from live
+// output, not guessed from struct tags. When the live array is single-element
+// (every documented array today), required == allowed and the check is exactly
+// the pre-#172 key-set equality — no detection is relaxed. Empty-object and
+// scalar elements carry no key contract and are skipped, matching register.
+//
+// INVARIANT this relies on (#172 FYI-1): every array-element type the gate
+// indexes has AT LEAST ONE non-omitempty JSON field, so across any live capture
+// `required` (the intersection) is non-empty and the per-element check keeps its
+// MISSING-key power. If an element type were ever ALL-omitempty (or a
+// multi-element live array shared no common key), `required` would degrade to
+// empty and this check would weaken to extra-keys-only for that shape.
+//
+// This invariant is ENFORCED, not just trusted: TestRegisterElem_EveryIndexed-
+// ElemTypeHasMandatoryField reflects over every element type the gate's anchors
+// carry and fails at `make check` if any loses its last mandatory field — so the
+// regression (someone adds `,omitempty` in internal/{enrich,graph,...}, out of
+// sight of this comment) is caught in CI rather than pinned only by convention.
 func (idx shapeIndex) registerElem(name string, arr any) {
-	if a, ok := arr.([]any); ok && len(a) > 0 {
-		idx.register(name, a[0])
+	a, ok := arr.([]any)
+	if !ok {
+		return
 	}
+	var allowed, required map[string]bool
+	for _, e := range a {
+		m, ok := e.(map[string]any)
+		if !ok || len(m) == 0 {
+			continue
+		}
+		ks := keySet(m)
+		if allowed == nil {
+			allowed, required = map[string]bool{}, ks
+			for k := range ks {
+				allowed[k] = true
+			}
+			continue
+		}
+		for k := range ks {
+			allowed[k] = true
+		}
+		required = intersect(required, ks)
+	}
+	if allowed != nil {
+		idx[name] = liveShape{required: required, allowed: allowed}
+	}
+}
+
+// intersect returns the keys present in both a and b.
+func intersect(a, b map[string]bool) map[string]bool {
+	out := make(map[string]bool)
+	for k := range a {
+		if b[k] {
+			out[k] = true
+		}
+	}
+	return out
 }
 
 // --- anchors ----------------------------------------------------------------
@@ -340,7 +407,7 @@ func routeRoot(root any, idx shapeIndex) (*anchor, string) {
 		if !ok {
 			continue
 		}
-		if s := jaccard(keys, live); s > bestScore {
+		if s := jaccard(keys, live.allowed); s > bestScore {
 			best, bestName, bestScore = a, name, s
 		}
 	}
@@ -446,7 +513,12 @@ func descend(o any, path string, a *anchor, idx shapeIndex, file string, line in
 					missing: []string{"live shape not indexed (test bug): " + a.shape}})
 			} else {
 				keys := keySet(v)
-				if missing, extra := diff(live, keys), diff(keys, live); len(missing) > 0 || len(extra) > 0 {
+				// missing: a REQUIRED live key (present in every live element) the
+				// doc omits — the #106 class. extra: a doc key no live element
+				// emits (not in the allowed union) — a retired/invented key. A key
+				// the live output shows varies by omitempty (in allowed, not
+				// required) is optional and contributes to neither.
+				if missing, extra := diff(live.required, keys), diff(keys, live.allowed); len(missing) > 0 || len(extra) > 0 {
 					*findings = append(*findings, finding{file: file, line: line, path: path,
 						shape: a.shape, missing: missing, extra: extra})
 				}
