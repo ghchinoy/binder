@@ -11,6 +11,13 @@
  * Nothing in this module is stored in a bundle. Everything it returns is
  * DERIVED, and callers are expected to keep it in the namespaced `_okf` block
  * so a template can never confuse it with frontmatter the author wrote.
+ *
+ * The actor predicates below (isHumanActor / isValidActor) re-implement
+ * okf.IsHumanActor / okf.IsValidActor. That agreement is ENFORCED, not just
+ * intended, by the cross-language conformance check (issue #171):
+ * scripts/conformance/cross-language-conformance.sh runs the real Go predicates
+ * over a shared actor corpus and diffs these against them, so a divergence here
+ * turns that suite red rather than silently disagreeing with the producer.
  */
 
 /** A derived trust level (spec §5.3). Never stored, only computed. */

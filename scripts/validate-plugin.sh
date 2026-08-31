@@ -8,6 +8,16 @@
 
 set -euo pipefail
 
+# Directory this script ships in. Captured BEFORE any cd so helper scripts
+# (frontmatter_parse.py) are found in the real scripts/ dir even when the
+# fixture harness points VALIDATE_PLUGIN_ROOT at a throwaway tree that has no
+# copy of them (issue #89).
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Frontmatter parser (issue #89), extracted so the #171 conformance check can
+# exercise the exact same code this gate runs instead of a second copy.
+FRONTMATTER_PARSER="$SELF_DIR/frontmatter_parse.py"
+
 # Root of the tree to validate. Defaults to the repo this script ships in;
 # VALIDATE_PLUGIN_ROOT lets the fixture harness (scripts/validate-plugin-fixtures.sh)
 # point the same checks at a throwaway tree without copying the script (issue #89).
@@ -81,9 +91,14 @@ for skill_md in plugins/*/skills/*/SKILL.md; do
   # so it could not tell valid YAML from invalid YAML and waved malformed
   # frontmatter through with a clean exit 0 (this is the gate #88 was about).
   #
-  # The fence/mapping semantics below mirror the Go codec's splitFrontmatter +
-  # parseFrontmatterNode (internal/okf/native/native.go) so binder and this gate
-  # agree on what "valid frontmatter" means and use the same wording.
+  # The parsing logic lives in scripts/frontmatter_parse.py; its fence/mapping
+  # semantics mirror the Go codec's splitFrontmatter + parseFrontmatterNode
+  # (internal/okf/native/native.go) so binder and this gate agree on what "valid
+  # frontmatter" means and use the same wording. That agreement is enforced —
+  # not merely intended — by the #171 conformance check
+  # (scripts/conformance/cross-language-conformance.sh), which imports the very
+  # same frontmatter_parse.py and diffs it against error text derived live from
+  # the Go codec. Editing a Go string turns that suite red for this copy.
   #
   # Only stdout is captured here, and only stdout carries the JSON contract the
   # shell parses below. Python's stderr is routed to a temp file (NOT merged into
@@ -91,60 +106,7 @@ for skill_md in plugins/*/skills/*/SKILL.md; do
   # future crash shows its traceback instead of a bare "python execution failed"
   # (issue #89, round 3).
   py_stderr="$(mktemp)"
-  read_res="$(SKILL_MD="$skill_md" python3 -c "
-import json, sys, os, re
-
-filepath = os.environ['SKILL_MD']
-content = open(filepath, 'r', encoding='utf-8').read()
-
-# Split on the YAML 1.1 line-break set (\r\n, lone \r, \n), matching the Go
-# codec's splitLinesKeepEnds so a fence is recognised the same way here.
-lines = re.split(r'\r\n|\r|\n', content)
-
-# Opening fence: first line must be exactly '---' (after trimming line ends).
-if not lines or lines[0].strip() != '---':
-    print(json.dumps({'error': \"missing frontmatter: document does not start with '---'\"}))
-    sys.exit(0)
-
-# Closing fence: a subsequent line that is exactly '---'.
-end = None
-for i in range(1, len(lines)):
-    if lines[i].strip() == '---':
-        end = i
-        break
-if end is None:
-    print(json.dumps({'error': \"invalid frontmatter: unterminated '---' block\"}))
-    sys.exit(0)
-
-fm_text = '\n'.join(lines[1:end])
-
-try:
-    import yaml
-except ImportError:
-    print(json.dumps({'error': 'PyYAML is required to validate frontmatter (pip install pyyaml)'}))
-    sys.exit(0)
-
-try:
-    data = yaml.safe_load(fm_text)
-except yaml.YAMLError as e:
-    print(json.dumps({'error': 'invalid frontmatter: ' + ' '.join(str(e).split())}))
-    sys.exit(0)
-
-if data is None:
-    data = {}
-if not isinstance(data, dict):
-    print(json.dumps({'error': 'invalid frontmatter: expected a mapping at the top level'}))
-    sys.exit(0)
-
-def as_str(v):
-    return '' if v is None else str(v)
-
-name = as_str(data.get('name', ''))
-desc = as_str(data.get('description', ''))
-lic = as_str(data.get('license', ''))
-
-print(json.dumps({'name': name, 'desc': desc, 'desc_len': len(desc), 'license': lic}))
-" 2>"$py_stderr" || echo '{"error": "python execution failed"}')"
+  read_res="$(SKILL_MD="$skill_md" python3 "$FRONTMATTER_PARSER" "$skill_md" 2>"$py_stderr" || echo '{"error": "python execution failed"}')"
 
   has_err="$(echo "$read_res" | python3 -c "import json,sys; print(json.load(sys.stdin).get('error',''))" 2>/dev/null || true)"
   if [ -n "$has_err" ]; then
