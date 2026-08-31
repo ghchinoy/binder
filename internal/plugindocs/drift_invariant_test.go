@@ -142,12 +142,17 @@ func collectArrayElemShapes() map[string]bool {
 // interchangeable here; that residual is inherent to a data-observed binding.
 //
 // KNOWN LIMIT (#177): sub-test (3) binds by JSON tag NAMES, not type identity, so
-// two structs that serialize the same key names are interchangeable — and since
-// identical tag names need not carry identical `,omitempty` flags, such a pair can
-// compute different `required` sets, letting a mis-map between them slip past (3)
-// and still weaken (1) to extra-keys-only. No such pair exists among the mappings
-// today; the limit is inherent to an observed-data binding with no runtime
-// shape->type path, and is tracked in #177 rather than left as tribal knowledge.
+// two structs that serialize the same key names are interchangeable here. One such
+// identical-tag-NAME pair DOES exist among the mappings today —
+// convert.UnresolvedLink and review.Edge both serialize exactly
+// {from, raw_target, text} — and (3) accepts a swap between them. It is harmless
+// because both are all-mandatory (no `,omitempty` on either), so they compute the
+// SAME `required` set and (1) is enforced against an equivalent struct. The HARMFUL
+// variant — an identical-tag-NAME pair whose `,omitempty` flags DIFFER, which would
+// compute different `required` sets and let a mis-map slip past (3) while weakening
+// (1) to extra-keys-only — does not exist today and is untracked-by-construction:
+// the limit is inherent to an observed-data binding with no runtime shape->type
+// path. Tracked in #177 rather than left as tribal knowledge.
 func TestRegisterElem_EveryIndexedElemTypeHasMandatoryField(t *testing.T) {
 	elemGoType := map[string]reflect.Type{
 		"enrich.result.files[]":           reflect.TypeOf(enrich.FileResult{}),
