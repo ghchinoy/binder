@@ -24,16 +24,20 @@ cd "$REPO_ROOT"
 CONF="$SELF_DIR/cross-language-conformance.sh"
 NATIVE="internal/okf/native/native.go"
 TRUST_TS="packages/astro-okf/src/trust.ts"
+CORPUS="scripts/conformance/corpus.json"
 
 WORK="$(mktemp -d)"
 NATIVE_BAK="$WORK/native.go.bak"
 TRUST_BAK="$WORK/trust.ts.bak"
+CORPUS_BAK="$WORK/corpus.json.bak"
 cp "$NATIVE" "$NATIVE_BAK"
 cp "$TRUST_TS" "$TRUST_BAK"
+cp "$CORPUS" "$CORPUS_BAK"
 
 restore() {
   cp "$NATIVE_BAK" "$NATIVE"
   cp "$TRUST_BAK" "$TRUST_TS"
+  cp "$CORPUS_BAK" "$CORPUS"
   npm run build --workspace astro-okf >/dev/null 2>&1 || true
   rm -rf "$WORK"
 }
@@ -95,9 +99,10 @@ note "[1] BASELINE — unmodified tree must be GREEN"
 expect_pass "baseline"
 
 note "[2] MUTATE the Go error strings (source of truth) — expect RED per copy"
-# Keep the 'unterminated' substring so the Go suite itself stays green (the bug
-# #171 is about is precisely that the Go suite does NOT catch this); the full
-# literal still changes, so every hand-copy must be named.
+# Keep the 'unterminated' substring (the full literal still changes, so every
+# hand-copy must be named). This mirrors the pre-existing-bug demonstration,
+# where retaining that substring keeps the Go suite itself green — the point of
+# #171 being that the Go suite does NOT catch this drift.
 sed -i \
   -e "s/unterminated '---' block/unterminated '---' fence/" \
   -e "s/expected a mapping at the top level/expected a mapping at the document root/" \
@@ -130,6 +135,17 @@ note "[5] REVERT trust.ts — must be GREEN again"
 cp "$TRUST_BAK" "$TRUST_TS"
 npm run build --workspace astro-okf >/dev/null 2>&1
 expect_pass "after reverting trust.ts"
+
+note "[6] EMPTY the corpus — the check must FAIL CLOSED, not pass vacuously"
+# A check that reports success because it examined nothing is worthless. Stub the
+# corpus to zero cases and require the positive check to refuse it.
+printf '{"frontmatter": [], "actors": []}\n' >"$CORPUS"
+expect_red_naming "vacuous (empty) corpus" "$WORK/red3.txt" \
+  "FATAL: conformance corpus is vacuous"
+
+note "[7] RESTORE the corpus — must be GREEN again"
+cp "$CORPUS_BAK" "$CORPUS"
+expect_pass "after restoring the corpus"
 
 echo
 echo "=================================================================="

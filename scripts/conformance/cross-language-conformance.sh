@@ -44,7 +44,19 @@ if ! go run ./internal/okf/conformance/gogolden "$CORPUS" >"$GOLDEN" 2>"$TMP/go.
   cat "$TMP/go.err"
   exit 2
 fi
-echo "  ok   golden derived by executing the real Go code ($(grep -c '"error"' "$GOLDEN") frontmatter case(s), $(grep -c '"actor"' "$GOLDEN") actor case(s))"
+
+# Fail CLOSED on a vacuous corpus. If corpus.json is empty (or its arrays are),
+# every sub-check below iterates zero times and the suite passes having examined
+# nothing — a check that reports success because it looked at nothing. Assert at
+# least one frontmatter case AND one actor case actually ran.
+FM_COUNT=$(grep -c '"error"' "$GOLDEN" || true)
+ACTOR_COUNT=$(grep -c '"actor"' "$GOLDEN" || true)
+if [ "${FM_COUNT:-0}" -lt 1 ] || [ "${ACTOR_COUNT:-0}" -lt 1 ]; then
+  echo "FATAL: conformance corpus is vacuous — derived ${FM_COUNT:-0} frontmatter case(s) and ${ACTOR_COUNT:-0} actor case(s)." >&2
+  echo "       Refusing to pass on an empty corpus (need >=1 of each). Check $CORPUS." >&2
+  exit 2
+fi
+echo "  ok   golden derived by executing the real Go code ($FM_COUNT frontmatter case(s), $ACTOR_COUNT actor case(s))"
 
 # 2. The TS check runs against the shipped dist.
 if [ ! -f packages/astro-okf/dist/index.js ]; then

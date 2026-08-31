@@ -1,13 +1,16 @@
 # Cross-language conformance (`#171`)
 
-Two structural frontmatter error strings —
+The two structural frontmatter error strings — the unterminated-fence error and
+the non-mapping-top-level error, whose exact text lives at
+`internal/okf/native/native.go:959` and `:1021` — and the actor-derivation rules
+(`IsHumanActor` / `IsValidActor`) exist as hand-copies across three
+implementations plus two prose fixtures, with nothing binding them:
 
-- `invalid frontmatter: unterminated '---' block`
-- `invalid frontmatter: expected a mapping at the top level`
+<!-- This file deliberately does NOT quote the two error strings. Their exact
+     text lives only where it is bound to Go (see native.go:959/:1021 and the
+     sites in the table below). Restating the literals here would add a new
+     unbound copy — the exact pattern #171 exists to remove. -->
 
-— and the actor-derivation rules (`IsHumanActor` / `IsValidActor`) exist as
-hand-copies across three implementations plus two prose fixtures, with nothing
-binding them:
 
 | copy | site |
 |---|---|
