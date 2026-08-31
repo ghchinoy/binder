@@ -32,6 +32,15 @@ echo
 PASS=0
 FAIL=0
 
+# The number of cases this harness MUST run. Asserted at the end against
+# PASS+FAIL, so the harness cannot itself pass vacuously (round-4 review): if a
+# case is commented out, reordered away, or conditionally guarded off, PASS+FAIL
+# drops below this and the harness fails loud naming the shortfall. A bare
+# "ran at least one" floor is weaker — it would not catch losing three of seven —
+# exactly the inventory-over-floor reasoning from round 2. Update this when you
+# add or remove a case.
+EXPECTED_CASES=7
+
 # assert_exit <label> <docroot> <expected-exit> [want-substring]
 assert_exit() {
   local label="$1" docroot="$2" expected="$3" want="${4:-}"
@@ -114,10 +123,22 @@ rm -rf "$EMPTY"
 assert_exit "non-existent docroot (A2) -> exit 1" "/tmp/check-tv-does-not-exist-$$" 1 "MISSING-COVERAGE"
 
 echo
+# Vacuous-pass guard for the harness itself: a harness whose whole job is locking
+# in the "examines-nothing" fix must not report success while examining nothing.
+# With no cases run (PASS=FAIL=0) the checks below would print "OK: 0 ... passed"
+# and exit 0, so assert the expected number of cases actually ran FIRST.
+TOTAL=$((PASS + FAIL))
+if [ "$TOTAL" -ne "$EXPECTED_CASES" ]; then
+  echo "FAILED: ran $TOTAL case(s) but expected $EXPECTED_CASES — cases were" \
+       "skipped, reordered, or guarded out. A harness that runs nothing must" \
+       "not report success."
+  exit 1
+fi
+
 if [ "$FAIL" -eq 0 ]; then
-  echo "OK: $PASS fixture case(s) passed."
+  echo "OK: all $PASS of $EXPECTED_CASES fixture case(s) passed."
   exit 0
 else
-  echo "FAILED: $FAIL of $((PASS + FAIL)) fixture case(s) did not match."
+  echo "FAILED: $FAIL of $TOTAL fixture case(s) did not match."
   exit 1
 fi
