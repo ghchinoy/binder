@@ -140,6 +140,14 @@ func collectArrayElemShapes() map[string]bool {
 // producing command literally uses — only that it is JSON-tag-compatible with the
 // shape's live keys. Two structs with identical tag sets would be
 // interchangeable here; that residual is inherent to a data-observed binding.
+//
+// KNOWN LIMIT (#177): sub-test (3) binds by JSON tag NAMES, not type identity, so
+// two structs that serialize the same key names are interchangeable — and since
+// identical tag names need not carry identical `,omitempty` flags, such a pair can
+// compute different `required` sets, letting a mis-map between them slip past (3)
+// and still weaken (1) to extra-keys-only. No such pair exists among the mappings
+// today; the limit is inherent to an observed-data binding with no runtime
+// shape->type path, and is tracked in #177 rather than left as tribal knowledge.
 func TestRegisterElem_EveryIndexedElemTypeHasMandatoryField(t *testing.T) {
 	elemGoType := map[string]reflect.Type{
 		"enrich.result.files[]":           reflect.TypeOf(enrich.FileResult{}),
