@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.3](https://github.com/ghchinoy/binder/compare/v0.5.2...v0.5.3) (2026-08-31)
+
+
+### Bug Fixes
+
+* **plugindocs:** batch driftgate accuracy — [#172](https://github.com/ghchinoy/binder/issues/172) (over-report) [+ [#169](https://github.com/ghchinoy/binder/issues/169) to follow] ([#173](https://github.com/ghchinoy/binder/issues/173)) ([0ff0911](https://github.com/ghchinoy/binder/commit/0ff091106a7e9a45fd62a561968558394e366645))
+
 ## [0.5.2](https://github.com/ghchinoy/binder/compare/v0.5.1...v0.5.2) (2026-08-25)
 
 
