@@ -72,6 +72,16 @@ CLEAN="$(fresh_copy)"
 assert_exit "clean copy -> exit 0" "$CLEAN" 0 "0 coverage failure(s)"
 rm -rf "$(dirname "$CLEAN")"
 
+# LINE-ADDRESS COUPLING (FYI-2, delta review): the mutation cases below sed
+# specific line numbers of the REAL committed docs (e.g. the version literal at
+# SKILL.md:125, the opening fence at :124) to plant drift or hide a block. Those
+# addresses are coupled to the current doc layout, so a doc re-flow that shifts
+# them means a sed edits the wrong line — the case's precondition (planted drift /
+# hidden fence) is not set up, so the checker's exit code and expected substring
+# no longer match and assert_exit FAILS. This is fail-safe: a re-flow breaks the
+# harness LOUD rather than silently skipping the case or passing green. If you
+# re-flow these docs, update the line numbers here to match.
+
 # [2] drifted JSON envelope literal -> RED (drift finding)
 DRIFT_JSON="$(fresh_copy)"
 sed -i '125s#binder/0\.5\.[0-9]\+#binder/9.9.9#' "$DRIFT_JSON/$SKILL_REL"
