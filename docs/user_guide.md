@@ -962,11 +962,13 @@ It reports these checks:
    (`16:9`), an already-quoted value, a multi-line quoted scalar, the interior
    of a `|`/`>` block scalar, and a flow **sequence** are all left alone — in an
    unquoted value the colon must be followed by a **space or a tab** to mean
-   anything. A single-line flow **mapping** IS scanned one level in, so
+   anything. A flow **mapping** IS scanned, so
    `meta: {name: Multi-View: Tabs, x: 1}` names `name`: the issue measured that
    shape in the wild, so it is a true instance rather than a false-positive
-   class. Detection confirms every candidate against a real YAML parse, not a
-   regex alone. This bucket is **advisory even by `lint`'s standards**: with
+   class. A single-line flow mapping is scanned one level in by a dedicated
+   pass; one written across several lines is caught by the ordinary line scan,
+   because each of its inner entries sits on a line of its own. Detection
+   confirms every candidate against a real YAML parse, not a regex alone. This bucket is **advisory even by `lint`'s standards**: with
    entrypoints, one of only two buckets never counted as a finding, so it
    cannot gate `--strict`.
    See [Strict mode](#strict-mode) for why that is safe rather than lenient.
@@ -2056,12 +2058,19 @@ frontmatter key whose unquoted plain-scalar value contains a colon-space
 ([#93](https://github.com/ghchinoy/binder/issues/93)) it names the key to quote
 in the prose report and in `--json` under `result.colon_space_scalars`, but
 keeps it out of the findings count, so `--strict` does not escalate it. The
-reason is not squeamishness about a new rule: YAML forbids `": "` inside a plain
-scalar outright, so such a value can never parse, which means the same file is
-*always* already reported as an `invalid frontmatter` schema violation — and
-that violation **does** gate under `--strict`. Counting the advisory too would
-gate twice on one defect. Nothing goes unreported; the advisory only says which
-key to quote in a file already flagged. `result.colon_space_scalars` is additive
+reason is not squeamishness about a new rule, and it is not a claim about YAML's
+quoting rules: a colon-space can appear in plenty of documents that parse
+perfectly well, for instance inside a block scalar, where it is ordinary text and
+not a key at all. The guarantee comes from the wiring instead. The advisory is
+*derived only for a file the codec could not parse* — `convert` computes it from
+the same `recovered` flag that produces the `invalid frontmatter` schema
+violation, so the file carrying an advisory is *always* already reported by that
+violation, and that violation **does** gate under `--strict`. Counting the
+advisory too would gate twice on one defect. Nothing goes unreported; the
+advisory only says which key to quote in a file already flagged. Removing that
+gate would not be a simplification: it is the whole of the never-gates
+guarantee, and without it the rule can name a "key" in a cleanly-parsing file
+with no violation to subsume it. `result.colon_space_scalars` is additive
 to `binder.report/v1` (the schema string is unbumped).
 
 The `--status-map` vocabulary gate is the one that fires **before** anything is

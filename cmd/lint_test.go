@@ -133,8 +133,8 @@ func TestLintColonSpaceAdvisory(t *testing.T) {
 		t.Errorf("advisory count missing from prose:\n%s", out)
 	}
 	for _, want := range []string{
-		`badyaml: title: unquoted value contains ": " — quote it`,
-		`badyaml: goal: unquoted value contains ": " — quote it`,
+		`badyaml: title: unquoted value contains a colon followed by a space or tab — quote it`,
+		`badyaml: goal: unquoted value contains a colon followed by a space or tab — quote it`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("prose missing %q:\n%s", want, out)

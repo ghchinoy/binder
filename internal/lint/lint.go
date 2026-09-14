@@ -44,8 +44,8 @@ type Report struct {
 	Stale            []string  `json:"stale"`             // okf.IsStale as of today
 	SchemaViolations []Finding `json:"schema_violations"` // Detail: "missing type" | "invalid frontmatter: <err>"
 	// ColonSpaceScalars is the issue-#93 advisory: a frontmatter key whose value
-	// is an unquoted plain scalar containing a colon-space (": "), e.g.
-	// `title: Multi-View: Tabs and Windows`. Detail names the key and the fix.
+	// is an unquoted plain scalar containing a colon followed by a space OR a tab,
+	// e.g. `title: Multi-View: Tabs and Windows`. Detail names the key and the fix.
 	// It is ADVISORY ONLY and is deliberately excluded from NumFindings — see the
 	// note there.
 	ColonSpaceScalars []Finding `json:"colon_space_scalars"`
@@ -143,7 +143,7 @@ func Lint(concepts []*okf.Concept, facts []convert.SourceFacts, today string, en
 		for _, key := range f.ColonSpaceKeys {
 			r.ColonSpaceScalars = append(r.ColonSpaceScalars, Finding{
 				Concept: f.ConceptID,
-				Detail:  fmt.Sprintf("%s: unquoted value contains \": \" — quote it", key),
+				Detail:  fmt.Sprintf("%s: unquoted value contains a colon followed by a space or tab — quote it", key),
 			})
 		}
 		if !f.TitlePresent {
@@ -252,21 +252,24 @@ func sortFindings(f []Finding) {
 // as "missing type" above.
 //
 // "Always" is load-bearing there, so it is worth saying why it holds and not
-// merely that it does. YAML forbids ": " inside a plain scalar outright, so a
-// genuine instance cannot parse; convert therefore recovers the file, and a
-// recovered file always yields the invalid-frontmatter violation above.
+// merely that it does. It is NOT a claim about YAML: a colon-space appears in
+// plenty of documents that parse cleanly — inside a block scalar it is ordinary
+// text, not a key. An earlier revision of this comment argued from "YAML forbids
+// ': ' in a plain scalar, so it cannot parse", and that argument is false.
 //
-// The detector closes the loop from the other side, and it does so on the SAME
-// fact rather than on a parallel judgement of its own: convert hands it the
-// Recovered flag these violations are derived from (see convert.colonSpaceKeys,
-// stage 1), so the advisory cannot outlive the violation that subsumes it
-// without the two disagreeing about a single boolean. That matters because a
-// detector bug did quietly turn the claim false once already, via a multi-line
-// quoted scalar. Three tests hold it shut:
+// What actually holds it is the wiring. convert derives the advisory ONLY for a
+// file it could not parse, from the very same Recovered flag these violations
+// come from (see convert.Analyze and convert.colonSpaceKeys), so the advisory
+// cannot outlive the violation that subsumes it without the two disagreeing
+// about a single boolean. That matters because a detector bug did quietly turn
+// the claim false twice — once via a multi-line quoted scalar, and once via
+// cleanly-parsing shapes the line scan misreads (duplicate keys, unresolvable
+// tags, anchors), which is what moved the guarantee out of the detector and into
+// the call graph. Three tests hold it shut:
 // TestColonSpaceAlwaysAccompaniedByViolation over every corpus fixture,
 // convert's TestColonSpaceOnlyFiresOnUnparseableFrontmatter over every markdown
-// fixture, and convert's TestColonSpaceStage1IsTheCallersVerdictAlone, which
-// fails if the detector ever starts deciding for itself again.
+// fixture, and convert's TestColonSpaceNeverDerivedForCleanFile, which runs the
+// known-misread shapes through Analyze and fails if the advisory surfaces.
 //
 // Leaving it out of the single total the gate reads is also what makes "there is
 // no code path by which this rule rejects" true by construction rather than by

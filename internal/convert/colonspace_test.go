@@ -157,8 +157,12 @@ func TestColonSpaceKeys(t *testing.T) {
 
 		// --- the counterexample class: shapes that PARSE CLEANLY --------------
 		// Each of these once produced a finding against a phantom key even though
-		// the frontmatter is valid YAML. They are the reason stage 1 exists: a
-		// block that parses has no trap in it, because YAML cannot parse one.
+		// the frontmatter is valid YAML. They are why the advisory is gated on the
+		// codec's verdict rather than on the scan alone. NOT because "a block that
+		// parses has no trap in it" — that was the original, false rationale: a
+		// colon-space is perfectly legal inside a block scalar or a quoted
+		// continuation, where it is text and not a key. The scan cannot tell those
+		// from a real trap, so the gate decides instead.
 		{
 			name: "multi-line DOUBLE-quoted scalar whose continuation looks like a key",
 			doc:  "---\ndescription: \"line one\n  note: a: b\"\n---\n\n# X\n",
@@ -191,7 +195,8 @@ func TestColonSpaceKeys(t *testing.T) {
 		},
 
 		// A multi-line quoted scalar sitting in a file that IS broken elsewhere:
-		// stage 1 opens the door, and stage 2 must still name only the real key.
+		// the codec's failure opens the door, and the scan must still name only the
+		// real key rather than the phantom one in the quoted continuation.
 		{
 			name: "real trap alongside a multi-line quoted scalar",
 			doc:  "---\ndescription: \"line one\n  note: a: b\"\ntitle: Multi-View: Tabs and Windows\n---\n\n# X\n",
@@ -264,14 +269,33 @@ func TestColonSpaceNeverDerivedForCleanFile(t *testing.T) {
 				t.Fatalf("premise gone: the ungated detector no longer misreads this shape, so the "+
 					"gate is no longer what is keeping it quiet\ndoc:\n%s", c.doc)
 			}
-			// Half two: as convert.Analyze actually calls it, nothing is reported.
-			var wired []string
-			if perr != nil {
-				wired = colonSpaceKeys(norm)
+			// Half two: run the SAME document through the real Analyze and assert the
+			// advisory does not surface. An earlier revision re-implemented the gate
+			// here instead (`if perr != nil { ... }`) — which, sitting after the Fatalf
+			// on that same condition, could never execute: the assertion was dead and
+			// the comment claiming both halves were covered was false. Calling Analyze
+			// is also the only version that tests the wiring rather than a replica of
+			// it, which is the whole point of fixing #93 in the call graph.
+			dir := t.TempDir()
+			if werr := os.WriteFile(filepath.Join(dir, "x.md"), []byte(c.doc), 0o644); werr != nil {
+				t.Fatalf("writing fixture: %v", werr)
 			}
-			if wired != nil {
-				t.Errorf("ColonSpaceKeys = %v for a file the codec parsed cleanly; the advisory would "+
-					"fire with no invalid-frontmatter violation to subsume it", wired)
+			_, facts, _, aerr := Analyze(dir, Options{
+				Codec:   native.New(),
+				Version: "0.1.0",
+				Now:     fixedNowInternal,
+			})
+			if aerr != nil {
+				t.Fatalf("Analyze: %v", aerr)
+			}
+			if len(facts) != 1 {
+				t.Fatalf("vacuous: Analyze returned %d facts, want 1 — the document under test "+
+					"was not scanned", len(facts))
+			}
+			if f := facts[0]; len(f.ColonSpaceKeys) != 0 {
+				t.Errorf("ColonSpaceKeys = %v for a file the codec parsed cleanly; the advisory "+
+					"would fire with no invalid-frontmatter violation to subsume it",
+					f.ColonSpaceKeys)
 			}
 		})
 	}

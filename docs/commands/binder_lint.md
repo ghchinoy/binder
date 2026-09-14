@@ -17,8 +17,8 @@ type: is masked once convert defaults it.
 It also reports unquoted colon-space scalars: any frontmatter key whose
 unquoted plain-scalar value contains ": " (e.g. title: Multi-View: Tabs),
 which YAML reads as a nested mapping rather than the intended string.
-A colon-tab counts the same, and a single-line flow mapping is scanned
-one level in. Quoting the value is the fix. This one is advisory-only and
+A colon-tab counts the same, and a flow mapping is scanned too (one level
+in when written on a single line). Quoting the value is the fix. This one is advisory-only and
 never gates, even under --strict: it is derived only for a file whose
 frontmatter did not parse, and names the key to quote in a file already
 reported as an invalid-frontmatter schema violation.

@@ -18,8 +18,8 @@ func TestColonSpacePositiveControl(t *testing.T) {
 	rep := lintCorpus(t, "../../testdata/corpus-lint-schema")
 
 	want := []lint.Finding{
-		{Concept: "badyaml", Detail: `goal: unquoted value contains ": " — quote it`},
-		{Concept: "badyaml", Detail: `title: unquoted value contains ": " — quote it`},
+		{Concept: "badyaml", Detail: `goal: unquoted value contains a colon followed by a space or tab — quote it`},
+		{Concept: "badyaml", Detail: `title: unquoted value contains a colon followed by a space or tab — quote it`},
 	}
 	if len(rep.ColonSpaceScalars) != len(want) {
 		t.Fatalf("colon-space scalars = %+v, want %+v", rep.ColonSpaceScalars, want)

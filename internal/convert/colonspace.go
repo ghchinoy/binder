@@ -16,7 +16,8 @@ import (
 var kvLine = regexp.MustCompile(`^([ \t]*)(?:-[ \t]+)?([^#:\s][^#:]*):(?:[ \t]+(\S.*))?$`)
 
 // colonSpaceKeys reports, in document order, the frontmatter keys of norm whose
-// value is an UNQUOTED plain scalar containing a colon-space (": ").
+// value is an UNQUOTED plain scalar containing a colon followed by a space or a
+// TAB (both end a mapping key in YAML, so both are the same defect).
 //
 // That construct is the single most common OKF authoring defect in the wild
 // (issue #93): in `title: Multi-View: Tabs and Windows` a YAML parser reads the
@@ -60,8 +61,8 @@ var kvLine = regexp.MustCompile(`^([ \t]*)(?:-[ \t]+)?([^#:\s][^#:]*):(?:[ \t]+(
 // only ever a pre-filter). The caller already knows the file is broken; this
 // names the key to quote. Its skips keep the classic false positives clean even
 // on a file that is broken for some OTHER reason:
-//   - `url: https://example.com` and `standup: 12:30` — a colon NOT followed by
-//     a space; the pre-filter's value never contains ": " at all.
+//   - `url: https://example.com` and `standup: 12:30` — a colon followed by
+//     neither a space nor a tab, so it never ends a key.
 //   - `title: "Multi-View: Tabs"` — quoted, so it is not a plain scalar (and it
 //     is the very form the advisory asks for).
 //   - the continuation lines of a MULTI-LINE quoted scalar, which are string
@@ -78,10 +79,9 @@ var kvLine = regexp.MustCompile(`^([ \t]*)(?:-[ \t]+)?([^#:\s][^#:]*):(?:[ \t]+(
 //     absent one.
 //
 // norm is NormalizeInput's output (BOM-stripped, lone CRs translated), the same
-// bytes the codec parses. A file with no opening "---" fence yields nothing; an
-// unterminated fence is still scanned, because the trap is just as present in a
-// block the author never closed and convert recovers that file rather than
-// rejecting it.
+// bytes the codec parses. A file with no opening "---" fence yields nothing, and
+// so does one whose fence is never closed — see frontmatterRegion below for why
+// that case is deliberately left alone rather than scanned to EOF.
 //
 // Like every other SourceFacts field this is purely descriptive: it never
 // rejects, gates, or mutates anything (never-reject, spec §11).
@@ -139,7 +139,9 @@ func colonSpaceKeys(norm []byte) []string {
 			}
 			continue
 		case '{':
-			// A single-line flow MAPPING is scanned for the same defect one level in:
+			// A single-line flow MAPPING is scanned for the same defect one level in
+			// (a MULTI-line one needs no help here: its entries sit on their own lines
+			// and the ordinary line scan above already sees them):
 			// issue #93's fourth measured instance is exactly this shape
 			// (`meta: {name: Multi-View: Tabs, x: 1}`), so treating every flow
 			// collection as a false-positive class would miss a case the issue cites
