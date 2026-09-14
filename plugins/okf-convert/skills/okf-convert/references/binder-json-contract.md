@@ -145,9 +145,9 @@ binder review <bundle> --json | jq '.result | {by_type, tiers, orphans, stale}'
   "schema_violations": [ { "concept": "adr/one", "detail": "missing type" } ],
   "colon_space_scalars": []                    // a frontmatter key whose UNQUOTED plain
                                                // scalar contains ": " or ":\t" (e.g.
-                                               // `title: A: B`), which YAML reads as a
-                                               // nested mapping; advisory only — never
-                                               // gates, not even under --strict
+                                               // `title: A: B`), which YAML tries and
+                                               // rejects as a nested mapping; advisory only
+                                               // — never gates, not even under --strict
 }
 ```
 
