@@ -16,14 +16,20 @@ import (
 //     verbatim, the pre-existing scalar TAG is unchanged (the !!timestamp->!!str
 //     retype cannot hide behind identical-looking text), AND the whole document
 //     REPARSES. These are invariants; a red here is a regression.
+//   - TestBlockSeqAppendKeepsInterleavedTrivia pins the two BLOCK-sequence rows
+//     whose interleaved trivia BETWEEN entries (a comment line, a blank separator)
+//     is carried through the append, so the splice stays strictly additive
+//     (issue #142). These moved out of the characterization below when the block
+//     splice started copying the inter-entry lines; they are invariants now.
 //   - TestCharacterize_ChangedContainerLosesInterleavedFormatting and
 //     TestCharacterize_EmptyFlowMapReshapedOnAppend pin the shapes whose entries
-//     survive but whose INTERLEAVED content (comments, an empty-map reshape) does
-//     NOT. Following the TestCharacterize_ convention already used in this
-//     codebase, they record CURRENT behaviour, not a guarantee: comment loss is a
-//     yaml.v3 node-model limit on the changed path, not a design choice. A future
-//     change that carries comments should update these to match, not read a red
-//     here as a bug it caused.
+//     survive but whose INTERLEAVED content (comments in a rebuilt FLOW container,
+//     trivia before the FIRST entry, an empty-map reshape) does NOT. Following the
+//     TestCharacterize_ convention already used in this codebase, they record
+//     CURRENT behaviour, not a guarantee: comment loss is a yaml.v3 node-model
+//     limit on the changed path, not a design choice. A future change that carries
+//     comments should update these to match, not read a red here as a bug it
+//     caused.
 //
 // Together these twenty rows are the evidence for exactly what docs/user_guide.md
 // section 3 is permitted to claim.
@@ -313,15 +319,66 @@ func TestByteFaithfulMultiLineFlowSequenceReparses(t *testing.T) {
 	}
 }
 
+// TestBlockSeqAppendKeepsInterleavedTrivia pins the two rows that used to be
+// recorded as trivia LOSS below and are now carried: trivia BETWEEN entries of a
+// changed BLOCK sequence (a comment line, a blank separator line). The block
+// splice copies each entry together with the source lines that precede it, so the
+// append is strictly additive — see TestVerifiedAppendIsStrictlyAdditive and
+// issue #142. This is an invariant, not a characterization: a red here is a
+// regression.
+//
+// It does NOT extend to the flow-sequence/flow-mapping rows (N, P, V below) or to
+// trivia BEFORE the first entry (row E): those go through a re-scan of the flow
+// region and the key's head region respectively, and remain characterized losses.
+func TestBlockSeqAppendKeepsInterleavedTrivia(t *testing.T) {
+	cases := []struct {
+		name   string
+		fm     string
+		entry  string // must survive
+		trivia string // must ALSO survive now
+	}{
+		{
+			"F_comment_between_items",
+			"type: Metric\nverified:\n  - { by: human:x, at: 2024-02-01T09:30:00Z }\n  # mid comment\n  - { by: human:y, at: 2024-03-01T09:30:00Z }\n",
+			"  - { by: human:x, at: 2024-02-01T09:30:00Z }\n", "  # mid comment\n",
+		},
+		{
+			"T_blank_line_between_items",
+			"type: Metric\nverified:\n  - { by: human:x, at: 2024-02-01T09:30:00Z }\n\n  - { by: human:y, at: 2024-03-01T09:30:00Z }\n",
+			"  - { by: human:y, at: 2024-03-01T09:30:00Z }\n", "}\n\n  -",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			out, reparseErr := appendStamp(t, tc.fm)
+			if reparseErr != nil {
+				t.Fatalf("output does not re-parse (%v):\n%s", reparseErr, out)
+			}
+			// Anti-vacuity: the append landed, so the container really changed.
+			if !strings.Contains(out, "human:ghchinoy") {
+				t.Fatalf("appended stamp missing — container did not change:\n%s", out)
+			}
+			if !strings.Contains(out, tc.entry) {
+				t.Errorf("pre-existing entry not preserved; want to contain %q:\n%s", tc.entry, out)
+			}
+			if !strings.Contains(out, tc.trivia) {
+				t.Errorf("interleaved trivia %q was dropped — the append is no longer strictly additive (#142):\n%s", tc.trivia, out)
+			}
+		})
+	}
+}
+
 // TestCharacterize_ChangedContainerLosesInterleavedFormatting records CURRENT
 // behaviour, NOT a guarantee: when a container is CHANGED (a stamp appended), the
-// pre-existing ENTRIES survive but INTERLEAVED formatting between or around them —
-// YAML comments and blank separator lines — is not carried onto the rebuilt
-// value. This is a yaml.v3 node-model limitation on the changed path (those trivia
-// are not attached to the entry nodes the splice copies), not a design choice. A
-// future change that preserves them should update this test to match rather than
-// read a red here as a regression it caused. The name is deliberately not
-// invariant-shaped so it cannot launder this limit into a promise.
+// pre-existing ENTRIES survive but some INTERLEAVED formatting around them — YAML
+// comments in a rebuilt FLOW container, and trivia before the FIRST entry — is not
+// carried onto the rebuilt value. This is a yaml.v3 node-model limitation on the
+// changed path (those trivia are not attached to the entry nodes the splice
+// copies), not a design choice. A future change that preserves them should update
+// this test to match rather than read a red here as a regression it caused. The
+// name is deliberately not invariant-shaped so it cannot launder this limit into a
+// promise. Trivia BETWEEN entries of a BLOCK sequence is no longer in this list:
+// it is now carried, and pinned by TestBlockSeqAppendKeepsInterleavedTrivia (#142).
 //
 // Anti-vacuity: each row first asserts the pre-existing ENTRY did survive, so the
 // test pins "entry kept, trivia dropped" and not a wholesale re-encode.
@@ -336,11 +393,6 @@ func TestCharacterize_ChangedContainerLosesInterleavedFormatting(t *testing.T) {
 			"E_comment_before_first_item",
 			"type: Metric\nverified:\n  # leading comment\n  - { by: human:x, at: 2024-02-01T09:30:00Z }\n",
 			"  - { by: human:x, at: 2024-02-01T09:30:00Z }\n", "# leading comment",
-		},
-		{
-			"F_comment_between_items",
-			"type: Metric\nverified:\n  - { by: human:x, at: 2024-02-01T09:30:00Z }\n  # mid comment\n  - { by: human:y, at: 2024-03-01T09:30:00Z }\n",
-			"  - { by: human:x, at: 2024-02-01T09:30:00Z }\n", "# mid comment",
 		},
 		{
 			"N_flowmap_trailing_comment",
@@ -362,11 +414,6 @@ func TestCharacterize_ChangedContainerLosesInterleavedFormatting(t *testing.T) {
 			"V_flowseq_multiline_comment_with_bracket",
 			"type: Metric\nverified: [\n  { by: human:x, at: 2024-02-01T09:30:00Z }, # note ]\n  { by: human:y, at: 2024-03-01T09:30:00Z },\n]\n",
 			"  - { by: human:x, at: 2024-02-01T09:30:00Z }\n", "# note ]",
-		},
-		{
-			"T_blank_line_between_items",
-			"type: Metric\nverified:\n  - { by: human:x, at: 2024-02-01T09:30:00Z }\n\n  - { by: human:y, at: 2024-03-01T09:30:00Z }\n",
-			"  - { by: human:y, at: 2024-03-01T09:30:00Z }\n", "}\n\n  -",
 		},
 	}
 	for _, tc := range cases {
