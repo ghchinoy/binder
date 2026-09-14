@@ -1,7 +1,6 @@
 package mcp
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -20,9 +19,9 @@ type lintInput struct {
 	Entrypoints []string `json:"entrypoints,omitempty" jsonschema:"concept ids or paths to treat as entrypoints, not orphans (parity with --entrypoint); root README.md is recognized automatically"`
 }
 
-// registerLint wires the lint tool: it runs the same convert.Analyze →
-// lint.Lint pipeline as the CLI over a SOURCE corpus (writes nothing), returning
-// the *lint.Report envelope byte-identical to `binder lint --json`. A
+// registerLint wires the lint tool: it drives the shared binder.Service.Lint over
+// a SOURCE corpus (writes nothing) — the same one code path the CLI uses — and
+// returns the binder.report/v1 envelope byte-identical to `binder lint --json`. A
 // missing/non-directory corpus path is a usage-class tool error, distinguishable
 // from a mid-walk IO failure.
 func registerLint(s *mcp.Server, d *deps) {
@@ -42,7 +41,7 @@ func registerLint(s *mcp.Server, d *deps) {
 		// default is now the service's, so this handler no longer computes it.
 		now, _ := binder.ResolveNow(os.Getenv("SOURCE_DATE_EPOCH"), time.Now())
 
-		res, err := binder.New(d.codec).Lint(ctx, binder.LintRequest{
+		res, err := d.svc.Lint(ctx, binder.LintRequest{
 			Src:         in.Src,
 			Entrypoints: in.Entrypoints,
 			Now:         now,
@@ -53,14 +52,8 @@ func registerLint(s *mcp.Server, d *deps) {
 			return nil, nil, err
 		}
 
-		// The envelope is produced by the core Result, byte-identical to
-		// `binder lint --json` and to the CLI adapter's output.
-		var buf bytes.Buffer
-		if err := res.EncodeJSON(&buf); err != nil {
-			return nil, nil, err
-		}
-		return &mcp.CallToolResult{
-			Content: []mcp.Content{&mcp.TextContent{Text: buf.String()}},
-		}, nil, nil
+		// The envelope is produced by the core Result and framed by the one shared
+		// helper — byte-identical to `binder lint --json` and to the CLI's output.
+		return encodeResult(res)
 	})
 }

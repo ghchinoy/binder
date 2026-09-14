@@ -20,6 +20,9 @@ func newLintCmd(codec okf.Codec) *cobra.Command {
 		strict      bool
 		entrypoints []string
 	)
+	// Construct the shared service ONCE with the composition root's codec (it is
+	// stateless and safe for concurrent use); the RunE closure reuses it.
+	svc := binder.New(codec)
 	cmd := &cobra.Command{
 		Use:   "lint <corpus>",
 		Short: "Check a source markdown corpus for broken links, missing titles, orphans, stale, schema issues",
@@ -67,7 +70,7 @@ func newLintCmd(codec okf.Codec) *cobra.Command {
 			// One code path: the service owns Analyze → Lint, the rep.Src fill, the
 			// Today default, and the gating-finding definition. The adapter only
 			// resolves inputs, renders, and maps the gate error to an exit code.
-			res, err := binder.New(codec).Lint(cmd.Context(), binder.LintRequest{
+			res, err := svc.Lint(cmd.Context(), binder.LintRequest{
 				Src:         src,
 				Entrypoints: entrypoints,
 				Now:         now,
