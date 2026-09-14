@@ -117,6 +117,10 @@ Two properties make it trustworthy for pipelines:
   Scoped to the frontmatter: `convert` also pipelines the body and synthesises
   `index.md`, so the guarantee does not extend to a whole-file comparison.
 
+Verdicts are differential-validated against the vendor-neutral
+[`okfcli/okf`](https://github.com/okfcli/okf) validator in both directions as
+part of the [exit gate](docs/RELEASING.md#differential-validation-exit-gate).
+
 ## Installation
 
 **Homebrew** (macOS and Linux, the recommended path):
