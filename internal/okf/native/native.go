@@ -347,6 +347,15 @@ func spliceFrontmatter(fmText string, origRoot *yaml.Node, origOM, fm *okf.Order
 // an empty source sequence, a non-slice desired value, or an item span this
 // simple line model cannot bound). This is the sibling-preservation guarantee
 // for the append path, and it is general: no key is singled out.
+//
+// The source lines BETWEEN two entries (a blank separator, a comment) are carried
+// verbatim along with the entry that follows them, so an append leaves every
+// pre-existing byte of the sequence unchanged — the strictly-additive invariant
+// the verified-sequence trust guarantee rests on (issue #142). See
+// TestVerifiedAppendIsStrictlyAdditive. Because those lines attach to the
+// FOLLOWING entry, a desired list SHORTER than the source (a removal) also
+// returns ok=false: see the guard below and
+// TestSequenceRemovalDoesNotMisattributeTrivia.
 func spliceSequenceItems(valNode *yaml.Node, desired any, lines []string) ([]byte, bool) {
 	if valNode == nil || valNode.Kind != yaml.SequenceNode {
 		return nil, false
@@ -362,6 +371,18 @@ func spliceSequenceItems(valNode *yaml.Node, desired any, lines []string) ([]byt
 	if len(items) == 0 {
 		return nil, false
 	}
+	// Entries DISAPPEARED. The gap lines below are attached to the entry that
+	// FOLLOWS them, which is right for an append but wrong for a removal: the
+	// trivia introducing a removed entry would be re-emitted in front of a
+	// DIFFERENT entry — a comment about the dropped attestation left annotating
+	// its neighbour. Silently mis-attributing trivia in a trust-bearing sequence
+	// is worse than dropping it, so hand a shrinking list to the safe whole-value
+	// re-encode instead. No caller shrinks a frontmatter list today (they are all
+	// append-preserving-prefix), but this helper is general by contract, so the
+	// property is enforced here rather than assumed of the next caller.
+	if len(want) < len(items) {
+		return nil, false
+	}
 	// Derive the block "- " marker indent from the first item's source line; the
 	// dash is the first non-space rune. Bail if the line is not shaped that way.
 	first := items[0].Line - 1
@@ -375,15 +396,33 @@ func spliceSequenceItems(valNode *yaml.Node, desired any, lines []string) ([]byt
 	indent := lines[first][:dash]
 
 	var b bytes.Buffer
+	// cursor is the next source line this splice has not yet consumed. Copying an
+	// item from [cursor, end] rather than from [item.Line-1, end] carries the lines
+	// BETWEEN two entries — a blank separator, a comment — with the entry that
+	// follows them, instead of dropping them on the floor. Those lines are
+	// pre-existing bytes of a trust-bearing sequence, and an append has to be
+	// strictly additive: every prior byte survives, only the stamp is new. Dropping
+	// the blank line was issue #142; with a keep-chomping (`|+`) block scalar ending
+	// an entry it also silently rewrote the scalar's VALUE, since the trailing blank
+	// line that the chomping indicator preserves is exactly such a gap line.
+	cursor := items[0].Line - 1
 	for i, dv := range want {
-		if i < len(items) && reflect.DeepEqual(nodeToValue(items[i]), dv) {
+		if i < len(items) {
 			start := items[i].Line - 1
 			end := maxNodeLine(items[i], lines) - 1
-			if start < 0 || end < start || end >= len(lines) {
+			if start < 0 || end < start || end >= len(lines) || start < cursor {
 				return nil, false
 			}
-			b.WriteString(strings.Join(lines[start:end+1], ""))
-			continue
+			// The gap lines preceding this item are pre-existing bytes: copy them
+			// verbatim whether or not the item itself survives.
+			b.WriteString(strings.Join(lines[cursor:start], ""))
+			cursor = end + 1
+			if reflect.DeepEqual(nodeToValue(items[i]), dv) {
+				b.WriteString(strings.Join(lines[start:end+1], ""))
+				continue
+			}
+			// A CHANGED item is re-encoded, so its own source lines are consumed
+			// (not emitted) — otherwise the next gap copy would re-emit them.
 		}
 		fresh, err := encodeSeqItem(dv, indent)
 		if err != nil {

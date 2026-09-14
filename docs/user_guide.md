@@ -429,11 +429,17 @@ A plain-markdown file (no frontmatter fence) gets a fresh, valid block prepended
    > is not carried:
    > - **Comments in a changed container.** A comment interleaved in a changed
    >   multi-line flow **sequence** is **dropped**; a comment inside a changed flow
-   >   **mapping** is copied verbatim but **not re-indented**. Interleaved blank
-   >   separator lines are likewise not carried. (Comments on keys or containers
-   >   that do **not** change are preserved by construction, per (a) — this limit
-   >   applies only to the container that changes.) Such a sequence with an
-   >   interior comment used to produce **unparseable** output; it no longer does.
+   >   **mapping** is copied verbatim but **not re-indented**. In a changed **block
+   >   sequence**, by contrast, the lines *between* two entries — a blank separator
+   >   or a comment line — **are** carried verbatim, so an appended stamp leaves the
+   >   pre-existing entries **and the lines between them** byte-for-byte in place
+   >   ([#142](https://github.com/ghchinoy/binder/issues/142)); trivia before the
+   >   **first** entry is still dropped
+   >   ([#191](https://github.com/ghchinoy/binder/issues/191)). (Comments on keys
+   >   or containers that do **not** change are preserved by construction, per (a)
+   >   — this limit applies only to the container that changes.) Such a sequence
+   >   with an interior comment used to produce **unparseable** output; it no
+   >   longer does.
    > - **Empty or reshaped flow containers.** An empty flow mapping
    >   (`verified: {}`) is reshaped to a block item (`- {}`) when a stamp is
    >   appended, and a changed multi-line flow **mapping** (`verified: {` … `}`
