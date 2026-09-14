@@ -15,6 +15,14 @@
 #
 # Source it, then call build_stamped_binder; it echoes the binary's path.
 
+# Resolve this file's directory AT SOURCE TIME, not inside the function.
+# ${BASH_SOURCE[0]} names the defining file only while the file is being sourced;
+# read from inside a function it can come back EMPTY depending on how the caller
+# was invoked, and `dirname ""` is `.`, which silently resolves the certifier
+# against the CALLER'S CWD instead of against this script. Capturing it here is
+# the only point where the value is guaranteed correct.
+_STAMPED_BINDER_LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 # stamp_version echoes the version to inject: the most recent tag reachable from
 # HEAD, which is the same value goreleaser injects at release time (v-prefixed;
 # cmd.init strips the leading v via normalizeVersion). BINDER_STAMP_VERSION
@@ -47,8 +55,20 @@ stamp_version() {
 # survive a failing case to report on the rest) cannot mistake an untrustworthy
 # binary for a good one.
 build_stamped_binder() {
-  local version bin reported lib
-  lib="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  local version bin reported certifier
+  certifier="$_STAMPED_BINDER_LIB/stamped_version.py"
+  # A MISSING CERTIFIER IS NOT A FAILED CERTIFICATION. Both return non-zero, so
+  # both fail closed and neither can wave a bad binary through — but they have
+  # different causes and different fixes, and reporting "REFUSING to gate against
+  # this build" when the truth is "I could not find the checker" sends whoever
+  # reads it to debug the binary instead of the path. Distinguish them.
+  if [ ! -f "$certifier" ]; then
+    echo "ERROR: certifier not found at $certifier" >&2
+    echo "       This is a BROKEN GATE, not an untrustworthy build: the check" >&2
+    echo "       never ran. Fix the path; do not interpret this as a version" >&2
+    echo "       problem with the binary." >&2
+    return 1
+  fi
   version="$(stamp_version)"
   bin="$(mktemp -d)/binder"
   echo "==> building stamped binder (cmd.Version=${version})" >&2
@@ -56,7 +76,7 @@ build_stamped_binder() {
     return 1
   fi
   reported="$("$bin" --version 2>&1)"
-  if ! python3 "$lib/stamped_version.py" --certify "$reported" "$@" >&2; then
+  if ! python3 "$certifier" --certify "$reported" "$@" >&2; then
     echo "==> REFUSING to gate against this build. Certification is not optional:" >&2
     echo "    a gate run against an unstamped binary pins literals to whatever" >&2
     echo "    the binary happens to report and still exits 0." >&2

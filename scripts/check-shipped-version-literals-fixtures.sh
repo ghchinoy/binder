@@ -348,17 +348,42 @@ rm -rf "$DOCDRIFT"
 #      pattern and assumed green meant clean.
 DOCDARK="$(copy_tree)"
 python3 - "$DOCDARK" <<'PY'
-import sys, os
+import sys, os, re
+
+# Mutate every doc transcript the CHECKER would find, then assert the state this
+# case actually depends on: that none remain findable. The previous version
+# counted the files it edited (`assert n == 2`) against a hard-coded pair — a
+# tautology over a 2-element literal, and a CARDINALITY claim standing in for the
+# state claim. If a third doc ever grows a transcript, a count says "2, as
+# expected" and the case silently stops establishing its premise; the postcondition
+# below fails loudly instead. Files are discovered, not listed.
 root = sys.argv[1]
-n = 0
-for rel in ("docs/tutorial.md", "docs/user_guide.md"):
-    p = os.path.join(root, rel)
+DOC_ACTOR = re.compile(r'^binder: invalid actor "(?P<actor>.*?)"; valid forms:')
+
+def transcripts():
+    hits = []
+    for dirpath, _, names in os.walk(os.path.join(root, "docs")):
+        for name in names:
+            if not name.endswith(".md"):
+                continue
+            p = os.path.join(dirpath, name)
+            with open(p, encoding="utf-8") as fh:
+                for line in fh:
+                    if DOC_ACTOR.match(line.strip()):
+                        hits.append(p)
+                        break
+    return hits
+
+before = transcripts()
+assert before, "SETUP: no doc transcripts found to darken -- case is vacuous"
+for p in before:
     s = open(p, encoding="utf-8").read()
     t = s.replace("binder: invalid actor ", "binder: rejected actor ")
-    assert t != s, f"{rel}: mutation was a no-op"
+    assert t != s, f"{p}: mutation was a no-op"
     open(p, "w", encoding="utf-8").write(t)
-    n += 1
-assert n == 2
+
+after = transcripts()
+assert not after, f"SETUP: transcripts still findable after mutation: {after}"
 PY
 if [ $? -eq 0 ]; then
   if bin="$(cd "$DOCDARK" && build_stamped_binder 2>/dev/null)"; then
