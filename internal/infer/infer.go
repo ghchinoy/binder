@@ -189,8 +189,12 @@ func Infer(ctx context.Context, src string, codec okf.Codec, opts Options) (*Rep
 				modelName = "gemini-3.5-flash-lite"
 			}
 			backendName = "mock"
-		} else {
-			client, m, b, err := NewGeminiClient(ctx, opts)
+		} else if opts.NewGeminiClient != nil {
+			// The concrete client (and its genai import + env reads) is built by the
+			// adapter-supplied factory, keeping google.golang.org/genai out of this
+			// package. The graceful-degrade / GeminiRequired handling stays here so
+			// the disclosed warning text and error path are unchanged.
+			client, m, b, err := opts.NewGeminiClient(ctx, opts)
 			if err != nil {
 				if opts.GeminiRequired {
 					return nil, fmt.Errorf("gemini client initialization: %w", err)
