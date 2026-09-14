@@ -684,11 +684,35 @@ fi
 
 # [17] THE ENTRY POINT'S VERDICT AND ARGUMENTS, not just its tidiness.
 #      Answering "which cases exercise the shipped entry point" turned up that
-#      the honest answer for 1-15 is NONE, and that for 1-14 this is structural
-#      rather than sloppy: each must hand the checker a DELIBERATELY DEFECTIVE
-#      binary built from a patched tree, and the wrapper builds its own from the
-#      real one, so there is no seam to inject through. That limit is written
-#      down rather than papered over.
+#      the honest answer for 1-15 is NONE: they invoke the CHECKER directly,
+#      while CI and docs/RELEASING.md run the WRAPPER.
+#
+#      THREE OF THOSE ARE STRUCTURAL AND THE REST ARE A CHOICE. Cases 5 and 6
+#      must hand the checker a binary the wrapper's certifier exists to REJECT,
+#      and build_stamped_binder returns non-zero emitting nothing in exactly
+#      that case -- so the wrapper can never deliver such a binary, and driving
+#      them through it would assert the certifier's refusal instead, which is a
+#      different property and is case 11's table. Case 11 is a library
+#      self-test with no gate run in it. For those three there is no seam.
+#
+#      FOR 1-4, 7-10 AND 12-14 THERE IS ONE, AND THIS HARNESS EXPORTS IT. An
+#      earlier version of this comment claimed the wrapper always builds from
+#      the real tree "so there is no seam to inject through". That was FALSE:
+#      stamp_version() honours BINDER_STAMP_VERSION, which is exported above
+#      precisely so .git-less copies can stamp, and with it set a copy with
+#      PATCHED GO SOURCE runs through its own shipped wrapper. Measured: the
+#      unpatched copy exits 0, and the same copy with version.ActorExemplar()
+#      replaced by "binder/0.3.0" -- case [2], the #60 defect verbatim -- exits
+#      1 from ./scripts/check-shipped-version-literals.sh with DOC-DRIFT naming
+#      binder/0.3.0. Same copy_tree/patch/run-its-own-wrapper mechanism this
+#      case uses; [17] patches docs, that patches source.
+#
+#      Converting them is DEFERRED, not impossible: see issue #220. The
+#      distinction matters because the sentence it replaces was a confident
+#      explanation of why something could not be a problem, and those stop the
+#      next reader from looking -- which is the same species as the defects
+#      this suite exists to catch, in the one medium where they are not
+#      compiled, not tested and not ablated.
 #
 #      But two things the wrapper alone does were left unasserted, and THIS PR
 #      MADE BOTH OF THEM LOAD-BEARING:
