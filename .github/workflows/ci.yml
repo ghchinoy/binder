@@ -30,8 +30,10 @@ jobs:
         run: make check
 
   transcript-version-gate:
-    # Pins the version literals inside the plugins/ JSON transcripts to the
-    # producing binary (issue #169). This is deliberately SEPARATE from the
+    # Pins the version literals inside the documented JSON transcripts —
+    # plugins/, docs/, and README.md — to the producing binary (issue #169;
+    # docs/ and README.md added by #185, where nine envelopes had silently
+    # drifted two minor versions while nothing watched them). SEPARATE from the
     # in-process `make check` gate: it needs a STAMPED binder (the real release
     # tag via ldflags), and a `go test` build is unstamped (binder/dev), so the
     # unit gate structurally cannot check version literals. fetch-depth: 0 is
@@ -55,8 +57,9 @@ jobs:
           ./scripts/check-transcript-versions.sh
 
       - name: Transcript-version fixtures (vacuous-pass regression lock)
-        # Proves the gate fails LOUD when discovery breaks (empty/wrong docroot,
-        # renamed fence tag) instead of passing vacuously — the round-2 Critical.
+        # Proves the gate fails LOUD when discovery breaks (empty/wrong base,
+        # renamed fence tag, missing scan root) instead of passing vacuously —
+        # the round-2 Critical, plus the #185 docs/README coverage cases.
         run: |
           chmod +x scripts/check-transcript-versions-fixtures.sh
           ./scripts/check-transcript-versions-fixtures.sh
