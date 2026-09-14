@@ -46,6 +46,16 @@
 # surfaces instead of 19 and EXITED 0. The failure mode was reporting a SMALLER
 # UNIVERSE rather than reporting a finding, which no document-level case can see.
 #
+# Case 14 is case 12's harder half and comes from round-2 review. Case 12 kills
+# discovery outright, which a cardinality floor can catch. Case 14 kills only the
+# RECURSION: the root block still parses, all 11 top-level commands are still
+# found, and the total looks entirely plausible — while every `config`
+# subcommand has gone dark. The previous floor named three TOP-LEVEL commands and
+# required 8, so it exited 0 on this with a quarter of the tree unscanned, while
+# the comment above the constant claimed it covered exactly this case. A
+# cardinality floor cannot catch a collapse that stays above it, so depth is now
+# asserted by IDENTITY on nested paths.
+#
 # Case 13 locks `--fix`, which rewrites the documented transcripts to the
 # binary's own derived output so a release does not need a hand edit (#60 AC3).
 # It asserts the postcondition — red, then repair, then a CLEAN re-run against
@@ -73,7 +83,7 @@ FAIL=0
 # The number of cases this harness MUST run, asserted at the end against
 # PASS+FAIL so the harness cannot itself pass vacuously — same reasoning as
 # scripts/check-transcript-versions-fixtures.sh. Update when adding a case.
-EXPECTED_CASES=13
+EXPECTED_CASES=14
 
 # copy_tree — copy the working tree (minus VCS and node_modules) into a fresh
 # temp dir and echo its path. The copy is what gets patched, so the real tree is
@@ -502,6 +512,71 @@ else
   FAIL=$((FAIL + 1))
 fi
 rm -rf "$FIXTREE"
+
+# [14] THE DISCOVERER GOES HALF-DARK (round-2 review, R4). Case 12 kills
+#      discovery outright and the count floor catches it. This kills only the
+#      RECURSION: the root block still parses, so the sweep still finds all 11
+#      top-level commands and reports a perfectly plausible total — while every
+#      `config` subcommand has gone dark.
+#
+#      That is the case the previous floor claimed to cover and did not. It named
+#      three TOP-LEVEL commands and required 8 discovered; a depth collapse
+#      leaves 11 of 15, still includes top-level `config`, and clears 8. THE
+#      GATE EXITED 0 WITH A QUARTER OF THE COMMAND TREE UNSCANNED, and the
+#      comment above the constant asserted the opposite. A cardinality floor
+#      cannot catch a collapse that stays above it.
+#
+#      The fix is identity at DEPTH: `config set` is reachable only by recursing,
+#      so requiring it is a direct claim that the recursion ran. This case locks
+#      that, and the ablation below proves it reds against the PREVIOUS checker.
+HALFDARK="$(mktemp -d)"
+if bin="$(build_stamped_binder)"; then
+  # Reword the header ONLY for subcommand help, never for the root. Root
+  # discovery therefore succeeds completely and the collapse is depth-only.
+  cat > "$HALFDARK/binder" <<PY
+#!/usr/bin/env python3
+import subprocess, sys
+p = subprocess.run(["$bin"] + sys.argv[1:], capture_output=True, text=True)
+out = p.stdout
+if sys.argv[1:2] not in ([], ["--help"], ["-h"]):
+    out = out.replace("Available Commands:", "Subcommands:")
+sys.stdout.write(out)
+sys.stderr.write(p.stderr)
+sys.exit(p.returncode)
+PY
+  chmod +x "$HALFDARK/binder"
+  # Three setup guards. Without all three this case can pass for a reason that
+  # has nothing to do with depth.
+  if [ "$("$HALFDARK/binder" --version)" != "$("$bin" --version)" ]; then
+    echo "  SETUP-FAIL  half-dark stand-in does not report the real version"
+    FAIL=$((FAIL + 1))
+  elif ! "$HALFDARK/binder" --help 2>&1 | grep -qF "Available Commands:"; then
+    echo "  SETUP-FAIL  root help lost its header; this is case 12, not a DEPTH collapse"
+    FAIL=$((FAIL + 1))
+  elif "$HALFDARK/binder" config --help 2>&1 | grep -qF "Available Commands:"; then
+    echo "  SETUP-FAIL  subcommand help unchanged; the mutation was a NO-OP"
+    FAIL=$((FAIL + 1))
+  else
+    out="$(python3 "$CHECKER" "$HALFDARK/binder" 2>&1)"; rc=$?
+    # Require the NESTED path by name. Asserting only "sweep:discovery" would
+    # also pass on a total collapse, which case 12 already covers.
+    if [ "$rc" -eq 1 ] && echo "$out" | grep -qF "sweep:discovery" \
+       && echo "$out" | grep -qF "config set" \
+       && echo "$out" | grep -qF "0 drift finding(s)"; then
+      echo "  PASS  recursion collapses, breadth intact -> exit 1 naming a nested path (exit $rc)"
+      PASS=$((PASS + 1))
+    else
+      echo "  FAIL  half-dark discovery: expected exit 1 + sweep:discovery naming" \
+           "\`config set\` with 0 drift findings, got exit $rc"
+      echo "$out" | sed 's/^/        | /'
+      FAIL=$((FAIL + 1))
+    fi
+  fi
+else
+  echo "  FAIL  half-dark discovery: stamped build failed"
+  FAIL=$((FAIL + 1))
+fi
+rm -rf "$HALFDARK"
 
 # [11] THE CERTIFIER'S TRUTH TABLE, in both policy modes.
 #      Certification moved out of the two gates and into
