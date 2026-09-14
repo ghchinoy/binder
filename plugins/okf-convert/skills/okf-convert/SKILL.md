@@ -30,7 +30,7 @@ plugin marketplace**:
 > [`ghchinoy/agent-skills` → `plugins/okf-authoring`](https://github.com/ghchinoy/agent-skills/tree/main/plugins/okf-authoring).
 
 The OKF v0.2 specification itself is
-[`GoogleCloudPlatform/knowledge-catalog` → `okf/SPEC.md`](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md).
+[`GoogleCloudPlatform/open-knowledge-format` → `SPEC.md`](https://github.com/GoogleCloudPlatform/open-knowledge-format/blob/main/SPEC.md).
 
 ## The one guardrail that overrides everything: never fabricate trust
 

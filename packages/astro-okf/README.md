@@ -1,7 +1,7 @@
 # astro-okf
 
 An [Astro](https://astro.build) Content Layer loader for
-[Open Knowledge Format](https://github.com/GoogleCloudPlatform/knowledge-catalog)
+[Open Knowledge Format](https://github.com/GoogleCloudPlatform/open-knowledge-format)
 (OKF) v0.2 bundles.
 
 Point it at a bundle directory and every concept becomes an entry in an Astro

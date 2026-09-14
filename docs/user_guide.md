@@ -8,7 +8,7 @@ layout, the full trust vocabulary, the relationship-extraction rules,
 malformed-input recovery, CI usage, and worked end-to-end examples.
 
 `binder` converts a plain-markdown corpus into a conformant
-[Open Knowledge Format (OKF) v0.2](https://github.com/GoogleCloudPlatform/knowledge-catalog)
+[Open Knowledge Format (OKF) v0.2](https://github.com/GoogleCloudPlatform/open-knowledge-format)
 bundle and reports on OKF bundles. It is **Phase 2 complete**: as of v0.3.0 every
 Phase 2.x enhancement has shipped, along with the graph surface, `infer`, `config`
 (including mutation), and the stdio MCP server. Only the community-core codec
