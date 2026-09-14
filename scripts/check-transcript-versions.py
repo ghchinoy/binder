@@ -46,10 +46,11 @@ So this gate is scoped so it STRUCTURALLY cannot touch the prose references:
 # visited and checked; a broken discovery path (empty/wrong base, moved file,
 # renamed fence tag, changed glob) fails LOUD instead of passing green.
 
-Exit non-zero if any pinned literal drifts OR if any must-track location does not
-yield exactly the declared number of literals (vacuous-pass guard); exit 0 only
-when every must-track location was visited in full and every checked literal
-matches the stamped binary.
+Exit non-zero if any pinned literal drifts, if any must-track location does not
+yield exactly the declared number of literals (vacuous-pass guard), or if any
+allowlist entry exempted nothing (reachability guard); exit 0 only when every
+must-track location was visited in full, every checked literal matches the
+stamped binary, and every declared exemption was actually used.
 
 Usage: check-transcript-versions.py <base-dir> <stamped-binder-binary>
 
@@ -112,6 +113,15 @@ PROSE_PROVENANCE = re.compile(r"captured from real `binder/(\d+\.\d+\.\d+)` outp
 # pass that contributes spans; it cannot silence an existing rule by running
 # before it, and no rule needs to know the others exist. Fixture case [15] is
 # the shadowing line, and expects both the finding and the count.
+#
+# RESIDUAL, narrower than the hole above (#185 round 4, O6): ordering is gone,
+# but a pass can still silence a finding by CLAIMING. Appending to pinned_spans
+# and comparing the literal against the stamped binary are two statements tied
+# together only by convention, so a future pass that claims a span for a literal
+# it does not actually check reproduces the silent hole by a different door. Two
+# passes do not justify the machinery to prevent it; when a third arrives, have
+# each pass return (span, finding_or_None) so claiming and checking are one
+# statement and the convention becomes a signature.
 #
 # Schema literal inside a JSON envelope, used to classify which must-track
 # envelope a discovered version literal belongs to (report vs config).
@@ -185,6 +195,33 @@ NO_UNPINNED_PROSE = {"README.md"}
 #
 # Intended shape (illustrative, not a live entry):
 #     ("README.md", "0.2.1"): "historical: first release to ship checksums.txt",
+#
+# EVERY ENTRY MUST BE REACHED (#185 round 4, R6). An entry is checked two ways,
+# and the second one exists because the first has a blind side:
+#
+#   - forward, at startup: an entry for the CURRENT stamped version is refused
+#     (exit 2), because such an entry is not an exemption for one historical
+#     literal, it is a permanent one that switches on the day this release stops
+#     being current.
+#   - backward, after the scan: an entry that exempted NOTHING is a finding. A
+#     version already below the stamp can never become current, so the startup
+#     guard can never fire on it — and an unused entry is not inert. It sits
+#     there pre-approving a literal that does not exist yet, so the day someone
+#     pastes `binder/0.2.1` into README prose as a fresh false claim, the rule is
+#     already switched off over it. A silent permanent exemption, displaced in
+#     time. Reachability removes the dormancy: the entry cannot survive the
+#     interval between being written and being used, because with nothing to
+#     exempt it is red from the moment it lands.
+#
+# What reachability does NOT close, stated so it is not mistaken for more: an
+# entry added in the SAME commit as the literal it exempts is reached, and passes.
+# That is not a hole a checker can close — the entry states a reason and the diff
+# shows both halves, which makes it exactly the reviewable claim the allowlist is
+# for. The hole was the dormant entry, and that one is closed.
+#
+# This is the same assertion EXPECTED_COVERAGE makes (O3): a declaration that can
+# drift out of correspondence with the tree without saying so is not a
+# declaration. The allowlist had no correspondence assertion at all.
 NO_UNPINNED_PROSE_ALLOW = {}
 
 # MINIMUM-COVERAGE INVENTORY (#169 Critical, round-2 review). The must-track
@@ -219,10 +256,11 @@ NO_UNPINNED_PROSE_ALLOW = {}
 # same commit nets zero and passes, under an exact count exactly as under a
 # floor — cardinality cannot distinguish four literals from a different four.
 # Exact narrows it (the add alone is now loud, so the pair has to be
-# simultaneous), but only per-literal identity would close it, which would mean
-# anchoring the inventory to each transcript's content and re-deriving it on
-# every doc edit. Not worth that cost for this failure shape; documented here so
-# nobody mistakes the guard for more than it is.
+# simultaneous), but only per-literal identity would close it. Tracked in #197
+# rather than left as tribal knowledge — a KNOWN LIMIT with no number attached is
+# a deferral with no expiry, which is #197's own argument and applies to the
+# comment that filed it. Documented here so nobody mistakes the guard for more
+# than it is; see #197 for the cost analysis and the candidate keying.
 _SKILL = "plugins/okf-convert/skills/okf-convert/SKILL.md"
 _CONTRACT = "plugins/okf-convert/skills/okf-convert/references/binder-json-contract.md"
 _GUIDE = "docs/user_guide.md"
@@ -302,6 +340,9 @@ def main() -> int:
     literals_checked = 0
     # (base-relative path, coverage-key) -> number of literals checked there.
     visited = collections.Counter()
+    # (base-relative path, version) -> number of literals this allowlist entry
+    # actually exempted. Keys with zero hits are reported (R6).
+    allow_hits = collections.Counter()
 
     def relpath(f):
         # base-relative, forward-slashed, so coverage keys are stable across OS
@@ -368,10 +409,6 @@ def main() -> int:
                              f"provenance sentence says binder/{m.group(1)}, "
                              f"stamped binary emits {expected}")
                         )
-                # No-unpinned-prose files: outside a JSON fence, a version
-                # literal here is unpinnable by construction, so report it
-                # rather than let it rot. Already-pinned provenance sentences
-                # are handled above and never reach this.
                 # NO-UNPINNED-PROSE. Runs on every prose line of a listed
                 # file, INCLUDING a line that also carried a provenance
                 # sentence: see PROSE RULE ORDER above. Literals already pinned
@@ -382,6 +419,11 @@ def main() -> int:
                                for a, b in pinned_spans):
                             continue  # already pinned by a prose rule above
                         if (relpath(f), m.group(1)) in NO_UNPINNED_PROSE_ALLOW:
+                            # Record the hit: an allowlist key that exempts
+                            # nothing is reported below (R6). The counter is the
+                            # allowlist's correspondence assertion, the same one
+                            # EXPECTED_COVERAGE makes about the tree.
+                            allow_hits[(relpath(f), m.group(1))] += 1
                             continue  # documented historical reference
                         # BOTH remedies, because this message is where the
                         # decision actually gets made (#185 round 2, R2). Naming
@@ -392,6 +434,24 @@ def main() -> int:
                         # exists to prevent. Whoever reads this is deciding
                         # between the two cases right now, and only one of them
                         # is a stale literal.
+                        #
+                        # THE THIRD CASE (#185 round 4, O5): the literal is
+                        # QUOTED BINARY OUTPUT — a ```text block holding
+                        # `binder convert --help`, whose actor-grammar example
+                        # really does read `(e.g. binder/0.3.0)`. Neither of the
+                        # first two remedies is correct there: the placeholder
+                        # falsifies quoted output, and "historical reference" is
+                        # a false reason, since that literal is live output owned
+                        # by the shipped-output gate (#60) under the same
+                        # boundary SCAN_ROOTS states for docs/commands/. Both
+                        # prose passes are line-local and know only in_json, so
+                        # "literals inside a quoted-output fence belong to #60"
+                        # is a rule this model cannot express; the structural fix
+                        # is a quoted_output fence state, tracked with #197. Until
+                        # then the only available action IS an allowlist entry,
+                        # so the message dictates the true reason to write in it
+                        # — leaving the maintainer to invent one is how the #60
+                        # boundary gets eroded from this side.
                         findings.append(
                             (str(f), lineno, "PROSE-UNPINNED",
                              f"unpinned version literal binder/{m.group(1)} "
@@ -406,7 +466,18 @@ def main() -> int:
                              f"NO_UNPINNED_PROSE_ALLOW in this script: "
                              f'("{relpath(f)}", "{m.group(1)}"): '
                              f'"historical: <why this must not track>" — do '
-                             f"not delete the rule to silence this")
+                             f"not delete the rule to silence this. THIRD CASE: "
+                             f"if it is QUOTED BINARY OUTPUT (a --help block, a "
+                             f"captured error), it is neither of the above — the "
+                             f"binary really prints it, and it is owned by the "
+                             f"shipped-output gate (#60), the same boundary "
+                             f"SCAN_ROOTS states for docs/commands/. Allowlist "
+                             f"it with THAT as the reason — "
+                             f'("{relpath(f)}", "{m.group(1)}"): "quoted output: '
+                             f'owned by the shipped-output gate (#60)" — not as '
+                             f"a historical reference, which it is not (#197 "
+                             f"tracks teaching this gate about quoted-output "
+                             f"fences so the exemption stops being manual)")
                         )
                 continue
             # inside a fenced JSON block
@@ -426,6 +497,15 @@ def main() -> int:
         for path, key, want, label in EXPECTED_COVERAGE
         if visited[(path, key)] != want
     ]
+
+    # Allowlist reachability (R6): an entry that exempted nothing. Reported only
+    # when the roots it could have matched in were actually scanned — with a
+    # missing root every entry would look unreached, and that failure already has
+    # its own louder name (MISSING-ROOT).
+    stale_allow = (
+        [] if missing_roots
+        else [key for key in NO_UNPINNED_PROSE_ALLOW if allow_hits[key] == 0]
+    )
 
     print(f"# version-literal gate: {len(SCAN_ROOTS)} scan root(s) "
           f"({', '.join(SCAN_ROOTS)}), {len(md_files)} md files, {blocks} json "
@@ -448,10 +528,18 @@ def main() -> int:
             print(f"# MISSING-COVERAGE: {path} [{key}] ({label}): expected "
                   f"exactly {want} literal(s) under {base}, checked {got} "
                   f"({why})")
+    for path, ver in stale_allow:
+        print(f"# STALE-ALLOWLIST: NO_UNPINNED_PROSE_ALLOW entry "
+              f'("{path}", "{ver}") exempted nothing — {path} under {base} '
+              f"carries no binder/{ver} literal outside a JSON fence. An unused "
+              f"entry is not inert: it pre-approves that literal for whoever "
+              f"pastes it next, with the rule already switched off over it. "
+              f"Delete the entry (see NO_UNPINNED_PROSE_ALLOW in this script).")
     print(f"# {len(findings)} drift finding(s), "
           f"{len(coverage_fail)} coverage failure(s), "
-          f"{len(missing_roots)} missing scan root(s)")
-    return 1 if (findings or coverage_fail or missing_roots) else 0
+          f"{len(missing_roots)} missing scan root(s), "
+          f"{len(stale_allow)} stale allowlist entry(ies)")
+    return 1 if (findings or coverage_fail or missing_roots or stale_allow) else 0
 
 
 if __name__ == "__main__":

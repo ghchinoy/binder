@@ -49,7 +49,7 @@ FAIL=0
 # "ran at least one" floor is weaker — it would not catch losing three of seven —
 # exactly the inventory-over-floor reasoning from round 2. Update this when you
 # add or remove a case.
-EXPECTED_CASES=18
+EXPECTED_CASES=19
 
 # assert_exit <label> <docroot> <expected-exit> [want] [checker]
 # [want] is a substring of the output, or several joined by " && " when a case
@@ -291,20 +291,37 @@ assert_exit "non-existent base (A2) -> exit 1" "/tmp/check-tv-does-not-exist-$$"
 # exited 0 on a tree carrying genuine drift. They are the regression lock for
 # that coverage gap.
 
+# BOTH SIDES OF A CASE ARE ADDRESSED BY CONTENT (#185 round 4, R5). [7] and [8]
+# planted drift by anchor but then asserted the checker names a HARD-CODED line
+# (user_guide.md:1457, README.md:287). Converting the mutation side and leaving
+# the assertion side is not content addressing — twelve lines of prose above
+# either target and these two cases fail, with exactly the blast radius the
+# conversion was for: the next docs PR reds this gate on main for a reason
+# unrelated to itself. reported_line() existed and [14] already used it; the
+# enumeration across the file simply was not done. It is done now — see THE
+# SWEEP at the end of this file.
+#
+# reported_line MUST be taken BEFORE the mutation: plant_drift rewrites the
+# literal to 9.9.9, which LITERAL_RE no longer matches, so a lookup afterwards
+# walks past the target to the next real literal. The mutation is in-place and
+# shifts nothing, so the line taken before is the line the checker reports.
+
 # [7] drifted docs/user_guide.md envelope literal -> RED. The target is the
 #     `binder config --json` transcript's version literal.
 DRIFT_GUIDE="$(fresh_copy)"
+GUIDE_LINE="$(reported_line "$DRIFT_GUIDE/$GUIDE_REL" "$A_GUIDE_CONFIG")" || exit 1
 plant_drift "$DRIFT_GUIDE/$GUIDE_REL" "$A_GUIDE_CONFIG"
 assert_exit "drifted user-guide envelope literal -> exit 1" "$DRIFT_GUIDE" 1 \
-  "docs/user_guide.md:1457"
+  "docs/user_guide.md:$GUIDE_LINE"
 rm -rf "$DRIFT_GUIDE"
 
 # [8] drifted README.md envelope literal -> RED. The target is the
 #     `binder validate --json` transcript's version literal.
 DRIFT_README="$(fresh_copy)"
+README_LINE="$(reported_line "$DRIFT_README/$README_REL" "$A_README_ENVELOPE")" || exit 1
 plant_drift "$DRIFT_README/$README_REL" "$A_README_ENVELOPE"
 assert_exit "drifted README envelope literal -> exit 1" "$DRIFT_README" 1 \
-  "README.md:287"
+  "README.md:$README_LINE"
 rm -rf "$DRIFT_README"
 
 # [9] broken discovery inside a MULTI-envelope file: plant drift in the user
@@ -423,7 +440,21 @@ rm -rf "$ALLOW_CURRENT" "$(dirname "$CUR_CHECKER")"
 #      The appended block is a correct, current-version envelope: nothing here is
 #      drift, which is the point — the failure is the inventory, and the message
 #      says so.
+#      The declared count is read out of the checker rather than written here:
+#      it is a fact about the gate's inventory, and a second copy of it in this
+#      file is the same staleness shape as a line number (THE SWEEP, below). The
+#      assertion is still real — it says the count went up by exactly one and the
+#      gate diagnosed it as an ADD — because none of exit code, diagnosis or the
+#      +1 comes from the checker's own report.
 ADDED="$(fresh_copy)"
+GUIDE_REPORTS="$(python3 -c '
+import importlib.util, sys
+spec = importlib.util.spec_from_file_location("checker", sys.argv[1])
+m = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(m)
+print(next(w for p, k, w, _ in m.EXPECTED_COVERAGE
+           if (p, k) == ("docs/user_guide.md", "envelope:binder.report/v1")))
+' "$CHECKER")" || abort "cannot read the user-guide report count out of ${CHECKER##*/}."
 cat >> "$ADDED/$GUIDE_REL" <<EOF
 
 \`\`\`json
@@ -436,8 +467,52 @@ cat >> "$ADDED/$GUIDE_REL" <<EOF
 \`\`\`
 EOF
 assert_exit "transcript added without updating the inventory -> exit 1" "$ADDED" 1 \
-  "expected exactly 4 literal(s) && checked 5 && a transcript was ADDED"
+  "expected exactly $GUIDE_REPORTS literal(s) && checked $((GUIDE_REPORTS + 1)) && a transcript was ADDED"
 rm -rf "$ADDED"
+
+# --- #185 round 4: allowlist reachability ----------------------------------
+
+# [18] AN ALLOWLIST ENTRY THAT EXEMPTS NOTHING -> RED. The backward half of the
+#      O2 guard (R6). O2 refuses an entry for the CURRENT version, but an entry
+#      for a version already BELOW the stamp can never become current, so that
+#      guard can never fire on it. Before R6 such an entry sat in the script
+#      silently, exempting nothing today and pre-approving the literal for
+#      whoever pasted it tomorrow: exit 0 with the entry present and no literal,
+#      then still exit 0 once the false claim arrived. Same shape as [16] — the
+#      entry is planted in a COPY of the checker — but the tree here is CLEAN,
+#      which is the whole point: the finding is about the declaration, not the
+#      docs. Exit 1 rather than [16]'s 2: this is a declaration that stopped
+#      corresponding to the tree, which is what MISSING-COVERAGE is, and it is
+#      only knowable after the scan.
+STALE_ALLOW_TREE="$(fresh_copy)"
+STALE_CHECKER="$(mktemp -d)/check-transcript-versions.py"
+sed 's#^NO_UNPINNED_PROSE_ALLOW = {}$#NO_UNPINNED_PROSE_ALLOW = {("README.md", "0.2.1"): "fixture: exempts a literal that is not there"}#' \
+  "$CHECKER" > "$STALE_CHECKER"
+assert_exit "allowlist entry that exempts nothing -> exit 1" "$STALE_ALLOW_TREE" 1 \
+  'STALE-ALLOWLIST && ("README.md", "0.2.1") exempted nothing && 1 stale allowlist entry(ies)' \
+  "$STALE_CHECKER"
+rm -rf "$STALE_ALLOW_TREE" "$(dirname "$STALE_CHECKER")"
+
+# --- THE SWEEP (#185 round 4, R5) ------------------------------------------
+# Two independent misses of the same kind in one file means the enumeration was
+# never done, so here is the enumeration, mechanical rather than by eye: every
+# multi-digit literal in this script, classified.
+#
+#   line numbers of committed docs  — NONE. [7] and [8] were the last two and
+#     are derived via reported_line(); [14] already was. This is the class that
+#     goes stale when SOMEBODY ELSE edits prose, which is why it is banned.
+#   facts owned by the checker      — NONE. [17]'s declared count is read out of
+#     EXPECTED_COVERAGE above. This class goes stale when the GATE MAINTAINER
+#     edits the inventory — narrower blast radius than a line number, still not
+#     this file's fact to restate.
+#   the harness's own constants     — EXPECTED_CASES (asserted at the end), the
+#     37-line shift in [13]/[14] (an arbitrary offset this file chooses), the
+#     version literals 0.5.2/0.3.0/0.2.1 planted by the mutation cases (values
+#     under test, not addresses), and exit codes. All legitimately here: each is
+#     a fact this file owns, and nothing outside it can make them stale.
+#
+# Adding a case: if you are about to type a number that describes the committed
+# tree, derive it instead.
 
 echo
 # Vacuous-pass guard for the harness itself: a harness whose whole job is locking
