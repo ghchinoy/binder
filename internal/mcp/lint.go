@@ -1,14 +1,15 @@
 package mcp
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/ghchinoy/binder/internal/convert"
-	"github.com/ghchinoy/binder/internal/lint"
+	"github.com/ghchinoy/binder/internal/binder"
 )
 
 // lintInput mirrors `binder lint` flags 1:1 (design §Tool surface).
@@ -30,22 +31,36 @@ func registerLint(s *mcp.Server, d *deps) {
 		Description: "Check a SOURCE markdown corpus (read-only) for broken links, missing titles, " +
 			"orphans, stale, and schema issues. Returns the binder.report/v1 lint payload " +
 			"(identical to `binder lint --json`).",
-	}, func(_ context.Context, _ *mcp.CallToolRequest, in lintInput) (*mcp.CallToolResult, any, error) {
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in lintInput) (*mcp.CallToolResult, any, error) {
 		if info, err := os.Stat(in.Src); err != nil || !info.IsDir() {
 			return nil, nil, fmt.Errorf("corpus %q is not a readable directory", in.Src)
 		}
 
-		concepts, facts, _, err := convert.Analyze(in.Src, convert.Options{
-			Codec:   d.codec,
-			Version: d.version,
-			Now:     resolveNow(),
+		// Read SOURCE_DATE_EPOCH at the adapter edge and apply the shared rule (the
+		// one that used to be duplicated as this package's resolveNow); a malformed
+		// epoch falls back to the wall clock, matching the CLI. The empty-Today
+		// default is now the service's, so this handler no longer computes it.
+		now, _ := binder.ResolveNow(os.Getenv("SOURCE_DATE_EPOCH"), time.Now())
+
+		res, err := binder.New(d.codec).Lint(ctx, binder.LintRequest{
+			Src:         in.Src,
+			Entrypoints: in.Entrypoints,
+			Now:         now,
+			Today:       in.Today,
+			Version:     d.version,
 		})
 		if err != nil {
 			return nil, nil, err
 		}
 
-		rep := lint.Lint(concepts, facts, todayOrNow(in.Today), in.Entrypoints)
-		rep.Src = in.Src
-		return d.encode("lint", rep)
+		// The envelope is produced by the core Result, byte-identical to
+		// `binder lint --json` and to the CLI adapter's output.
+		var buf bytes.Buffer
+		if err := res.EncodeJSON(&buf); err != nil {
+			return nil, nil, err
+		}
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: buf.String()}},
+		}, nil, nil
 	})
 }

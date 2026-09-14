@@ -3,12 +3,13 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/spf13/cobra"
 
+	"github.com/ghchinoy/binder/internal/binder"
+	"github.com/ghchinoy/binder/internal/binder/render"
 	"github.com/ghchinoy/binder/internal/clijson"
-	"github.com/ghchinoy/binder/internal/convert"
-	"github.com/ghchinoy/binder/internal/lint"
 	"github.com/ghchinoy/binder/internal/okf"
 )
 
@@ -51,9 +52,6 @@ func newLintCmd(codec okf.Codec) *cobra.Command {
 			if today != "" && !okf.IsValidISODate(today) {
 				return clijson.Usage(fmt.Errorf("--today %q is not a valid date (expected YYYY-MM-DD)", today))
 			}
-			if today == "" {
-				today = resolveNow().Format("2006-01-02")
-			}
 
 			// A missing/non-directory corpus path is a usage error (exit 2), checked
 			// up front so it is distinguishable from a mid-walk IO failure (exit 3).
@@ -61,10 +59,20 @@ func newLintCmd(codec okf.Codec) *cobra.Command {
 				return clijson.Usage(fmt.Errorf("corpus %q is not a readable directory", src))
 			}
 
-			concepts, facts, _, err := convert.Analyze(src, convert.Options{
-				Codec:   codec,
-				Version: Version,
-				Now:     resolveNow(),
+			// Read the ambient determinism state HERE (adapter edge) and apply the
+			// core rule; a malformed epoch falls back to the wall clock exactly as
+			// cmd.resolveNow did, so the historical silent-fallback contract holds.
+			now, _ := binder.ResolveNow(os.Getenv("SOURCE_DATE_EPOCH"), time.Now())
+
+			// One code path: the service owns Analyze → Lint, the rep.Src fill, the
+			// Today default, and the gating-finding definition. The adapter only
+			// resolves inputs, renders, and maps the gate error to an exit code.
+			res, err := binder.New(codec).Lint(cmd.Context(), binder.LintRequest{
+				Src:         src,
+				Entrypoints: entrypoints,
+				Now:         now,
+				Today:       today,
+				Version:     Version,
 			})
 			if err != nil {
 				// Path already validated above; any analysis failure here is
@@ -72,27 +80,19 @@ func newLintCmd(codec okf.Codec) *cobra.Command {
 				return err
 			}
 
-			rep := lint.Lint(concepts, facts, today, entrypoints)
-			rep.Src = src
-
 			// Report is ALWAYS emitted before the gate signals, so the gate never
 			// suppresses output (option (a), unified never-reject).
 			if jsonOut {
-				if err := clijson.Encode(cmd.OutOrStdout(), Version, "lint", rep); err != nil {
+				if err := res.EncodeJSON(cmd.OutOrStdout()); err != nil {
 					return fmt.Errorf("encoding json report: %w", err)
 				}
 			} else {
-				fmt.Fprint(cmd.OutOrStdout(), rep.String())
+				fmt.Fprint(cmd.OutOrStdout(), render.Lint(res))
 			}
 
-			// lint produces only spec-tolerated advisories (invalid YAML is recovered
-			// under never-reject, missing type is defaulted), so hardNonConformance is
-			// always false — §11 hard conformance stays `binder validate`'s job. Bare
-			// lint never gates (exit 0); --strict gates on any finding (exit 1).
-			// NumFindings excludes the #93 colon-space advisory by construction, so
-			// that rule cannot move this exit code in either mode.
-			return clijson.Gate(strict, false, rep.NumFindings() > 0,
-				fmt.Sprintf("lint found %d finding(s) (--strict)", rep.NumFindings()))
+			// The gate decision (bare lint never gates; --strict gates on any gating
+			// finding) is the Result's, defined once in the service.
+			return res.Gate(strict)
 		},
 	}
 	cmd.Flags().StringVar(&today, "today", "", "date (YYYY-MM-DD) used for staleness; defaults to now")
