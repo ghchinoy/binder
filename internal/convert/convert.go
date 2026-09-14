@@ -269,6 +269,10 @@ func Analyze(src string, opts Options) (concepts []*okf.Concept, facts []SourceF
 			TypePresent:  authoredTypePresent(c.Frontmatter),
 			Recovered:    recovered,
 			RecoverErr:   recoverErr,
+			// Read from the NORMALIZED source bytes, not the parsed frontmatter: a
+			// colon-space plain scalar is precisely what stops the frontmatter from
+			// parsing, so by the time there is an OrderedMap the evidence is gone.
+			ColonSpaceKeys: colonSpaceKeys(norm),
 		})
 
 		typ := ensureType(c.Frontmatter, outRel, opts.TypeMap, opts.DefaultType)

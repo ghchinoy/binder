@@ -144,6 +144,7 @@ binder lint
   schema violations: 2
     README: missing type
     notes/scratch: missing type
+  unquoted colon-space scalars (advisory, never gates): 0
   entrypoints (no inbound links): 1
     README
   orphans (no inbound or outbound links): 2
@@ -151,6 +152,28 @@ binder lint
     topics/glossary
   stale: 0
 ```
+
+The **unquoted colon-space scalars** bucket is the one authoring defect that
+bites hardest in practice. A frontmatter value written as
+
+```yaml
+title: Multi-View: Tabs and Windows
+```
+
+is not the string it looks like: YAML reads the second colon as a nested mapping
+indicator, so the value is wrong at best and the whole frontmatter block stops
+parsing at worst (`convert` then recovers the file as plain markdown rather than
+dropping it). The rule applies to **any** key, not a fixed list — the instance
+measured in the wild was a `title:`, not a `description:`. Quoting the value
+(`title: "Multi-View: Tabs and Windows"`) is the entire fix.
+
+Only *unquoted plain scalars* count. A URL (`https://example.com`), a timestamp
+(`12:30`), a ratio (`16:9`), an already-quoted value, and the interior of a
+`|`/`>` block scalar are all left alone — a colon must be followed by a space in
+an unquoted value to mean anything. This bucket is advisory even by lint's
+standards: unlike every other bucket it is **never** counted as a finding, so it
+cannot gate `--strict`. It names the key to quote in a file whose broken
+frontmatter is already reported as a schema violation.
 
 An orphan here is a concept with **no inbound and no outbound** resolved edge: a
 document no reader will reach by following links, and one that leads nowhere.
@@ -377,7 +400,8 @@ exit=1
 Under `--strict`, binder also prints a one-line summary to stderr
 (`binder: lint found 6 finding(s) (--strict)`); the JSON on stdout is unaffected.
 That is 1 broken link + 1 missing title + 2 schema violations + 2 orphans; the
-lone entrypoint is reported but not counted. A clean corpus exits `0` even with
+lone entrypoint is reported but not counted, and neither are unquoted
+colon-space scalars. A clean corpus exits `0` even with
 `--strict` set, so the flag is safe to leave on permanently in CI.
 
 `--strict` is available on `convert`, `enrich`, `validate`, `review`, `lint`, and

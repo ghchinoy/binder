@@ -43,6 +43,12 @@ type Report struct {
 	Entrypoints      []string  `json:"entrypoints"`       // 0 inbound but outbound/recognized-root/designated (issue #24)
 	Stale            []string  `json:"stale"`             // okf.IsStale as of today
 	SchemaViolations []Finding `json:"schema_violations"` // Detail: "missing type" | "invalid frontmatter: <err>"
+	// ColonSpaceScalars is the issue-#93 advisory: a frontmatter key whose value
+	// is an unquoted plain scalar containing a colon-space (": "), e.g.
+	// `title: Multi-View: Tabs and Windows`. Detail names the key and the fix.
+	// It is ADVISORY ONLY and is deliberately excluded from NumFindings — see the
+	// note there.
+	ColonSpaceScalars []Finding `json:"colon_space_scalars"`
 }
 
 // Lint computes the corpus health report from the resolved concepts and source
@@ -50,13 +56,14 @@ type Report struct {
 // read-only and deterministic. The caller sets Report.Src.
 func Lint(concepts []*okf.Concept, facts []convert.SourceFacts, today string, entrypoints []string) *Report {
 	r := &Report{
-		NumConcepts:      len(concepts),
-		BrokenLinks:      []Finding{},
-		MissingTitles:    []string{},
-		Orphans:          []string{},
-		Entrypoints:      []string{},
-		Stale:            []string{},
-		SchemaViolations: []Finding{},
+		NumConcepts:       len(concepts),
+		BrokenLinks:       []Finding{},
+		MissingTitles:     []string{},
+		Orphans:           []string{},
+		Entrypoints:       []string{},
+		Stale:             []string{},
+		SchemaViolations:  []Finding{},
+		ColonSpaceScalars: []Finding{},
 	}
 
 	// The set of concept ids that actually exist. The codec optimistically marks
@@ -123,11 +130,22 @@ func Lint(concepts []*okf.Concept, facts []convert.SourceFacts, today string, en
 		}
 	}
 
-	// Checks 2 & 5 — source-fact checks over the pre-default authored state. These
-	// are exactly what convert masks: a missing title is defaulted to a humanized
-	// filename, a missing type: is defaulted, and invalid frontmatter is recovered
-	// as body under never-reject. lint is the only surface that sees them.
+	// Checks 2, 5 & 6 — source-fact checks over the pre-default authored state.
+	// These are exactly what convert masks: a missing title is defaulted to a
+	// humanized filename, a missing type: is defaulted, and invalid frontmatter is
+	// recovered as body under never-reject. lint is the only surface that sees them.
 	for _, f := range facts {
+		// Check 6 — the issue-#93 colon-space advisory. It is reported ALONGSIDE
+		// the invalid-frontmatter violation below rather than instead of it: the
+		// violation says the block did not parse, this says which key to quote.
+		// Because it is a more actionable restatement of a defect already counted,
+		// it is not counted again (see NumFindings).
+		for _, key := range f.ColonSpaceKeys {
+			r.ColonSpaceScalars = append(r.ColonSpaceScalars, Finding{
+				Concept: f.ConceptID,
+				Detail:  fmt.Sprintf("%s: unquoted value contains \": \" — quote it", key),
+			})
+		}
 		if !f.TitlePresent {
 			r.MissingTitles = append(r.MissingTitles, f.ConceptID)
 		}
@@ -208,6 +226,7 @@ func fragmentOf(target string) string {
 func (r *Report) sortAll() {
 	sortFindings(r.BrokenLinks)
 	sortFindings(r.SchemaViolations)
+	sortFindings(r.ColonSpaceScalars)
 	sort.Strings(r.MissingTitles)
 	sort.Strings(r.Orphans)
 	sort.Strings(r.Entrypoints)
@@ -223,8 +242,16 @@ func sortFindings(f []Finding) {
 	})
 }
 
-// NumFindings is the total across all check buckets. Under --strict a non-zero
-// count gates at exit 1 (option (a), the unified never-reject posture).
+// NumFindings is the total across the GATING check buckets. Under --strict a
+// non-zero count gates at exit 1 (option (a), the unified never-reject posture).
+//
+// ColonSpaceScalars is deliberately absent. It is advisory-only (issue #93): a
+// key named by it is a more actionable restatement of the invalid-frontmatter
+// SchemaViolation the same file already produces, so counting it would
+// double-count one defect — the same reason a recovered file is not also listed
+// as "missing type" above. Leaving it out of the single total the gate reads is
+// also what makes "there is no code path by which this rule rejects" true by
+// construction rather than by inspection: the rule cannot move any exit code.
 func (r *Report) NumFindings() int {
 	return len(r.BrokenLinks) + len(r.MissingTitles) + len(r.Orphans) +
 		len(r.Stale) + len(r.SchemaViolations)
@@ -247,6 +274,10 @@ func (r *Report) String() string {
 	}
 	fmt.Fprintf(&b, "  schema violations: %d\n", len(r.SchemaViolations))
 	for _, f := range r.SchemaViolations {
+		fmt.Fprintf(&b, "    %s: %s\n", f.Concept, f.Detail)
+	}
+	fmt.Fprintf(&b, "  unquoted colon-space scalars (advisory, never gates): %d\n", len(r.ColonSpaceScalars))
+	for _, f := range r.ColonSpaceScalars {
 		fmt.Fprintf(&b, "    %s: %s\n", f.Concept, f.Detail)
 	}
 	fmt.Fprintf(&b, "  entrypoints (no inbound links): %d\n", len(r.Entrypoints))

@@ -14,6 +14,13 @@ AND no outbound links. Unlike `binder review`/`binder validate`, which read
 an emitted bundle, lint sees the corpus as authored — a missing title or
 type: is masked once convert defaults it.
 
+It also reports unquoted colon-space scalars: any frontmatter key whose
+unquoted plain-scalar value contains ": " (e.g. title: Multi-View: Tabs),
+which YAML reads as a nested mapping rather than the intended string.
+Quoting the value is the fix. This one is advisory-only and never gates,
+even under --strict: it names the key to quote in a file whose invalid
+frontmatter is already reported as a schema violation.
+
 Findings are advisory: bare lint always exits 0 (entrypoints never gate).
 Use --strict to gate (exit 1) when any finding is present, e.g. in CI.
 

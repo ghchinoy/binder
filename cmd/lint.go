@@ -31,6 +31,12 @@ func newLintCmd(codec okf.Codec) *cobra.Command {
 			"AND no outbound links. Unlike `binder review`/`binder validate`, which read\n" +
 			"an emitted bundle, lint sees the corpus as authored — a missing title or\n" +
 			"type: is masked once convert defaults it.\n\n" +
+			"It also reports unquoted colon-space scalars: any frontmatter key whose\n" +
+			"unquoted plain-scalar value contains \": \" (e.g. title: Multi-View: Tabs),\n" +
+			"which YAML reads as a nested mapping rather than the intended string.\n" +
+			"Quoting the value is the fix. This one is advisory-only and never gates,\n" +
+			"even under --strict: it names the key to quote in a file whose invalid\n" +
+			"frontmatter is already reported as a schema violation.\n\n" +
 			"Findings are advisory: bare lint always exits 0 (entrypoints never gate).\n" +
 			"Use --strict to gate (exit 1) when any finding is present, e.g. in CI.",
 		Args: exactArgs(1),
@@ -81,6 +87,8 @@ func newLintCmd(codec okf.Codec) *cobra.Command {
 			// under never-reject, missing type is defaulted), so hardNonConformance is
 			// always false — §11 hard conformance stays `binder validate`'s job. Bare
 			// lint never gates (exit 0); --strict gates on any finding (exit 1).
+			// NumFindings excludes the #93 colon-space advisory by construction, so
+			// that rule cannot move this exit code in either mode.
 			return clijson.Gate(strict, false, rep.NumFindings() > 0,
 				fmt.Sprintf("lint found %d finding(s) (--strict)", rep.NumFindings()))
 		},
