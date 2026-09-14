@@ -330,6 +330,17 @@ func exPRShapes(t *testing.T) map[string]exPRShape {
 			p.headRef = "dependabot/github_actions/actions/checkout-5"
 			p.title = "chore(deps): bump actions/checkout from 4 to 5"
 		}),
+		// A bot that is NOT Dependabot. Both Dependabot shapes above share one
+		// login, so on their own they would pin "Dependabot is exempt" rather than
+		// "bots are exempt" — an exemption narrowed to a dependabot login test
+		// would keep them green. This shape is what makes the controls read
+		// user.type, which is the property GitHub sets server-side.
+		"other-bot-pr": with(func(p *exPRShape) {
+			p.userType = "Bot"
+			p.userLogin = "github-actions[bot]"
+			p.headRef = "chore/automated-housekeeping"
+			p.title = "chore: automated housekeeping"
+		}),
 	}
 }
 
@@ -399,6 +410,16 @@ func TestReleaseExemption(t *testing.T) {
 				"comment predicts. Pinned as its own shape because the SHA-pinning work " +
 				"that makes Dependabot open github_actions PRs here is landing in the " +
 				"same batch as this fix",
+		},
+		{
+			name:    "other-bot-pr",
+			wantRun: false,
+			why: "the exemption must key on `user.type`, not on a bot's identity: " +
+				"with only dependabot-logged shapes above, narrowing the clause to a " +
+				"`user.login != 'dependabot[bot]'` test would keep this suite green, " +
+				"and would then red the first PR any other bot opens — nothing in this " +
+				"repo opens PRs as github-actions[bot] today, so the narrowing and the " +
+				"breakage would be separated by however long that takes",
 		},
 	}
 

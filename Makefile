@@ -9,6 +9,19 @@ OKF_VER := v0.3.0
 OKF_PKG := github.com/okfcli/okf/cmd/okf@$(OKF_VER)
 # Pinned like the actions themselves: the workflow linter must not change under
 # the gate it feeds.
+#
+# NOT DEPENDABOT-VISIBLE, and do not assume this version is being maintained for
+# you. `go run pkg@version` resolves outside this module, so actionlint is in
+# neither go.mod nor go.sum: the `gomod` ecosystem cannot see it, and the
+# `github-actions` ecosystem reads `uses:` references, not tool invocations. A Go
+# 1.24+ `tool` directive would put it under go.sum and in Dependabot's view (this
+# repo declares go 1.26.1, so that is available).
+#
+# Adding the `gomod` ecosystem while leaving this pin as it is would be the WORST
+# available state rather than a partial improvement: everything else bumped on a
+# schedule, one pinned linter silently ageing inside the same `make check` gate,
+# and a dependabot.yml that makes it look covered. Recorded with the other
+# ecosystem-coverage gaps on issue #194 (see the comment thread there).
 ACTIONLINT_VER := v1.7.12
 ACTIONLINT_PKG := github.com/rhysd/actionlint/cmd/actionlint@$(ACTIONLINT_VER)
 
