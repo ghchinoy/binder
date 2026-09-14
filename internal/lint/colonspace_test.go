@@ -55,6 +55,14 @@ func TestColonSpacePositiveControl(t *testing.T) {
 func TestColonSpaceNegativeControls(t *testing.T) {
 	rep := lintCorpus(t, "../../testdata/corpus-lint-colonspace")
 
+	// This test's subject is an ABSENCE, so first establish that there was
+	// something to find. An empty or missing corpus would otherwise satisfy every
+	// assertion below without exercising a single false-positive shape.
+	if rep.NumConcepts < 2 {
+		t.Fatalf("vacuous: negative-control corpus has %d concept(s); the false-positive "+
+			"shapes it is supposed to carry are not being scanned", rep.NumConcepts)
+	}
+
 	if len(rep.ColonSpaceScalars) != 0 {
 		t.Errorf("negative-control corpus triggered the advisory: %+v", rep.ColonSpaceScalars)
 	}

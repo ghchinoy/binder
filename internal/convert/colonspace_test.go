@@ -294,6 +294,7 @@ func TestColonSpaceCleanCorpusYieldsNoAdvisory(t *testing.T) {
 	if len(facts) == 0 {
 		t.Fatal("vacuous: the fixture corpus produced no facts")
 	}
+	var witnessed int
 	for _, f := range facts {
 		if f.Recovered {
 			t.Errorf("%s: fixture is supposed to PARSE cleanly but convert recovered it (%s)",
@@ -302,6 +303,22 @@ func TestColonSpaceCleanCorpusYieldsNoAdvisory(t *testing.T) {
 		if len(f.ColonSpaceKeys) != 0 {
 			t.Errorf("%s: ColonSpaceKeys = %v on a cleanly-parsing file", f.RelPath, f.ColonSpaceKeys)
 		}
+		// This test's subject is an ABSENCE, so confirm the fixture still witnesses
+		// the hazard the gate exists to stop. If the files were ever "tidied" into
+		// ordinary clean markdown, every assertion above would pass while testing
+		// nothing.
+		raw, rerr := os.ReadFile(filepath.Join("../../testdata/corpus-lint-colonspace-clean", f.RelPath))
+		if rerr != nil {
+			t.Fatalf("reading fixture %s: %v", f.RelPath, rerr)
+		}
+		norm, _ := NormalizeInput(raw)
+		if len(colonSpaceKeys(norm)) > 0 {
+			witnessed++
+		}
+	}
+	if witnessed == 0 {
+		t.Fatal("vacuous: no fixture in this corpus would draw a phantom finding if the gate " +
+			"were removed, so it no longer tests the gate")
 	}
 }
 
@@ -395,6 +412,7 @@ func TestFrontmatterRegionAgreesWithCodec(t *testing.T) {
 		{"fence then EOF", "---\ntype: Note\n---"},
 		{"block scalar inside", "---\ns: |\n  a: b\n---\n\n# X\n"},
 	}
+	var compared int
 	for _, d := range docs {
 		t.Run(d.name, func(t *testing.T) {
 			norm, _ := NormalizeInput([]byte(d.doc))
@@ -413,10 +431,17 @@ func TestFrontmatterRegionAgreesWithCodec(t *testing.T) {
 			if !ok {
 				return
 			}
+			compared++
 			want := strings.TrimRight(string(con.OriginalFrontmatter), "\n")
 			if got != want {
 				t.Errorf("region mismatch:\n frontmatterRegion: %q\n codec:             %q", got, want)
 			}
 		})
+	}
+	// Most cases above exit at the fence-verdict check; without this, a change that
+	// made every document fenceless would leave the region comparison unexercised
+	// and the test still green.
+	if compared < 5 {
+		t.Fatalf("vacuous: only %d document(s) reached the region comparison", compared)
 	}
 }
