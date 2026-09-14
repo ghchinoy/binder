@@ -7,6 +7,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/ghchinoy/binder/internal/config"
 	"github.com/ghchinoy/binder/internal/convert"
 	"github.com/ghchinoy/binder/internal/okf"
 )
@@ -103,9 +104,14 @@ func registerConvert(s *mcp.Server, d *deps) {
 		// Never-fabricate-trust: apply verified_by ONLY when explicitly passed;
 		// an invalid actor is a usage-class error (same okf.IsValidActor gate as
 		// the CLI). The server never auto-stamps verified/sources.
+		// The forms hint is taken from config.ActorFormsHint rather than restated
+		// here, so this surface cannot drift from the CLI's wording — and so the
+		// worked example tracks the live version instead of a hand-maintained
+		// literal (issue #60: this copy said "binder/0.3.0" at v0.5.3). The CLI's
+		// config.InvalidActorError is deliberately NOT reused: it wraps the error
+		// in clijson.Usage to set a CLI exit code, which is meaningless over MCP.
 		if in.VerifiedBy != "" && !okf.IsValidActor(in.VerifiedBy) {
-			return nil, nil, fmt.Errorf("invalid actor %q; valid forms: human:<id>, process:<id>, "+
-				"team:<id>, or <producer>/<version> (e.g. binder/0.3.0)", in.VerifiedBy)
+			return nil, nil, fmt.Errorf("invalid actor %q; %s", in.VerifiedBy, config.ActorFormsHint())
 		}
 
 		// default_type mirrors the CLI flag default ("Note") when unset.

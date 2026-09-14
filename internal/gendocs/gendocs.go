@@ -15,13 +15,22 @@ import (
 	"strings"
 
 	"github.com/ghchinoy/binder/cmd"
+	"github.com/ghchinoy/binder/internal/version"
 	"github.com/spf13/cobra"
 	"github.com/spf13/cobra/doc"
 )
 
 // Root returns the binder root command with the auto-generated timestamp tag
 // disabled on every command in the tree, so generated markdown is stable.
+//
+// It also pins the `<producer>/<version>` actor exemplar to its version-neutral
+// form before the tree is built, because --verified-by's help text derives that
+// exemplar from the live version (issue #60). Flag usage strings are composed
+// during NewRootCmd, so the pin must precede it. This keeps the committed
+// reference a pure function of the command tree — see version.PinUnresolved for
+// the build-dependence it removes.
 func Root() *cobra.Command {
+	version.PinUnresolved()
 	root := cmd.NewRootCmd()
 	disableAutoGenTag(root)
 	return root

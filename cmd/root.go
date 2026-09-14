@@ -16,6 +16,7 @@ import (
 	"github.com/ghchinoy/binder/internal/config"
 	"github.com/ghchinoy/binder/internal/okf"
 	"github.com/ghchinoy/binder/internal/okf/native"
+	"github.com/ghchinoy/binder/internal/version"
 )
 
 // Version is the binder version, stamped into generated.by ("binder/<version>")
@@ -48,6 +49,16 @@ var Version = "dev"
 // module version is "(devel)"). Whichever source wins, the final assignment
 // passes it through normalizeVersion so both paths converge on the canonical
 // no-leading-v form.
+//
+// The final step publishes the resolved value to internal/version, which is the
+// single source of the `<producer>/<version>` exemplar shown in help and error
+// text (issue #60). The push is required rather than stylistic: the exemplar is
+// consumed by internal/config and internal/mcp, and `cmd` imports both, so they
+// cannot import `cmd` back to read Version. It is deliberately the LAST
+// statement here, after normalizeVersion, so internal/version can never observe
+// a v-prefixed or unnormalized value. Every consumer reads the exemplar at run
+// time (flag registration happens inside NewRootCmd, which main() calls), so
+// this init() always precedes the first read.
 func init() {
 	if Version == "dev" {
 		if bi, ok := debug.ReadBuildInfo(); ok {
@@ -57,6 +68,7 @@ func init() {
 		}
 	}
 	Version = normalizeVersion(Version)
+	version.Set(Version)
 }
 
 // normalizeVersion canonicalizes a binder version string to the no-leading-v

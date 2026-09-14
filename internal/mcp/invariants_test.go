@@ -11,6 +11,9 @@ import (
 	"testing"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/ghchinoy/binder/internal/config"
+	"github.com/ghchinoy/binder/internal/version"
 )
 
 const brokenLinksCorpus = "../../testdata/corpus-lint-links"
@@ -46,6 +49,40 @@ func TestNeverFabricateTrust_InvalidActor(t *testing.T) {
 	}
 	if txt := toolText(t, res); !strings.Contains(txt, "invalid actor") {
 		t.Fatalf("expected an invalid-actor message, got: %s", txt)
+	}
+}
+
+// TestInvalidActorExemplarTracksLiveVersion covers the fourth site issue #60
+// found carrying a hand-maintained "binder/0.3.0": the MCP convert tool's
+// invalid-actor error, which had its own inlined copy of the forms hint. The
+// published version is a value no release ever had, so the assertion can only
+// pass if the exemplar was genuinely derived rather than hard-coded.
+func TestInvalidActorExemplarTracksLiveVersion(t *testing.T) {
+	old := version.Current()
+	version.PinUnresolved()
+	version.Set("9.9.9")
+	t.Cleanup(func() { version.PinUnresolved(); version.Set(old) })
+
+	res := callTool(t, "convert", map[string]any{
+		"src":         richCorpus,
+		"dry_run":     true,
+		"verified_by": "agent:bot",
+	})
+	if !res.IsError {
+		t.Fatalf("invalid verified_by must be a tool error, got success: %s", toolText(t, res))
+	}
+	txt := toolText(t, res)
+	if !strings.Contains(txt, "binder/9.9.9") {
+		t.Errorf("MCP invalid-actor error does not track the live version: %s", txt)
+	}
+	if strings.Contains(txt, "binder/0.3.0") {
+		t.Errorf("MCP invalid-actor error still carries the hard-coded literal: %s", txt)
+	}
+	// The wording must stay byte-identical to the CLI's, which is why this
+	// surface shares config.ActorFormsHint instead of restating it.
+	if !strings.Contains(txt, config.ActorFormsHint()) {
+		t.Errorf("MCP forms hint diverged from the CLI's:\n got: %s\nwant substring: %s",
+			txt, config.ActorFormsHint())
 	}
 }
 

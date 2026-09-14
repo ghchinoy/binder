@@ -21,6 +21,7 @@ import (
 
 	"github.com/ghchinoy/binder/internal/clijson"
 	"github.com/ghchinoy/binder/internal/okf"
+	"github.com/ghchinoy/binder/internal/version"
 )
 
 // SchemaVersion identifies the `binder config` JSON report contract. It is
@@ -62,12 +63,39 @@ const defaultType = "Note"
 // ActorFormsHint lists the valid actor forms for --verified-by / verified_by.
 // It is shared by the flag validator and the config-load validator so the two
 // surfaces emit an identical, helpful message (design option (a)).
-const ActorFormsHint = "valid forms: human:<id>, process:<id>, team:<id>, or <producer>/<version> (e.g. binder/0.3.0)"
+//
+// The worked example is DERIVED from the live version via version.ActorExemplar
+// rather than hand-written (issue #60). It used to be a const holding the
+// literal "binder/0.3.0", which nothing bumped: the trap fired through v0.4.0
+// and again through v0.5.3, reaching users on the invalid-actor error path below
+// and not only in --help.
+//
+// It is a func, not a var, precisely because of that derivation. A package-level
+// var here would be initialized before cmd's init() publishes the resolved
+// version (Go initializes imported packages first), so it would freeze the
+// unresolved form. A func defers the read to call time, which for every caller
+// is after main() starts. See internal/version's package doc.
+func ActorFormsHint() string {
+	return "valid forms: human:<id>, process:<id>, team:<id>, or <producer>/<version> (e.g. " +
+		version.ActorExemplar() + ")"
+}
+
+// VerifiedByFlagUsage is the --verified-by flag help, shared verbatim by
+// `binder convert` and `binder enrich`. Those two had byte-identical copies of
+// this sentence, each carrying its own hand-maintained "binder/0.3.0"; folding
+// them into one derivation is what makes #60's "bumping the version touches no
+// site" property hold.
+func VerifiedByFlagUsage() string {
+	return "actor to append as a verified stamp, e.g. \"human:ghchinoy\" or \"" +
+		version.ActorExemplar() + "\"; a stamp is written ONLY when passed here, or when " +
+		"verified_by is set in your GLOBAL config (neither BINDER_VERIFIED_BY nor a " +
+		"repo-local .binder.yaml authorizes stamping; " + ActorFormsHint() + ")"
+}
 
 // InvalidActorError returns a usage error (exit 2) for an actor value that does
 // not satisfy okf.IsValidActor, listing the valid forms.
 func InvalidActorError(actor string) error {
-	return clijson.Usage(fmt.Errorf("invalid actor %q; %s", actor, ActorFormsHint))
+	return clijson.Usage(fmt.Errorf("invalid actor %q; %s", actor, ActorFormsHint()))
 }
 
 // Config holds a resolved viper instance and the config file it read (if any).

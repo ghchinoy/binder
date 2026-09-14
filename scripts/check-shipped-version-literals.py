@@ -1,0 +1,543 @@
+#!/usr/bin/env python3
+"""Version-literal drift gate for binder's SHIPPED OUTPUT (issue #60).
+
+#60 was filed to stop a hand-maintained `binder/0.3.0` exemplar going stale. It
+did not: the trap fired through v0.4.0 and again through v0.5.3, reaching users
+on the invalid-actor ERROR path and not only in `--help`. Two releases escaped
+because nothing mechanical ever compared what the binary PRINTS against what the
+binary IS. That comparison is this gate.
+
+# What it checks
+
+Run a STAMPED binder over binder's user-facing text surfaces and require that
+every `binder/<X.Y.Z>` literal it emits equals the stamped binary's own version.
+Separately, `binder/v<digit>` anywhere in that output is always a finding: PR #52
+established that the git tag carries a leading `v` and the producer string must
+not, so a v-prefixed producer version is wrong at every release, not just stale.
+
+# Why the output and not the source
+
+The source half of this guard lives in Go, in internal/version's
+TestNoHardCodedVersionLiteralInShippedGo: it parses shipped .go files and rejects
+any hard-coded binder version in a string literal. That half is cheaper, runs in
+`make check`, and catches the mistake at authoring time — but it structurally
+CANNOT check values, because a `go test` build is unstamped and reports
+binder/dev (the same "KNOWN LIMIT" that forced #169's gate out of process).
+
+So the two halves are complementary, not redundant:
+
+  - the Go test answers "is any version hard-coded?" (no stamped build needed,
+    no idea what the right version is);
+  - this script answers "does what ships actually say the shipping version?"
+    (needs a stamped build, checks values, and is indifferent to how the string
+    was constructed — a literal, a concatenation, or a template all reach it the
+    same way).
+
+A literal assembled at run time, or one arriving from a non-Go source, passes the
+first and is caught by the second.
+
+# Minimum-coverage assertion (why this gate cannot pass vacuously)
+
+"0 findings" is only trustworthy if the gate actually reached the text it is
+meant to pin. A version gate that inspects nothing and exits 0 is the exact
+silent-permissive failure #169 exists to remove, so this gate carries an EXPLICIT
+inventory of the must-reach surfaces and asserts each one both RAN and yielded at
+least one version literal. A renamed flag, a reworded error, or a command that
+stops emitting the exemplar fails LOUD instead of passing green.
+
+The inventory is a per-surface list, not an aggregate floor: a floor like
+">= 4 literals total" can be satisfied coincidentally while one specific surface
+goes dark (another surface gaining a literal as this one loses it).
+
+Each entry additionally carries a MINIMUM COUNT rather than merely requiring
+presence, matching the inventory shape #185 landed for the transcript gate. Bare
+presence is too weak wherever one surface carries several literals: both help
+surfaces emit two exemplars (the flag's own example, and the shared actor-forms
+hint appended to it), so one could stop rendering while the other kept the entry
+satisfied. Counts are MINIMA — adding an exemplar needs no inventory edit;
+losing one fails loud and says by how much.
+
+KNOWN LIMIT, recorded rather than claimed closed. Cardinality is not identity.
+A count cannot distinguish four literals from a DIFFERENT four, so an offsetting
+edit — one exemplar added as another is hidden, on the same surface — nets the
+same total and passes. Exact counts do not fix this; they fail the same way and
+additionally make every legitimate addition an inventory edit, which is why the
+floor is a minimum. What actually closes it is identity rather than quantity
+(pinning *which* literal each surface must carry), and that is deliberately not
+attempted here. The drift comparison limits the blast radius in practice — every
+literal that IS seen must equal the stamped version — so the residual hole is
+narrow: a surface that loses a real exemplar while gaining an unrelated but
+correctly-versioned one. A shared inventory helper across this gate and #185's
+is filed as follow-up rather than built late in a sequence across two in-flight
+PRs.
+
+# Every scanner has a floor (the smaller-universe sweep)
+
+Round-1 review found the inventory above floored two of this gate's THREE
+scanners. The unfloored one was command discovery, and its failure mode is the
+dangerous kind: it does not report a finding, it reports a SMALLER UNIVERSE.
+Rewording Cobra's `Available Commands:` header collapsed the sweep from 15
+commands to 0, dropping the scan from 19 surfaces to 4 — with no finding, no
+coverage failure, and exit 0.
+
+So the question was asked of every scanner here, and each now has a floor:
+
+  1. must-reach surfaces  -> per-surface minimum literal counts (above);
+  2. documented transcripts -> MIN_DOC_TRANSCRIPTS, plus a MISSING-DOC-ROOT
+     finding if a declared root does not exist;
+  3. command discovery    -> REQUIRED_COMMANDS, which names command PATHS and
+     so asserts DEPTH as well as breadth: a partial collapse (root block parses,
+     recursion into subcommands does not) leaves a plausible-looking total, so
+     it is caught by identity, not by the count. MIN_DISCOVERED_COMMANDS is the
+     weaker backstop for breadth loss among commands not individually named.
+
+The Go half of the guard (internal/version's shipped-literal test) was checked
+for the same shape and already carries an identity-based `mustVisit` inventory
+naming the four files plus an explicit vacuous-pass guard, so it does not have
+this hole.
+
+The general rule, worth keeping in mind when extending this gate: a check whose
+subject is an ABSENCE ("nothing disagreed") is only as good as the evidence that
+it looked at anything. Count what you reached and assert a floor on it.
+
+# Documented transcripts of the error text (the third rule)
+
+#60's fix makes the invalid-actor error version-derived, which immediately
+staleds every doc that transcribes that error — `docs/tutorial.md` and
+`docs/user_guide.md` both quote it verbatim. Those literals were *correct* before
+this change (they are the actor-grammar example baked into the error, not a
+drifted provenance stamp, which is why #169's JSON-fence scoping rightly never
+touched them); they go stale in the same commit that changes the error string.
+
+Bumping them to the current version would simply re-create #60 one release later
+in a file nothing pins. So instead of writing down what the error says, this gate
+DERIVES it: for every documented `binder: invalid actor "<actor>"` line found, it
+re-runs the binary with that same actor and requires the documented line to equal
+what the binary actually prints. There is no expected text anywhere in this
+script, so there is nothing to keep up to date and drift is structurally
+impossible rather than merely watched for.
+
+This lives here rather than in #185's transcript gate on purpose: that gate scans
+static markdown and is JSON-fence-scoped, and these are prose. Deriving the
+expected value requires RUNNING the binary, which is this gate's defining
+capability.
+
+Exit non-zero if any literal drifts OR if any must-reach surface was not covered
+OR if any documented transcript disagrees with the binary; exit 0 only when every
+must-reach surface was covered and everything matches.
+
+Usage: check-shipped-version-literals.py <stamped-binder-binary> [repo-root] [--fix]
+
+--fix rewrites documented transcripts to the binary's own output; see
+docs/RELEASING.md step 3. It exits non-zero when it changes anything.
+"""
+import atexit
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "lib"))
+from stamped_version import certify  # noqa: E402
+
+# A binder version literal in emitted text: binder/<major>.<minor>.<patch>, with
+# an optional prerelease suffix (goreleaser can ship v1.2.3-rc1).
+VERSION_LITERAL = re.compile(r"binder/(\d+\.\d+\.\d+(?:-[0-9A-Za-z.\-]+)?)")
+
+# The v-prefixed producer form banned by PR #52. Checked independently of the
+# drift comparison because it is wrong even when the digits are current.
+V_PREFIXED = re.compile(r"binder/v\d")
+
+# A documented transcript of the invalid-actor error. The actor is captured so
+# the expected text can be re-derived by running the binary with that same actor
+# rather than written down here.
+DOC_ACTOR_LINE = re.compile(r'^binder: invalid actor "(?P<actor>.*?)"; valid forms:.*$')
+
+# Where documented transcripts are looked for, and the floor below which "no
+# mismatches" stops meaning anything. Two are known today (docs/tutorial.md and
+# docs/user_guide.md); if the count ever drops the gate reds rather than quietly
+# verifying nothing. README.md is #185's surface and is deliberately not scanned.
+DOC_ROOTS = ["docs"]
+MIN_DOC_TRANSCRIPTS = 2
+
+# Cobra's subcommand block, used to sweep the whole command tree for help text.
+AVAILABLE_COMMANDS = re.compile(r"^Available Commands:$")
+COMMAND_LINE = re.compile(r"^  (\S+)\s")
+
+# THE DISCOVERER NEEDS A FLOOR TOO (round-1 review, R1). The breadth sweep below
+# is the only scanner whose failure mode is REPORTING A SMALLER UNIVERSE rather
+# than reporting a finding: discover_commands() parses Cobra's English header, so
+# a Cobra upgrade or a custom help template that rewords "Available Commands:"
+# collapses discovery to zero. Every literal then goes unscanned, no surface
+# disagrees with anything, and the gate exits 0 having checked almost nothing.
+# That is the exact vacuous pass this gate exists to remove, sitting inside the
+# gate.
+#
+# The floor is expressed as IDENTITY first and cardinality second. The named
+# paths are not a magic number — if discovery cannot see `convert`, the thing
+# doing the seeing is broken, whatever the count says.
+#
+# THE NESTED PATHS ARE THE LOAD-BEARING PART, and they are here because the
+# earlier version of this floor did not do what its own comment claimed. It
+# named three TOP-LEVEL commands and set a count of 8, and described the count
+# as "a backstop for a PARTIAL collapse (the root block parsing but recursion
+# into subcommands failing)". It was not. Recursion into `config` can fail
+# completely — losing all four of its subcommands — and discovery still returns
+# 11 of 15, still contains top-level `config`, and still clears 8. The gate
+# exits 0 while a quarter of the command tree has gone dark. A cardinality floor
+# cannot catch a collapse that stays above it, and depth is exactly where a
+# recursive walk breaks, so DEPTH IS ASSERTED BY IDENTITY:
+# `config get/list/set/unset` are reachable only by recursing one level, so
+# their presence is a direct claim that the recursion ran.
+REQUIRED_COMMANDS = {
+    ("convert",),
+    ("enrich",),
+    ("config",),
+    ("config", "get"),
+    ("config", "list"),
+    ("config", "set"),
+    ("config", "unset"),
+}
+# Cardinality remains, demoted to what it can honestly do: catch breadth loss
+# among the commands NOT named above. A MINIMUM under today's 15, so removing
+# one command is not an inventory edit — but no longer under the number a
+# depth collapse leaves behind, which is what made it decorative.
+MIN_DISCOVERED_COMMANDS = 12
+
+# Subcommands with no binder-authored help worth sweeping: `completion` is
+# generated by Cobra and `help` just reprints another command's text.
+SKIP_COMMANDS = {"completion", "help"}
+
+
+def run(binder, args, env=None):
+    """Run binder and return stdout+stderr together. The exit code is ignored on
+    purpose: several must-reach surfaces ARE error paths, and their text is the
+    thing under test."""
+    full_env = dict(os.environ)
+    if env:
+        full_env.update(env)
+    p = subprocess.run([binder] + args, capture_output=True, text=True, env=full_env)
+    return p.stdout + p.stderr
+
+
+def discover_commands(binder):
+    """Return every subcommand path (as an argv list) reachable from the root,
+    by walking Cobra's `Available Commands:` blocks."""
+    found = []
+
+    def walk(path):
+        out = run(binder, path + ["--help"])
+        in_block = False
+        for line in out.splitlines():
+            if AVAILABLE_COMMANDS.match(line):
+                in_block = True
+                continue
+            if in_block:
+                if not line.strip():
+                    break
+                m = COMMAND_LINE.match(line)
+                if not m:
+                    continue
+                name = m.group(1)
+                if name in SKIP_COMMANDS:
+                    continue
+                child = path + [name]
+                found.append(child)
+                walk(child)
+
+    walk([])
+    return found
+
+
+def check_doc_transcripts(binder, repo_root, corpus, env, fix=False):
+    """Require every documented `binder: invalid actor ...` line to equal what the
+    binary actually prints for that same actor.
+
+    Returns (findings, transcripts_found, repaired). The expected text is DERIVED
+    by running the binary, never written down, so this cannot itself go stale.
+
+    With fix=True the derived text is WRITTEN BACK instead of merely reported.
+    This is what closes #60's AC3 ("tutorial.md no longer needs a per-release
+    edit") rather than documenting around it: the gate already computes the
+    correct line in order to compare it, so the release step is
+    `--fix` + commit, not a hand edit. The repair is still the binary's own
+    output — nothing is templated or guessed — so it cannot introduce text the
+    binary does not print."""
+    findings = []
+    found = 0
+    repaired = []
+    for root_name in DOC_ROOTS:
+        root = os.path.join(repo_root, root_name)
+        if not os.path.isdir(root):
+            findings.append((f"{root_name}/", "MISSING-DOC-ROOT",
+                             "declared documentation root does not exist; the "
+                             "scan silently shrank instead of failing"))
+            continue
+        for dirpath, _, filenames in os.walk(root):
+            for name in sorted(filenames):
+                if not name.endswith(".md"):
+                    continue
+                path = os.path.join(dirpath, name)
+                rel = os.path.relpath(path, repo_root)
+                with open(path, encoding="utf-8") as fh:
+                    lines = fh.read().split("\n")
+                dirty = False
+                for idx, line in enumerate(lines):
+                    m = DOC_ACTOR_LINE.match(line)
+                    if not m:
+                        continue
+                    found += 1
+                    actual = run(
+                        binder,
+                        ["enrich", corpus, "--verified-by", m.group("actor")],
+                        env,
+                    ).strip()
+                    if line in actual.splitlines():
+                        continue
+                    # The replacement is the binary's OWN line for this same
+                    # actor, located by the same pattern. If the binary prints no
+                    # such line, there is nothing derived to write and --fix must
+                    # not invent one: report and leave the file alone.
+                    replacement = next(
+                        (a for a in actual.splitlines() if DOC_ACTOR_LINE.match(a)),
+                        None,
+                    )
+                    if fix and replacement is not None:
+                        lines[idx] = replacement
+                        dirty = True
+                        repaired.append(f"{rel}:{idx + 1}")
+                        continue
+                    findings.append((
+                        f"{rel}:{idx + 1}", "DOC-DRIFT",
+                        f"documents {line!r} but the binary prints {actual!r}"
+                        + ("" if replacement is not None else
+                           " — and prints no invalid-actor line at all, so "
+                           "--fix cannot derive a replacement"),
+                    ))
+                if dirty:
+                    with open(path, "w", encoding="utf-8") as fh:
+                        fh.write("\n".join(lines))
+    return findings, found, repaired
+
+
+def main() -> int:
+    argv = [a for a in sys.argv[1:] if a != "--fix"]
+    fix = "--fix" in sys.argv[1:]
+    if not 1 <= len(argv) <= 2:
+        # Select the Usage line by CONTENT. This used to take the docstring's
+        # last line, which silently became wrong the moment a paragraph was
+        # appended after it.
+        usage = next(ln for ln in __doc__.splitlines() if ln.startswith("Usage:"))
+        sys.stderr.write(usage + "\n")
+        return 2
+    binder = argv[0]
+    # The repo whose docs are checked. Defaults to this script's own repo, and is
+    # overridable so the fixture harness can point the gate at a patched copy and
+    # PROVE the doc rule reds — a rule never shown to fail is not known to work.
+    repo_root = os.path.abspath(
+        argv[1] if len(argv) == 2
+        else os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    )
+
+    # check=True: a binary that runs but exits non-zero must raise rather than
+    # let a partial/empty --version through. Same reasoning as #169's gate.
+    expected = subprocess.run(
+        [binder, "--version"], capture_output=True, text=True, check=True
+    ).stdout.strip()
+
+    # Refuse to run against a build that does not certify. The predicate is NOT
+    # kept here: it lives in scripts/lib/stamped_version.py, shared with the
+    # build helper and with #169's gate, because a precondition each caller
+    # re-decides for itself is not shared at all. This gate permits prereleases
+    # (goreleaser can ship v1.2.3-rc1); the absolute checks — no pseudo-version,
+    # no build metadata — are applied to every caller and are not negotiable.
+    #
+    # The gate must still certify even though build_stamped_binder already did:
+    # the checker takes a binary PATH and can be handed one that the helper never
+    # built, which is exactly what the fixture harness does.
+    reason = certify(expected, allow_prerelease=True)
+    if reason:
+        sys.stderr.write(
+            f"FATAL: `{binder} --version` did not certify — {reason}.\n"
+            f"This gate is not a stamped release build. Build one with\n"
+            f'  go build -ldflags "-X github.com/ghchinoy/binder/cmd.Version='
+            f'$(git describe --tags --abbrev=0)" -o <bin> .\n'
+            f"or just use scripts/lib/stamped-binder.sh, which builds AND "
+            f"certifies in one step.\n"
+        )
+        return 2
+
+    workdir = tempfile.mkdtemp()
+    # main() returns from several points below and may raise, so the removal is
+    # registered rather than written at the end. Without it the gate leaves a
+    # scratch corpus behind on EVERY run -- small individually, and invisible
+    # until enough of them accumulate that an unrelated gate reds with a
+    # message about the disk.
+    atexit.register(shutil.rmtree, workdir, ignore_errors=True)
+    src = os.path.join(workdir, "corpus")
+    os.makedirs(src, exist_ok=True)
+    with open(os.path.join(src, "a.md"), "w") as fh:
+        fh.write("# A\n\nbody\n")
+    out = os.path.join(workdir, "out")
+
+    # An isolated HOME so a developer's real ~/.binder.yaml cannot change what
+    # the error-path surfaces below emit.
+    isolated = {"HOME": workdir, "XDG_CONFIG_HOME": workdir}
+
+    # MUST-REACH INVENTORY. Each entry is (key, label, argv, env). These are the
+    # surfaces #60 enumerated, expressed as things the binary actually does:
+    #
+    #   - the two --verified-by flag-help copies (cmd/convert.go, cmd/enrich.go);
+    #   - the invalid-actor error raised from the FLAG path, which is where a
+    #     stale exemplar reached users;
+    #   - the invalid-actor error raised from the CONFIG-LOAD path, the other
+    #     consumer of config.ActorFormsHint. Both are listed because they are
+    #     separate call sites: one going stale while the other stays correct is
+    #     precisely the divergence the shared hint exists to prevent.
+    #
+    # The MCP convert tool's invalid-actor error is the fourth #60 site and is
+    # NOT reachable here — driving it needs a JSON-RPC session over stdio. It is
+    # covered instead by internal/mcp's TestInvalidActorExemplarTracksLiveVersion
+    # and by the Go source gate. Recorded rather than silently omitted.
+    # The trailing int is the MINIMUM number of version literals the surface must
+    # emit. The two help surfaces are 2 because the --verified-by usage string
+    # carries its own example AND appends config.ActorFormsHint(), which carries
+    # a second; requiring only 1 would let either go dark unnoticed.
+    must_reach = [
+        ("help:convert", "convert --verified-by flag help",
+         ["convert", "--help"], None, 2),
+        ("help:enrich", "enrich --verified-by flag help",
+         ["enrich", "--help"], None, 2),
+        ("error:flag-actor", "invalid-actor usage error (flag path)",
+         ["convert", src, "-o", out, "--verified-by", "agent:bot"], isolated, 1),
+        ("error:config-actor", "invalid-actor usage error (config-load path)",
+         ["config", "list"], dict(isolated, BINDER_VERIFIED_BY="agent:bot"), 1),
+    ]
+
+    findings = []
+    covered = {}          # key -> literals found on that surface
+    surfaces_scanned = 0
+    literals_checked = 0
+
+    def scan(key, label, text):
+        nonlocal surfaces_scanned, literals_checked
+        surfaces_scanned += 1
+        hits = VERSION_LITERAL.findall(text)
+        covered.setdefault(key, []).extend(hits)
+        for got in hits:
+            literals_checked += 1
+            if ("binder/" + got) != expected:
+                findings.append(
+                    (label, "DRIFT",
+                     f"emits binder/{got} but the binary is {expected}")
+                )
+        for m in V_PREFIXED.finditer(text):
+            findings.append(
+                (label, "V-PREFIXED",
+                 f"emits a v-prefixed producer version at offset {m.start()}; "
+                 f"the canonical form has no leading v (PR #52)")
+            )
+
+    # 1. The must-reach inventory.
+    for key, label, argv, env, _ in must_reach:
+        scan(key, label, run(binder, argv, env))
+
+    # 2. A breadth sweep over every command's help text, so a NEW surface that
+    #    introduces a stale literal is caught without anyone remembering to
+    #    extend the inventory. The inventory guarantees the floor; this
+    #    guarantees the reach.
+    discovered = discover_commands(binder)
+    for path in discovered:
+        label = "binder " + " ".join(path) + " --help"
+        scan("sweep:" + " ".join(path), label, run(binder, path + ["--help"]))
+
+    # 3. Documented transcripts of the error text must equal what the binary
+    #    prints. Expected values are derived from the binary, not written down.
+    doc_findings, doc_found, repaired = check_doc_transcripts(
+        binder, repo_root, src, isolated, fix=fix)
+    findings.extend(doc_findings)
+
+    # 4. Vacuous-pass guard: every must-reach surface has to have produced AT
+    #    LEAST its declared number of version literals. Running a command that
+    #    prints nothing relevant is not coverage, and neither is a surface that
+    #    quietly drops one of the two exemplars it is supposed to carry.
+    # Entries are (key, label, got, minimum, unit). The UNIT is carried rather
+    # than assumed: these floors no longer all count version literals, and a
+    # coverage failure that misnames what it counted sends the reader looking for
+    # the wrong defect.
+    coverage_fail = [
+        (key, label, len(covered.get(key, [])), minimum, "version literal(s)")
+        for key, label, _, _, minimum in must_reach
+        if len(covered.get(key, [])) < minimum
+    ]
+
+    # The breadth sweep's own floor. Identity before cardinality: name the
+    # commands discovery MUST see, then require a plausible total.
+    # Compared as PATHS, not as top-level names: a nested path is reachable only
+    # if the walk recursed, so requiring `config set` asserts the recursion ran.
+    # Comparing top-level names only cannot distinguish "config has four
+    # subcommands" from "config has none".
+    found_paths = {tuple(p) for p in discovered if p}
+    missing_named = sorted(REQUIRED_COMMANDS - found_paths)
+    if missing_named:
+        nested = [p for p in missing_named if len(p) > 1]
+        why = ("Cobra's `Available Commands:` header may have been reworded, "
+               "collapsing the breadth sweep")
+        if nested:
+            why = ("recursion into subcommands did not run — the root block "
+                   "parsed but nested help did not, so the sweep went shallow "
+                   "while still reporting a plausible total")
+        coverage_fail.append(
+            ("sweep:discovery",
+             "command discovery did not find "
+             + ", ".join(" ".join(p) for p in missing_named)
+             + " (" + why + ")",
+             len(found_paths & REQUIRED_COMMANDS), len(REQUIRED_COMMANDS),
+             "required command path(s)")
+        )
+    if len(discovered) < MIN_DISCOVERED_COMMANDS:
+        coverage_fail.append(
+            ("sweep:discovery-count",
+             "commands discovered for the breadth sweep",
+             len(discovered), MIN_DISCOVERED_COMMANDS, "discovered command(s)")
+        )
+
+    # The documented-transcript rule has its own coverage floor: "no mismatches"
+    # is worthless if the scan found no transcripts to compare.
+    if doc_found < MIN_DOC_TRANSCRIPTS:
+        coverage_fail.append(
+            ("docs:invalid-actor-transcripts",
+             "documented invalid-actor transcripts under " + "/, ".join(DOC_ROOTS),
+             doc_found, MIN_DOC_TRANSCRIPTS, "documented transcript(s)")
+        )
+
+    print(f"# shipped-output version gate: {surfaces_scanned} surface(s) scanned "
+          f"({len(discovered)} command(s) discovered), "
+          f"{literals_checked} version literal(s) checked, "
+          f"{doc_found} documented transcript(s) verified against the binary, "
+          f"stamped binary = {expected}")
+    for label, kind, detail in findings:
+        print(f"{label}: [{kind}] {detail}")
+    if coverage_fail:
+        print("# COVERAGE FAILURE: must-reach surface(s) emitted fewer version "
+              "literals than declared, so a green result would be VACUOUS. "
+              "Likely cause: a renamed flag or command, a reworded error, or a "
+              "surface that stopped showing the actor exemplar.")
+        for key, label, got, minimum, unit in coverage_fail:
+            print(f"# MISSING-COVERAGE: {label} [{key}] "
+                  f"reached {got} {unit}, expected at least {minimum}")
+    for rel in repaired:
+        print(f"# REPAIRED: {rel} rewritten to the binary's own output")
+    print(f"# {len(findings)} drift finding(s), "
+          f"{len(coverage_fail)} coverage failure(s)"
+          + (f", {len(repaired)} transcript(s) repaired" if fix else ""))
+    # --fix still exits non-zero when it changed something: the working tree now
+    # differs from the commit, and a release step must stop and commit rather
+    # than sail past. Coverage failures are never repairable and always red.
+    return 1 if (findings or coverage_fail or repaired) else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

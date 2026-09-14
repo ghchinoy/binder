@@ -30,14 +30,38 @@ jobs:
         run: make check
 
   transcript-version-gate:
-    # Pins the version literals inside the documented JSON transcripts —
-    # plugins/, docs/, and README.md — to the producing binary (issue #169;
-    # docs/ and README.md added by #185, where nine envelopes had silently
-    # drifted two minor versions while nothing watched them). SEPARATE from the
-    # in-process `make check` gate: it needs a STAMPED binder (the real release
-    # tag via ldflags), and a `go test` build is unstamped (binder/dev), so the
-    # unit gate structurally cannot check version literals. fetch-depth: 0 is
-    # required so `git describe --tags` can resolve the current release tag.
+    # Pins version literals to the producing binary across two surfaces, gated
+    # in one job because they share one precondition:
+    #
+    #   - DOCUMENTED TRANSCRIPTS (issue #169) -- the JSON envelopes written down
+    #     in plugins/, docs/ and README.md; docs/ and README.md added by #185,
+    #     where nine envelopes had silently drifted two minor versions while
+    #     nothing watched them.
+    #   - SHIPPED OUTPUT (issue #60) -- the text binder itself PRINTS, help and
+    #     error prose, checked by EXECUTING the binary rather than reading it.
+    #
+    # WHEN RESOLVING A MERGE IN THIS FILE, CHECK THAT NO GATE WAS DELETED. The
+    # two surfaces arrived on different branches carrying different numbers of
+    # steps, so a wholesale resolution toward either side can drop a gate -- and
+    # everything then goes green, because the gate that would have objected is
+    # the one that was removed. Do NOT check this with a grep count: a loose
+    # count scores comments as invocations, a tool- or path-shaped regex scores
+    # docs-impact.yml at zero though it holds ./bin/docs-impact-gate, and a
+    # plain set dedupes this file's four identical checkouts. Diff the
+    # JOB-QUALIFIED, GUARD-KEYED inventory instead -- every uses: and every run:
+    # command line, keyed by job and by if/continue-on-error, with both sides of
+    # the delta enumerated. `if: false` and an inverted folded guard both
+    # neutralise a gate while leaving its command string untouched.
+    #
+    # SEPARATE from the in-process `make check` gate: both need a STAMPED binder
+    # (the real release tag via ldflags), and a `go test` build is unstamped
+    # (binder/dev), so the unit gate structurally cannot check version VALUES.
+    # fetch-depth: 0 is required so `git describe --tags` resolves the tag.
+    #
+    # The complementary authoring-time check that `make check` CAN run is
+    # internal/version's TestNoHardCodedVersionLiteralInShippedGo, which rejects
+    # a hard-coded version in any shipped Go string literal without needing to
+    # know what the right version is.
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -63,6 +87,27 @@ jobs:
         run: |
           chmod +x scripts/check-transcript-versions-fixtures.sh
           ./scripts/check-transcript-versions-fixtures.sh
+
+      # The two steps below are issue #60's half of the same gate: they pin the
+      # version literals the BINARY PRINTS (help text, invalid-actor errors)
+      # rather than the ones written down in markdown transcripts. They live in
+      # this job, not a new one, because they share its exact precondition — a
+      # stamped build, hence fetch-depth: 0 — via scripts/lib/stamped-binder.sh.
+      # Two overlapping version gates with two checkouts and two builds would be
+      # a worse outcome than one job that covers both surfaces.
+      - name: Pin shipped help/error version literals to the stamped binary
+        run: |
+          chmod +x scripts/check-shipped-version-literals.sh
+          ./scripts/check-shipped-version-literals.sh
+
+      - name: Shipped-output fixtures (the gate must go RED on a stale literal)
+        # Rebuilds binder from patched copies of the tree to prove the gate reds
+        # on the #60 defect verbatim, on a v-prefixed producer version, and —
+        # the vacuous-pass lock — when a must-reach surface stops emitting an
+        # exemplar at all.
+        run: |
+          chmod +x scripts/check-shipped-version-literals-fixtures.sh
+          ./scripts/check-shipped-version-literals-fixtures.sh
 
   plugin-validate:
     # Validates the okf-convert Agent Plugin/Skill bundle (plugins/,

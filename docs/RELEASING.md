@@ -43,12 +43,62 @@ The token needs write access to:
    `BREAKING CHANGE:`…).
 2. `release-please.yml` opens/updates a **release PR** with the next version and
    `CHANGELOG.md`.
-3. Merge the release PR. release-please tags `vX.Y.Z` and creates the GitHub
+3. **Refresh the documented error transcripts** (see below). The release PR now
+   names the new version, so do this on the release PR branch before merging.
+4. Merge the release PR. release-please tags `vX.Y.Z` and creates the GitHub
    Release shell.
-4. The tag triggers `release.yml` → `goreleaser release --clean`, which:
+5. The tag triggers `release.yml` → `goreleaser release --clean`, which:
    - builds `linux/darwin/windows × amd64/arm64` binaries, uploads archives +
      `checksums.txt` to the GitHub Release;
    - updates the Homebrew formula in `ghchinoy/homebrew-tap`.
+
+### Step 3: refresh the documented error transcripts
+
+**This step is mandatory and the release will red CI without it.** `binder`'s
+invalid-actor error quotes the live version as its actor-grammar example
+(`... (e.g. binder/0.5.3)`), and `docs/tutorial.md` and `docs/user_guide.md`
+transcribe that error verbatim. Because the error text is *derived from the
+version* (issue #60), bumping the version changes it, and the
+`transcript-version-gate` CI job compares those transcripts against what the
+binary actually prints. A release that skips this step fails that job on `main`.
+
+These two lines are the deliberate exception to "nobody hand-edits a version
+string" — and they are not hand-edited either. Do not type the new version:
+
+```sh
+# Build a binder stamped with the version being released, then rewrite the
+# documented transcripts to that binary's OWN output.
+BINDER_STAMP_VERSION=vX.Y.Z ./scripts/check-shipped-version-literals.sh --fix
+git diff --stat -- docs/tutorial.md docs/user_guide.md   # expect 1 line changed in each
+git commit -am "docs: refresh invalid-actor transcripts for vX.Y.Z"
+```
+
+Expected output, where two transcripts drifted — **one `REPAIRED:` line per
+file, then the summary.** The tool prints the line number it rewrote; it is
+elided here on purpose, because a line number in prose is a claim about a tree
+and goes stale on the next rebase that adds a paragraph above it. Match on the
+file names and the count, not on coordinates:
+
+```
+# REPAIRED: docs/tutorial.md:<line> rewritten to the binary's own output
+# REPAIRED: docs/user_guide.md:<line> rewritten to the binary's own output
+# 0 drift finding(s), 0 coverage failure(s), 2 transcript(s) repaired
+```
+
+**`--fix` rewrites the checkout the script itself lives in**, not whatever
+directory you happen to be standing in — the wrapper resolves its own repo root
+and `cd`s there. Invoke the copy inside the tree you mean to change
+(`./scripts/...` from the release branch), not one borrowed from another
+checkout, or the repair lands somewhere you are not looking.
+
+**`--fix` exits non-zero when it changes anything**, so it will not sail past in
+a script — commit the result and re-run to confirm a clean `exit 0`. The
+replacement text is the binary's own output for the same actor, re-derived by
+running it; nothing is templated, so `--fix` cannot write a version the binary
+does not print. Coverage failures are never auto-repairable and always red.
+
+Running it when nothing has drifted is a no-op that exits 0, so it is safe to
+run at any time.
 
 ### What a release publishes
 
