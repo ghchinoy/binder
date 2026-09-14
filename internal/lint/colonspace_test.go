@@ -1,6 +1,8 @@
 package lint_test
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -60,6 +62,58 @@ func TestColonSpaceNegativeControls(t *testing.T) {
 	// behind some other finding.
 	if n := rep.NumFindings(); n != 0 {
 		t.Errorf("negative-control corpus has %d other finding(s): %s", n, rep.String())
+	}
+}
+
+// TestColonSpaceAlwaysAccompaniedByViolation is the load-bearing half of the
+// never-gates rationale, and the half that is a UNIVERSAL claim rather than an
+// observation: an advisory is safe to leave out of NumFindings because the file
+// it names ALWAYS also produces the invalid-frontmatter SchemaViolation that IS
+// counted, so nothing goes unreported and no defect is double-counted.
+//
+// The claim held for every case that was tried by hand and was still false for
+// one that was not — a multi-line quoted scalar whose continuation line reads
+// `note: a: b` is valid YAML, produced no violation, and yet drew a finding
+// against a phantom key. That was a detector bug, not a legitimate lone firing,
+// and it is fixed; this test is what stops it (or anything like it) from coming
+// back silently. It sweeps every corpus fixture in the repo rather than a
+// curated list.
+func TestColonSpaceAlwaysAccompaniedByViolation(t *testing.T) {
+	corpora, err := filepath.Glob("../../testdata/corpus-*")
+	if err != nil {
+		t.Fatalf("globbing corpora: %v", err)
+	}
+	if len(corpora) == 0 {
+		t.Fatal("no corpus fixtures found; this test would be vacuous")
+	}
+
+	var fired int
+	for _, src := range corpora {
+		info, serr := os.Stat(src)
+		if serr != nil || !info.IsDir() {
+			continue
+		}
+		rep := lintCorpus(t, src)
+
+		violated := map[string]bool{}
+		for _, f := range rep.SchemaViolations {
+			if strings.HasPrefix(f.Detail, "invalid frontmatter") {
+				violated[f.Concept] = true
+			}
+		}
+		for _, f := range rep.ColonSpaceScalars {
+			fired++
+			if !violated[f.Concept] {
+				t.Errorf("%s: %q drew the colon-space advisory but produced NO "+
+					"invalid-frontmatter schema violation. The advisory is excluded from "+
+					"NumFindings on the grounds that a counted violation always subsumes "+
+					"it — that is now untrue, so either this is a false positive or the "+
+					"exclusion needs a different justification.", src, f.Concept)
+			}
+		}
+	}
+	if fired == 0 {
+		t.Fatal("the advisory fired on no corpus; the invariant was never exercised")
 	}
 }
 

@@ -247,11 +247,25 @@ func sortFindings(f []Finding) {
 //
 // ColonSpaceScalars is deliberately absent. It is advisory-only (issue #93): a
 // key named by it is a more actionable restatement of the invalid-frontmatter
-// SchemaViolation the same file already produces, so counting it would
+// SchemaViolation the same file ALWAYS also produces, so counting it would
 // double-count one defect — the same reason a recovered file is not also listed
-// as "missing type" above. Leaving it out of the single total the gate reads is
-// also what makes "there is no code path by which this rule rejects" true by
-// construction rather than by inspection: the rule cannot move any exit code.
+// as "missing type" above.
+//
+// "Always" is load-bearing there, so it is worth saying why it holds and not
+// merely that it does. YAML forbids ": " inside a plain scalar outright, so a
+// genuine instance cannot parse; convert therefore recovers the file, and a
+// recovered file always yields the invalid-frontmatter violation above. The
+// detector closes the loop from the other side by refusing to speak at all about
+// a frontmatter block that parses (see convert.colonSpaceKeys, stage 1) — which
+// is what stops a detector bug from quietly turning the claim false, as one
+// already did once via a multi-line quoted scalar. Two tests hold it shut:
+// TestColonSpaceAlwaysAccompaniedByViolation over every corpus fixture, and
+// convert's TestColonSpaceOnlyFiresOnUnparseableFrontmatter over every markdown
+// fixture.
+//
+// Leaving it out of the single total the gate reads is also what makes "there is
+// no code path by which this rule rejects" true by construction rather than by
+// inspection: the rule cannot move any exit code.
 func (r *Report) NumFindings() int {
 	return len(r.BrokenLinks) + len(r.MissingTitles) + len(r.Orphans) +
 		len(r.Stale) + len(r.SchemaViolations)

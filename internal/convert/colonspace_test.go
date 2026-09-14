@@ -1,6 +1,9 @@
 package convert
 
 import (
+	"io/fs"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -117,6 +120,49 @@ func TestColonSpaceKeys(t *testing.T) {
 			doc:  "---\n# Note: a comment with a colon-space\ntitle: A\n---\n\n# X\n",
 			want: nil,
 		},
+
+		// --- the counterexample class: shapes that PARSE CLEANLY --------------
+		// Each of these once produced a finding against a phantom key even though
+		// the frontmatter is valid YAML. They are the reason stage 1 exists: a
+		// block that parses has no trap in it, because YAML cannot parse one.
+		{
+			name: "multi-line DOUBLE-quoted scalar whose continuation looks like a key",
+			doc:  "---\ndescription: \"line one\n  note: a: b\"\n---\n\n# X\n",
+			want: nil,
+		},
+		{
+			name: "multi-line SINGLE-quoted scalar whose continuation looks like a key",
+			doc:  "---\ndescription: 'line one\n  note: a: b'\n---\n\n# X\n",
+			want: nil,
+		},
+		{
+			name: "quoted entry in a flow sequence (kvLine cannot split a quoted key)",
+			doc:  "---\ntags: [\"a: b: c\", 'd: e: f']\n---\n\n# X\n",
+			want: nil,
+		},
+		{
+			name: "quoted block-sequence items",
+			doc:  "---\ntags:\n  - \"a: b: c\"\n  - 'd: e: f'\n---\n\n# X\n",
+			want: nil,
+		},
+		{
+			name: "explicit-key syntax",
+			doc:  "---\n? note\n: a: b\n---\n\n# X\n",
+			want: nil,
+		},
+		{
+			name: "quoted value containing a '#'",
+			doc:  "---\ntitle: \"a #b: c\"\nother: plain\n---\n\n# X\n",
+			want: nil,
+		},
+
+		// A multi-line quoted scalar sitting in a file that IS broken elsewhere:
+		// stage 1 opens the door, and stage 2 must still name only the real key.
+		{
+			name: "real trap alongside a multi-line quoted scalar",
+			doc:  "---\ndescription: \"line one\n  note: a: b\"\ntitle: Multi-View: Tabs and Windows\n---\n\n# X\n",
+			want: []string{"title"},
+		},
 	}
 
 	for _, c := range cases {
@@ -128,6 +174,49 @@ func TestColonSpaceKeys(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestColonSpaceOnlyFiresOnUnparseableFrontmatter holds shut the property the
+// advisory's never-gates rationale rests on: the rule fires ONLY on a file whose
+// frontmatter convert could not parse — which is exactly the file lint already
+// reports as an invalid-frontmatter schema violation. That is a universal claim,
+// so it is asserted over every markdown fixture in the repo rather than argued
+// from the handful of cases above, and it fails loudly if a future change lets
+// the detector speak about a file that parses.
+//
+// The parse verdict is convert's own (toConcept), not a second opinion, so the
+// two cannot drift apart.
+func TestColonSpaceOnlyFiresOnUnparseableFrontmatter(t *testing.T) {
+	var scanned, fired int
+	err := filepath.WalkDir("../../testdata", func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || filepath.Ext(p) != ".md" {
+			return err
+		}
+		raw, rerr := os.ReadFile(p)
+		if rerr != nil {
+			return rerr
+		}
+		scanned++
+		norm, _ := NormalizeInput(raw)
+		keys := colonSpaceKeys(norm)
+		if len(keys) == 0 {
+			return nil
+		}
+		fired++
+		if _, _, _, perr := toConcept(native.New(), "x.md", raw); perr == nil {
+			t.Errorf("%s: advisory fired on %v but the frontmatter PARSES CLEANLY, so no "+
+				"invalid-frontmatter violation subsumes it — either the detector has a false "+
+				"positive or the never-gates rationale needs restating", p, keys)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walking testdata: %v", err)
+	}
+	if scanned == 0 || fired == 0 {
+		t.Fatalf("vacuous: scanned %d file(s), advisory fired on %d — the property was never exercised", scanned, fired)
+	}
+	t.Logf("property held over %d markdown fixture(s); advisory fired on %d", scanned, fired)
 }
 
 // TestColonSpaceKeysSurfacedInFacts: the detector is wired into the authored-state
