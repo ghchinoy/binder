@@ -53,11 +53,17 @@ func TestColonSpacePositiveControl(t *testing.T) {
 // (URLs, timestamps, ratios), block-scalar interiors and flow collections must
 // all stay clean. URL-like values are the classic false positive for this rule.
 func TestColonSpaceNegativeControls(t *testing.T) {
-	rep := lintCorpus(t, "../../testdata/corpus-lint-colonspace")
+	// This test's subject is an ABSENCE, so CALIBRATE THE INSTRUMENT FIRST. Two
+	// different no-ops would otherwise satisfy every assertion below: a corpus with
+	// nothing in it, and a detector that has stopped reporting anything at all.
+	// Neither has to be deliberate — a broken detector makes this test greener, not
+	// redder, which is exactly the failure mode worth spending four lines on.
+	if pos := lintCorpus(t, "../../testdata/corpus-lint-schema"); len(pos.ColonSpaceScalars) == 0 {
+		t.Fatal("vacuous: the advisory reports nothing even on the positive control, so a clean " +
+			"result below would say nothing about false positives")
+	}
 
-	// This test's subject is an ABSENCE, so first establish that there was
-	// something to find. An empty or missing corpus would otherwise satisfy every
-	// assertion below without exercising a single false-positive shape.
+	rep := lintCorpus(t, "../../testdata/corpus-lint-colonspace")
 	if rep.NumConcepts < 2 {
 		t.Fatalf("vacuous: negative-control corpus has %d concept(s); the false-positive "+
 			"shapes it is supposed to carry are not being scanned", rep.NumConcepts)
