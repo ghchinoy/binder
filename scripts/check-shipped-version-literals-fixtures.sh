@@ -700,12 +700,20 @@ fi
 #      the real tree "so there is no seam to inject through". That was FALSE:
 #      stamp_version() honours BINDER_STAMP_VERSION, which is exported above
 #      precisely so .git-less copies can stamp, and with it set a copy with
-#      PATCHED GO SOURCE runs through its own shipped wrapper. Measured: the
+#      PATCHED GO SOURCE runs through its own shipped wrapper. DEMONSTRATED IN
+#      REVIEW ON #196, AS A ONE-OFF -- NOT BY ANY CASE IN THIS FILE: the
 #      unpatched copy exits 0, and the same copy with version.ActorExemplar()
 #      replaced by "binder/0.3.0" -- case [2], the #60 defect verbatim -- exits
 #      1 from ./scripts/check-shipped-version-literals.sh with DOC-DRIFT naming
 #      binder/0.3.0. Same copy_tree/patch/run-its-own-wrapper mechanism this
 #      case uses; [17] patches docs, that patches source.
+#
+#      SO BE PRECISE ABOUT WHAT IS AND IS NOT TRUE HERE, because this paragraph
+#      has two ways to mislead and only one of them is the one just fixed. The
+#      seam is REAL and DEMONSTRATED; it is NOT EXERCISED. No case in this file
+#      drives patched Go source through the wrapper today, and cases 1-4, 7-10
+#      and 12-14 still invoke the checker directly, exactly as before. Nothing
+#      about that coverage changed in the commit that corrected this comment.
 #
 #      Converting them is DEFERRED, not impossible: see issue #220. The
 #      distinction matters because the sentence it replaces was a confident
