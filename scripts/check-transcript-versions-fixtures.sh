@@ -45,7 +45,7 @@ FAIL=0
 # "ran at least one" floor is weaker — it would not catch losing three of seven —
 # exactly the inventory-over-floor reasoning from round 2. Update this when you
 # add or remove a case.
-EXPECTED_CASES=13
+EXPECTED_CASES=15
 
 # assert_exit <label> <docroot> <expected-exit> [want-substring] [checker]
 # [checker] defaults to the real checker; the allowlist case passes a patched
@@ -82,25 +82,149 @@ CLEAN="$(fresh_copy)"
 assert_exit "clean copy -> exit 0" "$CLEAN" 0 "0 coverage failure(s)"
 rm -rf "$CLEAN"
 
-# LINE-ADDRESS COUPLING (FYI-2, delta review): the mutation cases below sed
-# specific line numbers of the REAL committed docs (e.g. the version literal at
-# SKILL.md:125, the opening fence at :124) to plant drift or hide a block. Those
-# addresses are coupled to the current doc layout, so a doc re-flow that shifts
-# them means a sed edits the wrong line — the case's precondition (planted drift /
-# hidden fence) is not set up, so the checker's exit code and expected substring
-# no longer match and assert_exit FAILS. This is fail-safe: a re-flow breaks the
-# harness LOUD rather than silently skipping the case or passing green. If you
-# re-flow these docs, update the line numbers here to match.
+# CONTENT ADDRESSING, NOT LINE ADDRESSING (#185 round 2). The mutation cases
+# below must plant drift in a SPECIFIC transcript of the REAL committed docs.
+# They used to do that by line number (SKILL.md:125, the fence at :124, ...).
+# Those addresses went stale three times in this one change: +4 lines from #192
+# in README, +6 from a new bullet in this PR, +6 from #189 in the user guide.
+# The third one was clean to git and green in PR CI — the coupling is semantic,
+# not textual — and would have reddened the gate on main after merge. Any prose
+# landing anywhere above a transcript moves it, so staleness is the steady state
+# of a line address, not an accident.
+#
+# So nothing here is addressed by line. A case names a stable ANCHOR — a heading
+# or a sentence that identifies WHICH transcript it means — and the target is
+# then found relative to that anchor by content: the first version literal at or
+# below it, and, where a case needs to hide a block, the nearest opening fence
+# above that literal. An edit above the target changes the line number of
+# everything and the behaviour of nothing. Cases [13] and [14] prove exactly
+# that property rather than asserting it.
+#
+# Every lookup is fail-loud. An anchor must match exactly ONE line; zero matches
+# (the anchor's wording changed) and two matches (it stopped being specific) both
+# abort the harness naming the anchor, and every mutation asserts it actually
+# changed the file. Without that, a lookup that silently found nothing would be
+# fail-safe only for a case expecting exit 1 — the unplanted tree exits 0 and the
+# case fails loud. A case expecting exit 0, like [11]'s escape hatch, would pass
+# VACUOUSLY: green for the wrong reason, the precise failure this harness exists
+# to prevent. The asymmetry is closed here, once, for all cases.
+
+# The anchors. Each identifies one transcript and must match exactly one line.
+A_SKILL_CONTRACT='^## The binder JSON contract \(what you parse\)$'
+A_CONTRACT_PROSE='^was captured from real `binder/'
+A_README_ENVELOPE='^binder validate path/to/bundle --json$'
+A_README_PROSE='prints `binder/<version>`, no leading'
+A_GUIDE_CONFIG='^\*\*`binder config --json`'
+A_GUIDE_ENVELOPE='^### The envelope \(schema `binder\.report/v1`\)$'
+
+# A version literal as it appears in a transcript, and the drift to plant.
+LITERAL_RE='binder/0\.5\.[0-9]+'
+DRIFT_SED='s#binder/0\.5\.[0-9]\+#binder/9.9.9#'
+
+# abort <line...> — a harness bug (stale anchor, no-op mutation), not a case
+# failure. Stop immediately rather than reporting a result for a case whose
+# precondition was never established.
+abort() {
+  echo "FAILED: fixture precondition not met —" "$@" >&2
+  echo "        See CONTENT ADDRESSING above; re-point the anchor at the current" >&2
+  echo "        doc wording." >&2
+  exit 1
+}
+
+# uniq_line <file> <ERE> — echo the number of the ONE line matching <ERE>.
+uniq_line() {
+  local file="$1" ere="$2" hits n
+  hits="$(grep -nE "$ere" "$file" | cut -d: -f1)"
+  n="$(printf '%s\n' "$hits" | grep -c '[0-9]')"
+  if [ "$n" -ne 1 ]; then
+    abort "anchor '$ere' matched $n lines in ${file##*/}; it must match exactly 1."
+  fi
+  printf '%s\n' "$hits"
+}
+
+# literal_below <file> <line> — first version-literal line at or below <line>.
+literal_below() {
+  local file="$1" from="$2" hit
+  hit="$(awk -v from="$from" -v re="$LITERAL_RE" \
+    'NR >= from && $0 ~ re { print NR; exit }' "$file")"
+  [ -n "$hit" ] || abort "no version literal at or below line $from of ${file##*/}."
+  printf '%s\n' "$hit"
+}
+
+# fence_above <file> <line> — nearest ```json opening fence at or above <line>.
+fence_above() {
+  local file="$1" from="$2" hit
+  hit="$(awk -v from="$from" \
+    'NR <= from && /^```json$/ { last = NR } END { if (last) print last }' "$file")"
+  [ -n "$hit" ] || abort "no opening json fence above line $from of ${file##*/}."
+  printf '%s\n' "$hit"
+}
+
+# edit_line <file> <line> <sed-subst> — apply the substitution to that one line
+# and assert the file actually changed.
+edit_line() {
+  local file="$1" line="$2" subst="$3" before
+  before="$(cat "$file")"
+  sed -i "${line}${subst}" "$file"
+  [ "$before" != "$(cat "$file")" ] || \
+    abort "'$subst' changed nothing at ${file##*/}:$line."
+}
+
+# plant_drift <file> <anchor> — drift the first version literal below <anchor>.
+plant_drift() {
+  local file="$1" anchor="$2" line
+  line="$(uniq_line "$file" "$anchor")" || exit 1
+  line="$(literal_below "$file" "$line")" || exit 1
+  edit_line "$file" "$line" "$DRIFT_SED"
+}
+
+# hide_fence <file> <anchor> — rename the opening fence of <anchor>'s transcript,
+# so the checker no longer sees the block at all.
+hide_fence() {
+  local file="$1" anchor="$2" line
+  line="$(uniq_line "$file" "$anchor")" || exit 1
+  line="$(literal_below "$file" "$line")" || exit 1
+  line="$(fence_above "$file" "$line")" || exit 1
+  edit_line "$file" "$line" 's/^```json$/```jsonX/'
+}
+
+# plant_prose <file> <anchor> <sed-subst> — mutate the anchor line itself, for
+# the README prose cases, where the anchor IS the target.
+plant_prose() {
+  local file="$1" anchor="$2" subst="$3" line
+  line="$(uniq_line "$file" "$anchor")" || exit 1
+  edit_line "$file" "$line" "$subst"
+}
+
+# reported_line <file> <anchor> — the line the checker will name for <anchor>'s
+# literal. Used only to compute a case's EXPECTED output.
+reported_line() {
+  local file="$1" anchor="$2" line
+  line="$(uniq_line "$file" "$anchor")" || exit 1
+  literal_below "$file" "$line"
+}
+
+# shift_down <file> <n> — insert n inert lines at the top of <file>, moving every
+# target in it down by n. Markdown comments: no fences, no version literals.
+shift_down() {
+  local file="$1" n="$2" i tmp
+  tmp="$(mktemp)"
+  for ((i = 1; i <= n; i++)); do
+    echo "<!-- filler line $i: inserted above every target in this file -->" >> "$tmp"
+  done
+  cat "$file" >> "$tmp"
+  mv "$tmp" "$file"
+}
 
 # [2] drifted JSON envelope literal -> RED (drift finding)
 DRIFT_JSON="$(fresh_copy)"
-sed -i '125s#binder/0\.5\.[0-9]\+#binder/9.9.9#' "$DRIFT_JSON/$SKILL_REL"
+plant_drift "$DRIFT_JSON/$SKILL_REL" "$A_SKILL_CONTRACT"
 assert_exit "drifted JSON envelope literal -> exit 1" "$DRIFT_JSON" 1 "[JSON-ENVELOPE]"
 rm -rf "$DRIFT_JSON"
 
 # [3] drifted prose provenance sentence -> RED (drift finding)
 DRIFT_PROSE="$(fresh_copy)"
-sed -i '5s#binder/0\.5\.[0-9]\+#binder/9.9.9#' "$DRIFT_PROSE/$CONTRACT_REL"
+plant_prose "$DRIFT_PROSE/$CONTRACT_REL" "$A_CONTRACT_PROSE" "$DRIFT_SED"
 assert_exit "drifted prose provenance -> exit 1" "$DRIFT_PROSE" 1 "[PROSE-PROVENANCE]"
 rm -rf "$DRIFT_PROSE"
 
@@ -108,8 +232,11 @@ rm -rf "$DRIFT_PROSE"
 #     This is the regression lock for the round-2 Critical — pre-fix the gate
 #     exited 0 here; it must now fail via the minimum-coverage assertion.
 BROKEN="$(fresh_copy)"
-sed -i '125s#binder/0\.5\.[0-9]\+#binder/9.9.9#' "$BROKEN/$SKILL_REL"   # plant real drift
-sed -i '124s/^```json$/```jsonX/' "$BROKEN/$SKILL_REL"                  # then hide the block
+# Hide the fence FIRST: both lookups find the block by its still-current version
+# literal, and drifting it to 9.9.9 first would make the fence lookup walk past
+# this block to the next real literal.
+hide_fence  "$BROKEN/$SKILL_REL" "$A_SKILL_CONTRACT"   # hide the block
+plant_drift "$BROKEN/$SKILL_REL" "$A_SKILL_CONTRACT"   # then plant real drift
 assert_exit "broken discovery (renamed fence) -> exit 1" "$BROKEN" 1 "MISSING-COVERAGE"
 rm -rf "$BROKEN"
 
@@ -121,7 +248,7 @@ rm -rf "$BROKEN"
 COLLISION="$(fresh_copy)"
 COL_SKILL="$COLLISION/$SKILL_REL"
 COL_REFDIR="$COLLISION/plugins/okf-convert/skills/okf-convert/references"
-sed -i '124s/^```json$/```jsonX/' "$COL_SKILL"        # hide the real report envelope
+hide_fence "$COL_SKILL" "$A_SKILL_CONTRACT"   # hide the real report envelope
 cat > "$COL_REFDIR/SKILL.md" <<'DECOY'
 # decoy SKILL.md (different directory, same basename)
 
@@ -147,42 +274,42 @@ assert_exit "non-existent base (A2) -> exit 1" "/tmp/check-tv-does-not-exist-$$"
 # exited 0 on a tree carrying genuine drift. They are the regression lock for
 # that coverage gap.
 
-# [7] drifted docs/user_guide.md envelope literal -> RED. Line 1451 is the
+# [7] drifted docs/user_guide.md envelope literal -> RED. The target is the
 #     `binder config --json` transcript's version literal.
 DRIFT_GUIDE="$(fresh_copy)"
-sed -i '1451s#binder/0\.5\.[0-9]\+#binder/9.9.9#' "$DRIFT_GUIDE/$GUIDE_REL"
+plant_drift "$DRIFT_GUIDE/$GUIDE_REL" "$A_GUIDE_CONFIG"
 assert_exit "drifted user-guide envelope literal -> exit 1" "$DRIFT_GUIDE" 1 \
-  "docs/user_guide.md:1451"
+  "docs/user_guide.md:1457"
 rm -rf "$DRIFT_GUIDE"
 
-# [8] drifted README.md envelope literal -> RED. Line 287 is the
+# [8] drifted README.md envelope literal -> RED. The target is the
 #     `binder validate --json` transcript's version literal.
 DRIFT_README="$(fresh_copy)"
-sed -i '287s#binder/0\.5\.[0-9]\+#binder/9.9.9#' "$DRIFT_README/$README_REL"
+plant_drift "$DRIFT_README/$README_REL" "$A_README_ENVELOPE"
 assert_exit "drifted README envelope literal -> exit 1" "$DRIFT_README" 1 \
   "README.md:287"
 rm -rf "$DRIFT_README"
 
 # [9] broken discovery inside a MULTI-envelope file: plant drift in the user
-#     guide's envelope-shape transcript (literal :1586), then hide its fence
-#     (:1584). The guide holds four report envelopes, so bare per-location
+#     guide's envelope-shape transcript, then hide that block's opening fence.
+#     The guide holds four report envelopes, so bare per-location
 #     presence would still be satisfied by the other three and the gate would
 #     pass green over real drift. The inventory's per-location COUNT is what
 #     catches this — 3 found where 4 are declared.
 GUIDE_HIDDEN="$(fresh_copy)"
-sed -i '1586s#binder/0\.5\.[0-9]\+#binder/9.9.9#' "$GUIDE_HIDDEN/$GUIDE_REL"
-sed -i '1584s/^```json$/```jsonX/' "$GUIDE_HIDDEN/$GUIDE_REL"
+hide_fence  "$GUIDE_HIDDEN/$GUIDE_REL" "$A_GUIDE_ENVELOPE"   # fence first, as in [4]
+plant_drift "$GUIDE_HIDDEN/$GUIDE_REL" "$A_GUIDE_ENVELOPE"
 assert_exit "hidden fence in multi-envelope file -> exit 1" "$GUIDE_HIDDEN" 1 \
   "MISSING-COVERAGE: docs/user_guide.md [envelope:binder.report/v1]"
 rm -rf "$GUIDE_HIDDEN"
 
-# [10] an unpinned version literal reintroduced into README prose -> RED. Line
-#      185 is the `go install` note, which said "prints binder/0.3.0" until the
-#      #185 follow-on replaced the literal with the `binder/<version>`
-#      placeholder. No JSON-fenced gate can track a prose literal, so the rule
+# [10] an unpinned version literal reintroduced into README prose -> RED. The
+#      target is the `go install` note, which said "prints binder/0.3.0" until
+#      this change replaced the literal with the `binder/<version>` placeholder. No JSON-fenced gate can track a prose literal, so the rule
 #      is that README carries none.
 DRIFT_README_PROSE="$(fresh_copy)"
-sed -i '185s#binder/<version>#binder/0.3.0#' "$DRIFT_README_PROSE/$README_REL"
+plant_prose "$DRIFT_README_PROSE/$README_REL" "$A_README_PROSE" \
+  's#binder/<version>#binder/0.3.0#'
 assert_exit "unpinned README prose literal -> exit 1" "$DRIFT_README_PROSE" 1 \
   "[PROSE-UNPINNED]"
 rm -rf "$DRIFT_README_PROSE"
@@ -196,7 +323,8 @@ rm -rf "$DRIFT_README_PROSE"
 #      if the marker line ever changes the sed no-ops, the copy behaves like the
 #      real checker, and this case fails LOUD rather than passing vacuously.
 ALLOW_TREE="$(fresh_copy)"
-sed -i '185s#binder/<version>#binder/0.2.1#' "$ALLOW_TREE/$README_REL"
+plant_prose "$ALLOW_TREE/$README_REL" "$A_README_PROSE" \
+  's#binder/<version>#binder/0.2.1#'
 ALLOW_CHECKER="$(mktemp -d)/check-transcript-versions.py"
 sed 's#^NO_UNPINNED_PROSE_ALLOW = {}$#NO_UNPINNED_PROSE_ALLOW = {("README.md", "0.2.1"): "fixture: historical reference"}#' \
   "$CHECKER" > "$ALLOW_CHECKER"
@@ -211,6 +339,36 @@ rm -rf "$NOROOT/docs"
 assert_exit "missing scan root (docs/ removed) -> exit 1" "$NOROOT" 1 \
   "MISSING-ROOT: scan root docs"
 rm -rf "$NOROOT"
+
+# --- #185 round 2: the line-shift immunity proof ---------------------------
+# The acceptance test for content addressing: inserting arbitrary lines ABOVE a
+# fixture's target must not change that fixture's behaviour. [13] proves it for
+# the green path (discovery and the coverage inventory), [14] for the red path
+# (the mutation still lands on the right transcript, and the checker names its
+# new line). Under the old line addressing both would have failed — which is
+# what #189 did to this harness in review.
+
+# [13] every target shifted down, nothing mutated -> still GREEN. Discovery and
+#      the per-location coverage counts are position-independent.
+SHIFT_CLEAN="$(fresh_copy)"
+shift_down "$SHIFT_CLEAN/$GUIDE_REL" 37
+shift_down "$SHIFT_CLEAN/$README_REL" 37
+shift_down "$SHIFT_CLEAN/$SKILL_REL" 37
+assert_exit "37 lines inserted above every target, clean -> exit 0" \
+  "$SHIFT_CLEAN" 0 "0 coverage failure(s)"
+rm -rf "$SHIFT_CLEAN"
+
+# [14] the same shift, then the [7] mutation planted BY CONTENT -> same RED, at
+#      the shifted line. The expected line number is derived from the UNSHIFTED
+#      tree plus the known offset, not from the shifted lookup under test, so
+#      the case cannot agree with itself by construction.
+SHIFT_DRIFT="$(fresh_copy)"
+SHIFT_BASE="$(reported_line "$SHIFT_DRIFT/$GUIDE_REL" "$A_GUIDE_CONFIG")" || exit 1
+shift_down "$SHIFT_DRIFT/$GUIDE_REL" 37
+plant_drift "$SHIFT_DRIFT/$GUIDE_REL" "$A_GUIDE_CONFIG"
+assert_exit "37 lines inserted above the target, drifted -> exit 1 at the shifted line" \
+  "$SHIFT_DRIFT" 1 "docs/user_guide.md:$((SHIFT_BASE + 37))"
+rm -rf "$SHIFT_DRIFT"
 
 echo
 # Vacuous-pass guard for the harness itself: a harness whose whole job is locking
