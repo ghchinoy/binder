@@ -169,11 +169,12 @@ measured in the wild was a `title:`, not a `description:`. Quoting the value
 
 Only *unquoted plain scalars* count. A URL (`https://example.com`), a timestamp
 (`12:30`), a ratio (`16:9`), an already-quoted value, and the interior of a
-`|`/`>` block scalar are all left alone — in an unquoted value the colon must be
-followed by a space or a tab to mean anything. This bucket is advisory even by lint's
-standards: like entrypoints, it is **never** counted as a finding, so it
-cannot gate `--strict`. It names the key to quote in a file whose broken
-frontmatter is already reported as a schema violation.
+`|`/`>` block scalar are all left alone — the detector looks for exactly one
+spelling: a colon followed by a space or a tab inside an unquoted plain scalar.
+That is deliberately narrower than YAML's own rule. This bucket is advisory
+even by lint's standards: like entrypoints, it is **never** counted as a
+finding, so it cannot gate `--strict`. It names the key to quote in a file
+whose broken frontmatter is already reported as a schema violation.
 
 An orphan here is a concept with **no inbound and no outbound** resolved edge: a
 document no reader will reach by following links, and one that leads nowhere.

@@ -61,8 +61,8 @@ var kvLine = regexp.MustCompile(`^([ \t]*)(?:-[ \t]+)?([^#:\s][^#:]*):(?:[ \t]+(
 // only ever a pre-filter). The caller already knows the file is broken; this
 // names the key to quote. Its skips keep the classic false positives clean even
 // on a file that is broken for some OTHER reason:
-//   - `url: https://example.com` and `standup: 12:30` — a colon followed by
-//     neither a space nor a tab, so it never ends a key.
+//   - `url: https://example.com` and `standup: 12:30` — the trigger is a colon
+//     followed by a space or a tab, and neither of these has one.
 //   - `title: "Multi-View: Tabs"` — quoted, so it is not a plain scalar (and it
 //     is the very form the advisory asks for).
 //   - the continuation lines of a MULTI-LINE quoted scalar, which are string
@@ -346,9 +346,29 @@ func splitFlowEntries(inner string) []string {
 }
 
 // containsColonBreak reports whether s contains a colon followed by a space OR A
-// TAB — the two characters YAML treats alike as ending a mapping key, so
-// `desc: value:<TAB>more` is the same defect as `desc: value: more` and fails the
-// parse identically. Checking only for ": " missed the tab form entirely.
+// TAB. That pair is the detector's ENTIRE TRIGGER — `desc: value:<TAB>more` is
+// treated as the same defect as `desc: value: more`. Checking only for ": "
+// missed the tab form entirely.
+//
+// This trigger is DELIBERATELY NARROWER THAN YAML'S OWN RULE. Other spellings end
+// a key too: a colon at the end of the line, and, in flow context, one directly
+// after a quoted key — `m: {"a":b}` parses as a nested mapping with no space, tab
+// or line break anywhere near the colon.
+//
+// DO NOT restate that narrowing here as a rule about when a colon is inert. This
+// function is reached from the FLOW path, which is where every such rule breaks.
+// Three were written during review and executed against yaml.v3; all three were
+// false, the last falsified by `m: {a:{b: 1}}`. Describe the trigger; claim
+// nothing about what YAML requires.
+//
+// This advisory runs ONLY on a file whose frontmatter FAILED to parse (the
+// recovered gate documented above), and that parse failure is itself reported as
+// an invalid-frontmatter schema violation — one data dependency, not a claim
+// about which spellings exist. It promises NOTHING about a file that parses
+// cleanly. The advisory's job is to name the key in the form the issue measured
+// in the wild, and widening a rule whose whole review history is about over-reach
+// is the wrong instinct. An ACCEPTED FALSE NEGATIVE, recorded rather than
+// overlooked.
 func containsColonBreak(s string) bool {
 	return strings.Contains(s, ": ") || strings.Contains(s, ":\t")
 }
