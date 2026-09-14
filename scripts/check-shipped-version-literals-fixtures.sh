@@ -83,7 +83,7 @@ FAIL=0
 # The number of cases this harness MUST run, asserted at the end against
 # PASS+FAIL so the harness cannot itself pass vacuously — same reasoning as
 # scripts/check-transcript-versions-fixtures.sh. Update when adding a case.
-EXPECTED_CASES=16
+EXPECTED_CASES=17
 
 # copy_tree — copy the working tree (minus VCS and node_modules) into a fresh
 # temp dir and echo its path. The copy is what gets patched, so the real tree is
@@ -681,6 +681,58 @@ else
   echo "  PASS  a real gate run leaves its private TMPDIR empty"
   PASS=$((PASS + 1))
 fi
+
+# [17] THE ENTRY POINT'S VERDICT AND ARGUMENTS, not just its tidiness.
+#      Answering "which cases exercise the shipped entry point" turned up that
+#      the honest answer for 1-15 is NONE, and that for 1-14 this is structural
+#      rather than sloppy: each must hand the checker a DELIBERATELY DEFECTIVE
+#      binary built from a patched tree, and the wrapper builds its own from the
+#      real one, so there is no seam to inject through. That limit is written
+#      down rather than papered over.
+#
+#      But two things the wrapper alone does were left unasserted, and THIS PR
+#      MADE BOTH OF THEM LOAD-BEARING:
+#
+#        - exit status. The wrapper used to end in `exec`, which hands the
+#          checker's status back for free. It no longer does -- that is the
+#          change that stopped the leak -- so propagation is now this script's
+#          responsibility, via `set -e`, and case 16 only ever runs a CLEAN tree
+#          and so only ever sees 0. A gate that finds drift and exits 0 is the
+#          silent-permissive failure this whole suite exists to prevent, and it
+#          would have been introduced by the fix for a different silent failure.
+#
+#        - argument forwarding. docs/RELEASING.md step 3 tells a releaser to run
+#          `./scripts/check-shipped-version-literals.sh --fix`, through the
+#          WRAPPER. Case 13 covers --fix on the checker, which is the logic; it
+#          cannot see a wrapper that drops "$@" and reports a serene green while
+#          repairing nothing on the release branch.
+#
+#      So: plant drift in a copy, drive the copy's own wrapper, and assert the
+#      full documented release sequence -- red, repair, clean.
+W17="$(copy_tree)"
+if patch_unique "$W17/docs/tutorial.md" "(e.g. binder/0.5.3)" "(e.g. binder/0.3.0)"; then
+  w_red="$(cd "$W17" && ./scripts/check-shipped-version-literals.sh 2>&1)"; w_rc=$?
+  w_fix="$(cd "$W17" && ./scripts/check-shipped-version-literals.sh --fix 2>&1)"; w_fixrc=$?
+  w_clean="$(cd "$W17" && ./scripts/check-shipped-version-literals.sh 2>&1)"; w_cleanrc=$?
+  if ! echo "$w_red" | grep -qF "# shipped-output version gate:"; then
+    echo "  SETUP-FAIL  entry-point verdict: the gate never ran (exit $w_rc)"
+    echo "$w_red" | tail -3 | sed 's/^/        | /'
+    FAIL=$((FAIL + 1))
+  elif [ "$w_rc" -eq 1 ] && echo "$w_red" | grep -qF "DOC-DRIFT" \
+     && [ "$w_fixrc" -ne 0 ] && echo "$w_fix" | grep -qF "transcript(s) repaired" \
+     && [ "$w_cleanrc" -eq 0 ]; then
+    echo "  PASS  entry point: drift -> exit 1, --fix forwarded and repairs, re-run exit 0"
+    PASS=$((PASS + 1))
+  else
+    echo "  FAIL  entry point: wanted rc 1 + DOC-DRIFT, then --fix non-zero + repaired," \
+         "then rc 0; got $w_rc / $w_fixrc / $w_cleanrc"
+    echo "$w_red" | tail -2 | sed 's/^/        red  | /'
+    echo "$w_fix" | tail -2 | sed 's/^/        fix  | /'
+    echo "$w_clean" | tail -2 | sed 's/^/        re   | /'
+    FAIL=$((FAIL + 1))
+  fi
+fi
+rm -rf "$W17"
 
 echo
 # Vacuous-pass guard for the harness itself: assert the expected number of cases
