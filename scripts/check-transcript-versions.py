@@ -447,7 +447,7 @@ def main() -> int:
                         # prose passes are line-local and know only in_json, so
                         # "literals inside a quoted-output fence belong to #60"
                         # is a rule this model cannot express; the structural fix
-                        # is a quoted_output fence state, tracked with #197. Until
+                        # is a quoted_output fence state, tracked in #204. Until
                         # then the only available action IS an allowlist entry,
                         # so the message dictates the true reason to write in it
                         # — leaving the maintainer to invent one is how the #60
@@ -475,7 +475,7 @@ def main() -> int:
                              f"it with THAT as the reason — "
                              f'("{relpath(f)}", "{m.group(1)}"): "quoted output: '
                              f'owned by the shipped-output gate (#60)" — not as '
-                             f"a historical reference, which it is not (#197 "
+                             f"a historical reference, which it is not (#204 "
                              f"tracks teaching this gate about quoted-output "
                              f"fences so the exemption stops being manual)")
                         )
