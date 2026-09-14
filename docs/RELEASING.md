@@ -73,13 +73,23 @@ git diff --stat -- docs/tutorial.md docs/user_guide.md   # expect 1 line changed
 git commit -am "docs: refresh invalid-actor transcripts for vX.Y.Z"
 ```
 
-Expected output, where two transcripts drifted:
+Expected output, where two transcripts drifted — **one `REPAIRED:` line per
+file, then the summary.** The tool prints the line number it rewrote; it is
+elided here on purpose, because a line number in prose is a claim about a tree
+and goes stale on the next rebase that adds a paragraph above it. Match on the
+file names and the count, not on coordinates:
 
 ```
-# REPAIRED: docs/tutorial.md:806 rewritten to the binary's own output
-# REPAIRED: docs/user_guide.md:1567 rewritten to the binary's own output
+# REPAIRED: docs/tutorial.md:<line> rewritten to the binary's own output
+# REPAIRED: docs/user_guide.md:<line> rewritten to the binary's own output
 # 0 drift finding(s), 0 coverage failure(s), 2 transcript(s) repaired
 ```
+
+**`--fix` rewrites the checkout the script itself lives in**, not whatever
+directory you happen to be standing in — the wrapper resolves its own repo root
+and `cd`s there. Invoke the copy inside the tree you mean to change
+(`./scripts/...` from the release branch), not one borrowed from another
+checkout, or the repair lands somewhere you are not looking.
 
 **`--fix` exits non-zero when it changes anything**, so it will not sail past in
 a script — commit the result and re-run to confirm a clean `exit 0`. The
