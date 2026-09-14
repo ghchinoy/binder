@@ -1,0 +1,40 @@
+# Keeps the commit SHAs that .github/workflows/ pins its actions to from going
+# stale. A pinned SHA is immutable, so it never picks up upstream patches —
+# including security patches — unless something bumps it. This is that something.
+#
+# Only github-actions is covered here. gomod and npm are a deliberate omission,
+# not an oversight; whether to cover them is tracked in #194.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: "/" # Dependabot reads .github/workflows/ from here
+    schedule:
+      interval: weekly
+    # Pin the subject type rather than leaving it to Dependabot's repo-history
+    # heuristic: whatever lands on main is what release-please parses.
+    commit-message:
+      prefix: ci
+    # Group every action reference under .github/workflows/ into one PR instead
+    # of a per-action storm — but leave majors out of the group, since that is
+    # where breaking changes live and one red major would otherwise stall every
+    # other action behind it. Majors arrive as individual PRs, as does any pin
+    # whose SHA does not resolve to a semver tag, since update-types cannot
+    # classify it. Degraded for that pin, not broken.
+    #
+    # open-pull-requests-limit is left at its default of 5, which this entry
+    # gives something to bite: those individual PRs land alongside the weekly
+    # group.
+    #
+    # The weekly bumps above carry upstream security fixes along with every
+    # other change in a release. Dependabot security updates — the separate,
+    # alert-driven lane that opens PRs outside this schedule — are switched on
+    # at the repo level, not here: nothing in this file enables them, and
+    # `applies-to` defaults to version-updates, so when they do run their PRs
+    # arrive ungrouped.
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
