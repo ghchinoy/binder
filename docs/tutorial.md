@@ -169,9 +169,9 @@ measured in the wild was a `title:`, not a `description:`. Quoting the value
 
 Only *unquoted plain scalars* count. A URL (`https://example.com`), a timestamp
 (`12:30`), a ratio (`16:9`), an already-quoted value, and the interior of a
-`|`/`>` block scalar are all left alone — a colon must be followed by a space in
-an unquoted value to mean anything. This bucket is advisory even by lint's
-standards: unlike every other bucket it is **never** counted as a finding, so it
+`|`/`>` block scalar are all left alone — in an unquoted value the colon must be
+followed by a space or a tab to mean anything. This bucket is advisory even by lint's
+standards: like entrypoints, it is **never** counted as a finding, so it
 cannot gate `--strict`. It names the key to quote in a file whose broken
 frontmatter is already reported as a schema violation.
 

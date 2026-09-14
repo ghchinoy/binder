@@ -259,6 +259,19 @@ func Analyze(src string, opts Options) (concepts []*okf.Concept, facts []SourceF
 			report.addWarning("%s: frontmatter did not parse (%v); converted as plain markdown (original text preserved in body)", f.rel, perr)
 		}
 
+		// The colon-space advisory (#93) is derived ONLY for a file the codec could
+		// not parse. That is the whole of its never-gates guarantee, and it is a
+		// property of this wiring rather than a claim about YAML's quoting rules:
+		// `recovered` is the same flag lint derives the invalid-frontmatter
+		// SchemaViolation from, so the advisory cannot outlive the violation that
+		// subsumes it. It also means colonSpaceKeys never runs on the overwhelmingly
+		// common clean file — convert, enrich and the MCP tools stop paying for a
+		// fact only lint reads. Do NOT call it unconditionally; see colonSpaceKeys.
+		var colonKeys []string
+		if recovered {
+			colonKeys = colonSpaceKeys(norm)
+		}
+
 		// Capture the authored source state BEFORE ensureType/ensureTitle default
 		// it away (issue #8). `binder lint` reads these to report missing titles
 		// and schema violations that convert legitimately masks by defaulting.
@@ -272,12 +285,7 @@ func Analyze(src string, opts Options) (concepts []*okf.Concept, facts []SourceF
 			// Read from the NORMALIZED source bytes, not the parsed frontmatter: a
 			// colon-space plain scalar is precisely what stops the frontmatter from
 			// parsing, so by the time there is an OrderedMap the evidence is gone.
-			// `recovered` is the gate, and it is the SAME flag lint derives the
-			// invalid-frontmatter violation from, so the advisory cannot outlive the
-			// violation that subsumes it. Passing convert's own verdict — rather than
-			// re-parsing inside the detector — is what removes any second parser that
-			// could disagree with this one; see colonSpaceKeys.
-			ColonSpaceKeys: colonSpaceKeys(norm, recovered),
+			ColonSpaceKeys: colonKeys,
 		})
 
 		typ := ensureType(c.Frontmatter, outRel, opts.TypeMap, opts.DefaultType)

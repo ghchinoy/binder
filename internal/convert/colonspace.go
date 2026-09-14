@@ -25,44 +25,41 @@ var kvLine = regexp.MustCompile(`^([ \t]*)(?:-[ \t]+)?([^#:\s][^#:]*):(?:[ \t]+(
 // key-specific — the measured wild instance was on `title:`, not `description:`
 // — so every key is scanned. Quoting the value is the fix.
 //
-// Detection is in TWO stages, both anchored on a real yaml.v3 parse (#93 calls
-// for a parser, not a regex alone; a regex is only ever a pre-filter here).
+// PRECONDITION — call this ONLY for a file whose frontmatter the codec FAILED to
+// parse (convert.Analyze's `recovered`). It is not a general-purpose scanner and
+// it is not safe on a clean file: on its own it can name a phantom key, and the
+// single caller's `if recovered` is what makes that unreachable.
 //
-// Stage 1 — does this frontmatter block have the defect AT ALL? This is the
-// caller's frontmatterFailed: the verdict of the codec parse convert ALREADY ran
-// on this exact file, passed in rather than recomputed. A block convert parsed
-// cleanly yields nothing, full stop. That is not a heuristic: YAML forbids ": "
-// inside a plain scalar outright, so a genuine instance ALWAYS breaks the parse
-// ("mapping values are not allowed in this context"). It is also what #93 asks
-// for in so many words — a plain scalar containing ": " "that would fail a real
-// YAML parse".
+// That gate is the whole of the never-gates guarantee, and deliberately lives in
+// the WIRING rather than in an argument about YAML. `recovered` is the same flag
+// lint derives the invalid-frontmatter SchemaViolation from, so an advisory
+// cannot outlive the violation that subsumes it — a data dependency, not two
+// parsers agreeing. Two earlier revisions tried to establish that here instead,
+// and both were wrong in the same direction:
 //
-// Taking the verdict instead of re-deriving it is deliberate, and it is the
-// whole of the guarantee. An earlier revision re-parsed the block here with
-// yaml.Unmarshal into an `any`; the codec unmarshals into a yaml.Node, and the
-// two are DIFFERENT acceptance predicates — decoding into `any` additionally
-// rejects duplicate keys, unresolvable tags and recursive anchors, none of which
-// stop a Node parse. A lookalike parse can therefore call a file broken that
-// convert accepted, and open stage 2 on a document with no violation to subsume a
-// finding. That was a LATENT hazard rather than a live bug — stage 2 is
-// conservative enough to have absorbed it, since a line it would flag is itself
-// invalid YAML and so breaks the codec too — but the guarantee should not rest on
-// stage 2 staying conservative forever. There is now no second parser to
-// disagree with the first. See TestColonSpaceStage1IsTheCallersVerdictAlone and
-// TestCodecAndPlainParseDisagree.
+//   - The first scanned line by line with no whole-block check, so a multi-line
+//     quoted scalar (`description: "line one` / `  note: a: b"`) — valid YAML —
+//     was reported against the phantom key `note`.
+//   - The second re-parsed the block with yaml.Unmarshal into an `any`. The codec
+//     unmarshals into a yaml.Node, and those are NOT the same acceptance
+//     predicate: a value decode also rejects duplicate keys, unresolvable tags
+//     and recursive anchors, none of which stop a node decode. Its door therefore
+//     opened on blocks convert parses happily, and the line scan below could not
+//     carry that alone — a sequence-item (`- |`), anchored (`key: &a |`) or
+//     tagged (`key: !!str |`) block scalar leaves blockIndent at -1 and its
+//     literal interior gets read as mapping entries.
 //
-// The consequence worth stating is that this advisory can only ever fire on a
-// file convert recovered — and lint derives the invalid-frontmatter schema
-// violation from that SAME SourceFacts.Recovered flag, so the advisory is
-// subsumed by a counted violation as a matter of data dependency rather than of
-// two parsers agreeing. See the never-gates note on lint.Report.NumFindings, and
-// TestColonSpaceAlwaysAccompaniedByViolation, which holds that property shut.
+// Both were the same class of bug — a phantom key on a cleanly-parsing file —
+// reached through a different door. Gating at the caller closes every such door
+// at once, including ones not yet found, which is why it is preferred over
+// hardening the scan further. See TestColonSpaceNeverDerivedForCleanFile.
 //
-// Stage 2 — WHICH key is it? Only now is the block scanned line by line with the
-// kvLine pre-filter, each candidate confirmed by a second parse of the re-formed
-// entry. Stage 2 exists purely for precision: stage 1 already knows the file is
-// broken, stage 2 names the key to quote. Its skips keep the classic false
-// positives clean even on a file that is broken for some OTHER reason:
+// What remains here is a single stage: WHICH key is it? The block is scanned line
+// by line with the kvLine pre-filter, each candidate confirmed by a real parse of
+// the re-formed entry (#93 calls for a parser, not a regex alone; the regex is
+// only ever a pre-filter). The caller already knows the file is broken; this
+// names the key to quote. Its skips keep the classic false positives clean even
+// on a file that is broken for some OTHER reason:
 //   - `url: https://example.com` and `standup: 12:30` — a colon NOT followed by
 //     a space; the pre-filter's value never contains ": " at all.
 //   - `title: "Multi-View: Tabs"` — quoted, so it is not a plain scalar (and it
@@ -81,22 +78,14 @@ var kvLine = regexp.MustCompile(`^([ \t]*)(?:-[ \t]+)?([^#:\s][^#:]*):(?:[ \t]+(
 //     absent one.
 //
 // norm is NormalizeInput's output (BOM-stripped, lone CRs translated), the same
-// bytes the codec parses, and frontmatterFailed is that codec's verdict on them.
-// A file with no opening "---" fence yields nothing; an unterminated fence is
-// still scanned, because the trap is just as present in a block the author never
-// closed and convert recovers that file rather than rejecting it.
+// bytes the codec parses. A file with no opening "---" fence yields nothing; an
+// unterminated fence is still scanned, because the trap is just as present in a
+// block the author never closed and convert recovers that file rather than
+// rejecting it.
 //
 // Like every other SourceFacts field this is purely descriptive: it never
 // rejects, gates, or mutates anything (never-reject, spec §11).
-func colonSpaceKeys(norm []byte, frontmatterFailed bool) []string {
-	// Stage 1. A frontmatter block convert parsed is a block with no colon-space
-	// trap in it, because YAML cannot parse one. Returning here is what makes
-	// every clean-parsing document — including the multi-line quoted scalars and
-	// quoted flow entries that once tripped the line scanner — structurally
-	// incapable of producing a finding.
-	if !frontmatterFailed {
-		return nil
-	}
+func colonSpaceKeys(norm []byte) []string {
 	fmText, ok := frontmatterRegion(strings.ReplaceAll(string(norm), "\r\n", "\n"))
 	if !ok {
 		return nil
@@ -149,8 +138,17 @@ func colonSpaceKeys(norm []byte, frontmatterFailed bool) []string {
 				openQuote = value[0]
 			}
 			continue
-		case '[', '{':
-			continue // flow collection, not a plain scalar (out of scope for #93)
+		case '{':
+			// A single-line flow MAPPING is scanned for the same defect one level in:
+			// issue #93's fourth measured instance is exactly this shape
+			// (`meta: {name: Multi-View: Tabs, x: 1}`), so treating every flow
+			// collection as a false-positive class would miss a case the issue cites
+			// as real. The entries are confirmed by the same parser probe as plain
+			// scalars, so nothing is named on a guess.
+			keys = append(keys, flowMappingKeys(value)...)
+			continue
+		case '[':
+			continue // flow sequence: no key to name, so nothing to advise
 		case '&', '*', '!':
 			continue // anchor / alias / tag, not a plain scalar
 		}
@@ -163,7 +161,7 @@ func colonSpaceKeys(norm []byte, frontmatterFailed bool) []string {
 				continue
 			}
 		}
-		if !strings.Contains(value, ": ") {
+		if !containsColonBreak(value) {
 			continue
 		}
 		// Stage-2 parser confirmation. The entry is re-formed at column 0 so nesting
@@ -183,9 +181,22 @@ func colonSpaceKeys(norm []byte, frontmatterFailed bool) []string {
 
 // frontmatterRegion returns the text between the opening and closing "---"
 // fences of a document whose CRLFs are already collapsed. ok is false when the
-// document does not open a fence. An UNTERMINATED fence yields everything after
-// the opener: convert recovers such a file as body rather than rejecting it, and
-// what the author wrote is still worth advising on.
+// document does not open a fence, and ALSO when it never closes one.
+//
+// Requiring the closing fence is deliberate. A file whose first line is "---"
+// with no terminator is indistinguishable from ordinary markdown opening on a
+// thematic break, and treating the remainder as frontmatter meant scanning BODY
+// PROSE: a line like "Note: prose: with a colon-space." was reported as the key
+// "Note". The cost of that miss is low — such a file is still reported as
+// "invalid frontmatter: unterminated '---' block", so nothing goes unreported,
+// and only the key name is lost — while the cost of the false positive is a
+// finding against a word that is not a key at all. That is the same trade the
+// quoted-key skip above makes: for an advisory, the wrong finding costs more
+// than the absent one.
+//
+// The fence rules here intentionally mirror native.splitFrontmatter, which is
+// unexported in another package; TestFrontmatterRegionAgreesWithCodec pins the
+// two together so they cannot drift apart unnoticed.
 func frontmatterRegion(text string) (string, bool) {
 	lines := strings.Split(text, "\n")
 	if len(lines) == 0 || lines[0] != "---" {
@@ -196,7 +207,7 @@ func frontmatterRegion(text string) (string, bool) {
 			return strings.Join(lines[1:i], "\n"), true
 		}
 	}
-	return strings.Join(lines[1:], "\n"), true
+	return "", false
 }
 
 // closesQuote reports whether a quoted scalar ALREADY OPEN with quote character
@@ -218,6 +229,126 @@ func closesQuote(s string, q byte) bool {
 		}
 	}
 	return false
+}
+
+// flowMappingKeys names the keys of a SINGLE-LINE flow mapping ("{a: b, c: d}")
+// whose value is a plain scalar carrying a colon break — issue #93's fourth
+// measured instance, `meta: {name: Multi-View: Tabs, x: 1}`, which YAML rejects
+// with "did not find expected ',' or '}'".
+//
+// Scope is deliberately one line and one level: a flow mapping that spans lines,
+// or nests another collection, yields nothing rather than a guess. Every
+// candidate is confirmed by the same yaml.v3 probe the plain-scalar path uses.
+func flowMappingKeys(value string) []string {
+	inner, ok := flowMappingInner(value)
+	if !ok {
+		return nil
+	}
+	var keys []string
+	for _, entry := range splitFlowEntries(inner) {
+		entry = strings.TrimSpace(entry)
+		i := strings.Index(entry, ":")
+		if i < 0 {
+			continue
+		}
+		key := strings.TrimSpace(entry[:i])
+		val := strings.TrimSpace(entry[i+1:])
+		if key == "" || val == "" {
+			continue
+		}
+		if key[0] == '"' || key[0] == '\'' {
+			continue // quoted key: cannot be split reliably, so do not guess
+		}
+		switch val[0] {
+		case '"', '\'', '{', '[', '&', '*', '!':
+			continue // quoted, nested, or tagged — not a plain scalar
+		}
+		if !containsColonBreak(val) {
+			continue
+		}
+		var probe any
+		if yaml.Unmarshal([]byte(key+": "+val), &probe) == nil {
+			continue
+		}
+		keys = append(keys, key)
+	}
+	return keys
+}
+
+// flowMappingInner returns the text between the braces of a flow mapping that
+// OPENS AND CLOSES on this line. ok is false for anything else — an unbalanced or
+// multi-line flow is left alone rather than guessed at.
+func flowMappingInner(value string) (string, bool) {
+	if value == "" || value[0] != '{' {
+		return "", false
+	}
+	depth := 0
+	var quote byte
+	for i := 0; i < len(value); i++ {
+		c := value[i]
+		if quote != 0 {
+			if c == '\\' && quote == '"' {
+				i++
+			} else if c == quote {
+				quote = 0
+			}
+			continue
+		}
+		switch c {
+		case '"', '\'':
+			quote = c
+		case '{', '[':
+			depth++
+		case '}', ']':
+			depth--
+			if depth == 0 {
+				return value[1:i], true
+			}
+		}
+	}
+	return "", false
+}
+
+// splitFlowEntries splits a flow mapping's interior on the commas that separate
+// its entries, ignoring commas nested inside a quoted scalar or an inner
+// collection.
+func splitFlowEntries(inner string) []string {
+	var entries []string
+	depth, start := 0, 0
+	var quote byte
+	for i := 0; i < len(inner); i++ {
+		c := inner[i]
+		if quote != 0 {
+			if c == '\\' && quote == '"' {
+				i++
+			} else if c == quote {
+				quote = 0
+			}
+			continue
+		}
+		switch c {
+		case '"', '\'':
+			quote = c
+		case '{', '[':
+			depth++
+		case '}', ']':
+			depth--
+		case ',':
+			if depth == 0 {
+				entries = append(entries, inner[start:i])
+				start = i + 1
+			}
+		}
+	}
+	return append(entries, inner[start:])
+}
+
+// containsColonBreak reports whether s contains a colon followed by a space OR A
+// TAB — the two characters YAML treats alike as ending a mapping key, so
+// `desc: value:<TAB>more` is the same defect as `desc: value: more` and fails the
+// parse identically. Checking only for ": " missed the tab form entirely.
+func containsColonBreak(s string) bool {
+	return strings.Contains(s, ": ") || strings.Contains(s, ":\t")
 }
 
 // leadingIndent is the number of leading space/tab bytes of line.

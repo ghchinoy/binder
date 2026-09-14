@@ -34,9 +34,11 @@ func newLintCmd(codec okf.Codec) *cobra.Command {
 			"It also reports unquoted colon-space scalars: any frontmatter key whose\n" +
 			"unquoted plain-scalar value contains \": \" (e.g. title: Multi-View: Tabs),\n" +
 			"which YAML reads as a nested mapping rather than the intended string.\n" +
-			"Quoting the value is the fix. This one is advisory-only and never gates,\n" +
-			"even under --strict: it names the key to quote in a file whose invalid\n" +
-			"frontmatter is already reported as a schema violation.\n\n" +
+			"A colon-tab counts the same, and a single-line flow mapping is scanned\n" +
+			"one level in. Quoting the value is the fix. This one is advisory-only and\n" +
+			"never gates, even under --strict: it is derived only for a file whose\n" +
+			"frontmatter did not parse, and names the key to quote in a file already\n" +
+			"reported as an invalid-frontmatter schema violation.\n\n" +
 			"Findings are advisory: bare lint always exits 0 (entrypoints never gate).\n" +
 			"Use --strict to gate (exit 1) when any finding is present, e.g. in CI.",
 		Args: exactArgs(1),

@@ -76,8 +76,8 @@ under [`enrich`](docs/user_guide.md#enrich).
   broken links (incl. `#anchors`), missing titles, orphans, stale concepts,
   schema violations, and unquoted colon-space scalars (a frontmatter value like
   `title: Multi-View: Tabs` that YAML reads as a nested mapping). `--strict`
-  gives a non-zero CI gate; the colon-space advisory is the one bucket it never
-  gates on.
+  gives a non-zero CI gate; entrypoints and the colon-space advisory are the two
+  buckets it never gates on.
 - **`graph`** exports the concept graph (edges = resolved links) as
   dot/json/graphml/html.
 - **`infer`** inspects a source markdown corpus and proposes a directory-to-type

@@ -960,11 +960,15 @@ It reports these checks:
    wild was a `title:`, not a `description:`. Only *unquoted plain scalars*
    count: a URL (`https://example.com`), a timestamp (`12:30`), a ratio
    (`16:9`), an already-quoted value, a multi-line quoted scalar, the interior
-   of a `|`/`>` block scalar, and a flow collection are all left alone — in an
-   unquoted value the colon must be **followed by a space** to mean anything.
-   Detection confirms every candidate against a real YAML parse, not a regex
-   alone. This bucket is **advisory even by `lint`'s standards**: alone among
-   the seven it is never counted as a finding, so it cannot gate `--strict`.
+   of a `|`/`>` block scalar, and a flow **sequence** are all left alone — in an
+   unquoted value the colon must be followed by a **space or a tab** to mean
+   anything. A single-line flow **mapping** IS scanned one level in, so
+   `meta: {name: Multi-View: Tabs, x: 1}` names `name`: the issue measured that
+   shape in the wild, so it is a true instance rather than a false-positive
+   class. Detection confirms every candidate against a real YAML parse, not a
+   regex alone. This bucket is **advisory even by `lint`'s standards**: with
+   entrypoints, one of only two buckets never counted as a finding, so it
+   cannot gate `--strict`.
    See [Strict mode](#strict-mode) for why that is safe rather than lenient.
 
 | Flag | Default | Purpose |

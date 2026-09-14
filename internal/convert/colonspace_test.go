@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/ghchinoy/binder/internal/okf/native"
-	"gopkg.in/yaml.v3"
 )
 
 // TestColonSpaceKeys is the unit table for the issue-#93 detector: which
@@ -55,9 +54,33 @@ func TestColonSpaceKeys(t *testing.T) {
 			want: []string{"label"},
 		},
 		{
-			name: "unterminated fence is still scanned (convert recovers the file)",
+			// Issue #93's FOURTH measured instance (a Game Master bundle). YAML
+			// rejects the block with "did not find expected ',' or '}'", and the
+			// key inside the flow mapping is named.
+			name: "single-line flow mapping (the issue's flow-mapping instance)",
+			doc:  "---\nmeta: {name: Multi-View: Tabs, x: 1}\n---\n\n# X\n",
+			want: []string{"name"},
+		},
+		{
+			// A colon followed by a TAB is the same mapping indicator to YAML.
+			name: "colon-tab is the same defect as colon-space",
+			doc:  "---\ndesc: value:\ttab after colon\n---\n\n# X\n",
+			want: []string{"desc"},
+		},
+		{
+			// O4: an unterminated fence is NOT treated as frontmatter. Such a file is
+			// indistinguishable from markdown opening on a thematic break, and
+			// scanning it meant reporting body prose as a key. The file is still
+			// reported as "invalid frontmatter: unterminated '---' block"; only the
+			// key name is given up.
+			name: "unterminated fence is left alone (cannot be told from a thematic break)",
 			doc:  "---\ntitle: Multi-View: Tabs and Windows\n\n# X\n",
-			want: []string{"title"},
+			want: nil,
+		},
+		{
+			name: "body prose after a thematic break is never named as a key",
+			doc:  "---\n\nNote: prose: with a colon-space.\n",
+			want: nil,
 		},
 		{
 			name: "CRLF line endings",
@@ -100,6 +123,16 @@ func TestColonSpaceKeys(t *testing.T) {
 			name: "flow collection is not a plain scalar",
 			doc:  "---\ntags: [alpha, beta]\nmeta: {a: 1}\n---\n\n# X\n",
 			want: nil,
+		},
+		{
+			name: "flow mapping with quoted values is left alone",
+			doc:  "---\nmeta: {name: \"Multi-View: Tabs\", x: 1}\nbad: oops: here\n---\n\n# X\n",
+			want: []string{"bad"},
+		},
+		{
+			name: "flow mapping spanning lines is not guessed at",
+			doc:  "---\nmeta: {\n  name: plain,\n}\nbad: oops: here\n---\n\n# X\n",
+			want: []string{"bad"},
 		},
 		{
 			name: "the body is never scanned",
@@ -168,10 +201,14 @@ func TestColonSpaceKeys(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			// Drive stage 1 from the REAL codec verdict, exactly as convert does,
-			// so no case can pass against a parse the production path never makes.
+			// Reproduce convert.Analyze's wiring exactly: the detector is consulted
+			// ONLY when the codec failed to parse. No case may pass against a call
+			// the production path would never make.
 			_, norm, _, perr := toConcept(native.New(), "x.md", []byte(c.doc))
-			got := colonSpaceKeys(norm, perr != nil)
+			var got []string
+			if perr != nil {
+				got = colonSpaceKeys(norm)
+			}
 			if strings.Join(got, ",") != strings.Join(c.want, ",") {
 				t.Errorf("colonSpaceKeys = %v, want %v (codec parse error: %v)\ndoc:\n%s",
 					got, c.want, perr, c.doc)
@@ -180,77 +217,91 @@ func TestColonSpaceKeys(t *testing.T) {
 	}
 }
 
-// TestColonSpaceStage1IsTheCallersVerdictAlone pins the contract that makes the
-// never-gates rationale structural: when the caller says the frontmatter PARSED,
-// the detector reports nothing — whatever the bytes happen to contain.
+// TestColonSpaceNeverDerivedForCleanFile is the guard on the wiring that carries
+// the whole never-gates guarantee: convert.Analyze consults the detector ONLY for
+// a file the codec failed to parse, so no clean file can draw an advisory.
 //
-// This is the guard against re-deriving the verdict inside the detector. An
-// earlier revision did exactly that, with yaml.Unmarshal into an `any`; the codec
-// unmarshals into a yaml.Node, and those are NOT the same acceptance predicate
-// (see TestCodecAndPlainParseDisagree). Any such second parse resurrects the
-// possibility of the detector calling a file broken that convert accepted.
+// The three documents below are the reviewer's reproducers for PR #190, and each
+// parses cleanly for the codec while the detector, called directly, names a
+// phantom key that is literal text inside a block scalar. They reach it through
+// the value-decode/node-decode divergence: yaml.Unmarshal into an `any` rejects
+// duplicate keys and bad tag coercion, a yaml.Node decode accepts both, so any
+// second opinion inside the detector opens on blocks convert parses happily — and
+// the line scan cannot carry that alone, because a sequence-item (`- |`),
+// anchored (`key: &a |`) or tagged (`key: !!str |`) block scalar leaves
+// blockIndent at -1 and its interior is read as mapping entries.
 //
-// The documents below contain REAL traps, so a detector that re-parsed would find
-// them and return keys; one that honours its caller returns nothing. That is what
-// makes this test bite rather than pass by luck.
-func TestColonSpaceStage1IsTheCallersVerdictAlone(t *testing.T) {
-	traps := []string{
-		"---\ntitle: Multi-View: Tabs and Windows\n---\n\n# X\n",
-		"---\ndescription: Goal: ship the thing\ngoal: another: bad line\n---\n\n# X\n",
-	}
-	for _, doc := range traps {
-		norm, _ := NormalizeInput([]byte(doc))
-		// Sanity: with a failed-parse verdict these documents DO produce findings,
-		// so a nil result below cannot be nil for some unrelated reason.
-		if got := colonSpaceKeys(norm, true); len(got) == 0 {
-			t.Fatalf("premise gone: no findings even when told the parse failed\ndoc:\n%s", doc)
-		}
-		if got := colonSpaceKeys(norm, false); got != nil {
-			t.Errorf("colonSpaceKeys = %v when told the frontmatter PARSED; stage 1 is deciding "+
-				"for itself instead of taking convert's verdict\ndoc:\n%s", got, doc)
-		}
-	}
-}
-
-// TestCodecAndPlainParseDisagree records WHY the verdict is passed in rather than
-// recomputed: the obvious lookalike is not equivalent to the codec.
-//
-// The codec unmarshals frontmatter into a yaml.Node. Unmarshalling the same bytes
-// into an `any` additionally rejects duplicate keys and unresolvable tags, so a
-// detector using it would call these documents broken while convert accepts them
-// — no recovery, hence no invalid-frontmatter violation to subsume a finding.
-//
-// Honest scope: this divergence is a LATENT hazard, not a live bug. Stage 2 is
-// conservative enough that these particular documents yield no finding even when
-// stage 1 is wrongly opened, because a line stage 2 would flag is itself invalid
-// YAML and so breaks the codec too. The fix removes the hazard by construction
-// instead of leaving it resting on stage 2 staying conservative forever.
-func TestCodecAndPlainParseDisagree(t *testing.T) {
+// Rather than teach the scan those three shapes — and the next three — the caller
+// gates on the codec's own verdict, which closes every such door at once. This
+// test asserts BOTH halves, so it cannot pass by the detector having quietly gone
+// silent: the direct call must still name the phantom key, and the wired path
+// must still report nothing.
+func TestColonSpaceNeverDerivedForCleanFile(t *testing.T) {
 	cases := []struct{ name, doc string }{
-		{"duplicate keys", "---\ntitle: A\ntitle: B\nnote: plain\n---\n\n# X\n"},
-		{"unresolvable tag", "---\nn: !!int notanint\n---\n\n# X\n"},
-		// A third divergence — a self-referential anchor ("a: &x" / "  b: *x") — is
-		// deliberately NOT exercised: it crashes the codec outright on origin/main
-		// (native.nodeToValue recurses forever on the alias → stack overflow →
-		// process death), independently of this advisory. Reported separately; out
-		// of scope for #93, and a test that kills the runner proves nothing.
+		{
+			"duplicate keys + sequence-item block scalar",
+			"---\ntype: Note\ntitle: T\ndup: 1\ndup: 2\nsteps:\n  - |\n    Note: this is: literal text\n---\n\n# X\n",
+		},
+		{
+			"bad tag coercion + anchored block scalar",
+			"---\ntype: Note\ntitle: T\nn: !!int notanumber\nbody: &a |\n  Note: this is: literal text\n---\n\n# X\n",
+		},
+		{
+			"duplicate keys + tagged block scalar",
+			"---\ntype: Note\ntitle: T\ndup: 1\ndup: 2\nbody: !!str |\n  Note: this is: literal text\n---\n\n# X\n",
+		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			_, norm, _, perr := toConcept(native.New(), "x.md", []byte(c.doc))
 			if perr != nil {
-				t.Fatalf("premise gone: the codec now REJECTS this document (%v)\ndoc:\n%s", perr, c.doc)
+				t.Fatalf("premise gone: the codec now REJECTS this document (%v), so it no longer "+
+					"witnesses a clean-parsing file the detector would misread\ndoc:\n%s", perr, c.doc)
 			}
-			fmText, _ := frontmatterRegion(strings.ReplaceAll(string(norm), "\r\n", "\n"))
-			var whole any
-			if yaml.Unmarshal([]byte(fmText), &whole) == nil {
-				t.Fatalf("premise gone: an `any` parse now ACCEPTS this too, so the two no longer "+
-					"diverge and the argument for passing the verdict in needs restating\ndoc:\n%s", c.doc)
+			// Half one: ungated, the detector really would name a phantom key. Without
+			// this the test could pass merely because the detector stopped working.
+			if got := colonSpaceKeys(norm); len(got) == 0 {
+				t.Fatalf("premise gone: the ungated detector no longer misreads this shape, so the "+
+					"gate is no longer what is keeping it quiet\ndoc:\n%s", c.doc)
 			}
-			if got := colonSpaceKeys(norm, perr != nil); got != nil {
-				t.Errorf("colonSpaceKeys = %v on a document the codec parsed cleanly\ndoc:\n%s", got, c.doc)
+			// Half two: as convert.Analyze actually calls it, nothing is reported.
+			var wired []string
+			if perr != nil {
+				wired = colonSpaceKeys(norm)
+			}
+			if wired != nil {
+				t.Errorf("ColonSpaceKeys = %v for a file the codec parsed cleanly; the advisory would "+
+					"fire with no invalid-frontmatter violation to subsume it", wired)
 			}
 		})
+	}
+}
+
+// TestColonSpaceCleanCorpusYieldsNoAdvisory drives the same guarantee through the
+// real Analyze pipeline rather than the wiring in miniature, over a corpus fixture
+// built from the reviewer's reproducer. It is the end-to-end half of the test
+// above: whatever Analyze does internally, a corpus the codec parses must surface
+// no ColonSpaceKeys at all.
+func TestColonSpaceCleanCorpusYieldsNoAdvisory(t *testing.T) {
+	_, facts, _, err := Analyze("../../testdata/corpus-lint-colonspace-clean", Options{
+		Codec:   native.New(),
+		Version: "0.1.0",
+		Now:     fixedNowInternal,
+	})
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+	if len(facts) == 0 {
+		t.Fatal("vacuous: the fixture corpus produced no facts")
+	}
+	for _, f := range facts {
+		if f.Recovered {
+			t.Errorf("%s: fixture is supposed to PARSE cleanly but convert recovered it (%s)",
+				f.RelPath, f.RecoverErr)
+		}
+		if len(f.ColonSpaceKeys) != 0 {
+			t.Errorf("%s: ColonSpaceKeys = %v on a cleanly-parsing file", f.RelPath, f.ColonSpaceKeys)
+		}
 	}
 }
 
@@ -276,7 +327,10 @@ func TestColonSpaceOnlyFiresOnUnparseableFrontmatter(t *testing.T) {
 		}
 		scanned++
 		_, norm, _, perr := toConcept(native.New(), "x.md", raw)
-		keys := colonSpaceKeys(norm, perr != nil)
+		var keys []string
+		if perr != nil {
+			keys = colonSpaceKeys(norm)
+		}
 		if len(keys) == 0 {
 			return nil
 		}
@@ -316,5 +370,53 @@ func TestColonSpaceKeysSurfacedInFacts(t *testing.T) {
 		if strings.Join(f.ColonSpaceKeys, ",") != strings.Join(want, ",") {
 			t.Errorf("%s: ColonSpaceKeys = %v, want %v", f.ConceptID, f.ColonSpaceKeys, want)
 		}
+	}
+}
+
+// TestFrontmatterRegionAgreesWithCodec pins frontmatterRegion to the codec's
+// fence rules (O5). The two implementations live in different packages —
+// native.splitFrontmatter is unexported, so it cannot simply be reused — and a
+// silent disagreement about where frontmatter STOPS would mean the advisory
+// scanning text the codec never parsed, or missing text it did.
+//
+// The codec's region is read back from Concept.OriginalFrontmatter, which
+// splitFrontmatter populates verbatim, so this compares the real outputs rather
+// than two restatements of the same rule.
+func TestFrontmatterRegionAgreesWithCodec(t *testing.T) {
+	docs := []struct{ name, doc string }{
+		{"ordinary", "---\ntype: Note\ntitle: X\n---\n\n# X\n"},
+		{"empty frontmatter", "---\n---\n\n# X\n"},
+		{"CRLF", "---\r\ntype: Note\r\n---\r\n\r\n# X\r\n"},
+		{"nested and sequences", "---\na:\n  b: c\nl:\n  - 1\n  - 2\n---\n\n# X\n"},
+		{"body contains a --- thematic break", "---\ntype: Note\n---\n\n# X\n\n---\n\nmore\n"},
+		{"no closing fence", "---\ntype: Note\n\n# X\n"},
+		{"no fence at all", "# X\n\nprose\n"},
+		{"bare --- only", "---"},
+		{"fence then EOF", "---\ntype: Note\n---"},
+		{"block scalar inside", "---\ns: |\n  a: b\n---\n\n# X\n"},
+	}
+	for _, d := range docs {
+		t.Run(d.name, func(t *testing.T) {
+			norm, _ := NormalizeInput([]byte(d.doc))
+			got, ok := frontmatterRegion(strings.ReplaceAll(string(norm), "\r\n", "\n"))
+
+			con, err := native.New().ParseConcept("x.md", norm)
+			// The codec also rejects a frontmatter block that is not a mapping or does
+			// not parse; those are parse verdicts, not fence verdicts, so only fence
+			// errors are compared here.
+			fenceErr := err != nil && (strings.Contains(err.Error(), "missing frontmatter") ||
+				strings.Contains(err.Error(), "unterminated"))
+			if ok == fenceErr {
+				t.Fatalf("fence verdicts disagree: frontmatterRegion ok=%v, codec fence error=%v (err=%v)",
+					ok, fenceErr, err)
+			}
+			if !ok {
+				return
+			}
+			want := strings.TrimRight(string(con.OriginalFrontmatter), "\n")
+			if got != want {
+				t.Errorf("region mismatch:\n frontmatterRegion: %q\n codec:             %q", got, want)
+			}
+		})
 	}
 }
