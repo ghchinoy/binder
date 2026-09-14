@@ -9,6 +9,8 @@ Generated from binder's Cobra command tree by `make docs` (`cmd/gendocs`). Do no
 - [binder config](binder_config.md) — Manage configuration (show, get, set, unset)
 - [binder convert](binder_convert.md) — Convert a markdown corpus into an OKF v0.2 bundle
 - [binder enrich](binder_enrich.md) — Inject missing OKF frontmatter into a source markdown tree, in place
+- [binder graph query](binder_graph_query.md) — Query the bundle's concept graph (lookup|neighbors|neighborhood|pattern|path)
+- [binder graph schema-describe](binder_graph_schema-describe.md) — Introspect the property graph(s) binder can project from a bundle
 - [binder graph](binder_graph.md) — Export the bundle's concept graph (dot|json|graphml|html)
 - [binder index](binder_index.md) — (Re)generate the per-directory index.md nav tree (spec §8)
 - [binder infer](binder_infer.md) — Inspect a source markdown corpus and propose a --type-map

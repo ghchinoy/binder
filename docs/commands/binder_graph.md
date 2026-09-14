@@ -29,4 +29,6 @@ binder graph <bundle> [flags]
 ### SEE ALSO
 
 * [binder](binder.md)	 - Convert a plain-markdown corpus into a conformant OKF v0.2 bundle
+* [binder graph query](binder_graph_query.md)	 - Query the bundle's concept graph (lookup|neighbors|neighborhood|pattern|path)
+* [binder graph schema-describe](binder_graph_schema-describe.md)	 - Introspect the property graph(s) binder can project from a bundle
 
