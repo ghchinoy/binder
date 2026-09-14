@@ -7,8 +7,25 @@ GO      ?= go
 BIN     := bin/binder
 OKF_VER := v0.3.0
 OKF_PKG := github.com/okfcli/okf/cmd/okf@$(OKF_VER)
+# Pinned like the actions themselves: the workflow linter must not change under
+# the gate it feeds.
+#
+# NOT DEPENDABOT-VISIBLE, and do not assume this version is being maintained for
+# you. `go run pkg@version` resolves outside this module, so actionlint is in
+# neither go.mod nor go.sum: the `gomod` ecosystem cannot see it, and the
+# `github-actions` ecosystem reads `uses:` references, not tool invocations. A Go
+# 1.24+ `tool` directive would put it under go.sum and in Dependabot's view (this
+# repo declares go 1.26.1, so that is available).
+#
+# Adding the `gomod` ecosystem while leaving this pin as it is would be the WORST
+# available state rather than a partial improvement: everything else bumped on a
+# schedule, one pinned linter silently ageing inside the same `make check` gate,
+# and a dependabot.yml that makes it look covered. Recorded with the other
+# ecosystem-coverage gaps on issue #194 (see the comment thread there).
+ACTIONLINT_VER := v1.7.12
+ACTIONLINT_PKG := github.com/rhysd/actionlint/cmd/actionlint@$(ACTIONLINT_VER)
 
-.PHONY: all build test vet fmt-check check gate interop okf-install golden-update docs conformance clean
+.PHONY: all build test vet fmt-check actionlint check gate interop okf-install golden-update docs conformance clean
 
 all: build
 
@@ -28,12 +45,27 @@ fmt-check:
 		echo "gofmt needed on:"; echo "$$unformatted"; exit 1; \
 	else echo "gofmt: clean"; fi
 
+# Lint every GitHub Actions workflow: schema, expression syntax, and context
+# properties (issue #127 review). A Go program run from the same module proxy the
+# build already uses — unlike the okf interop gate, it starts no external runtime
+# and needs no install step, which is why it belongs in `check` and okf does not.
+#
+# It exists here because the workflows carry logic now: the docs-impact job's
+# exemption is an expression, and internal/docsimpact's TestReleaseExemption can
+# only evaluate that expression against an evaluator this repo also wrote.
+# actionlint is the independent parse that closes the circle — it models GHA's
+# own grammar. The two are complements: actionlint types `github.event` as a bare
+# object and so cannot check event-payload paths, which is precisely what the Go
+# control does check.
+actionlint:
+	$(GO) run $(ACTIONLINT_PKG) .github/workflows/*.yml
+
 # Verification gate: everything that needs only the Go toolchain (deps pinned
 # via go.mod/go.sum, fetched from the module proxy). `test` (go test ./...)
 # includes the two derived-doc drift gates: internal/gendocs (byte-equality for
 # docs/commands/) and internal/plugindocs (key-set equality for the plugin skill
 # JSON transcripts under plugins/, issue #106).
-check: fmt-check vet test
+check: fmt-check vet actionlint test
 
 # Regenerate the CLI command reference (docs/commands/) from binder's own Cobra
 # command tree. Deterministic and idempotent; run after adding/changing a
