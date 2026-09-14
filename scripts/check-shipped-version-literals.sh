@@ -31,4 +31,9 @@ BIN="$(build_stamped_binder)"
 # docs/RELEASING.md step 3), which rewrites the documented invalid-actor
 # transcripts to this binary's own output instead of merely reporting the drift.
 # Pass no arguments for the CI behaviour: report only, change nothing.
-exec python3 scripts/check-shipped-version-literals.py "$BIN" "$@"
+# NOT `exec`. exec REPLACES this shell process, and an EXIT trap never runs on
+# a process that was replaced -- so the stamped-build temp root set up by
+# scripts/lib/stamped-binder.sh would leak ~28MB on every single gate run.
+# Calling normally and forwarding the status keeps the trap, and `set -e`
+# already propagates a non-zero exit with the trap still firing.
+python3 scripts/check-shipped-version-literals.py "$BIN" "$@"

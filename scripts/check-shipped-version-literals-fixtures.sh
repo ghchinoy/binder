@@ -83,7 +83,7 @@ FAIL=0
 # The number of cases this harness MUST run, asserted at the end against
 # PASS+FAIL so the harness cannot itself pass vacuously — same reasoning as
 # scripts/check-transcript-versions-fixtures.sh. Update when adding a case.
-EXPECTED_CASES=15
+EXPECTED_CASES=16
 
 # copy_tree — copy the working tree (minus VCS and node_modules) into a fresh
 # temp dir and echo its path. The copy is what gets patched, so the real tree is
@@ -643,6 +643,44 @@ else
   PASS=$((PASS + 1))
 fi
 rm -f "$CHILD"
+
+# [16] THE SHIPPED ENTRY POINT LEAVES NOTHING BEHIND EITHER.
+#      Case 15 covers the helper's contract and PASSED while the real gate was
+#      still leaking on every run, so it is worth being precise about why: its
+#      child shell exits normally, and both gate wrappers ended in `exec`. exec
+#      REPLACES the process, and an EXIT trap never runs on a process that was
+#      replaced. A trap that is installed, tested, and provably fires in the test
+#      -- and never fires in production -- is a worse outcome than no trap,
+#      because it comes with evidence.
+#
+#      There was a second leak underneath it that no amount of shell-level
+#      testing would have found: the checker's own tempfile.mkdtemp() scratch
+#      corpus, which main() never removed on any of its return paths.
+#
+#      So this case asserts the property END TO END, on the thing CI actually
+#      runs, with a PRIVATE TMPDIR so the measurement cannot be polluted by
+#      anything else on the machine: after a real gate run, that directory must
+#      be empty. It is indifferent to the gate's verdict -- leaking is wrong
+#      whether the gate passes or fails -- but it requires evidence the gate
+#      genuinely RAN, since a refusal that never builds anything would leave an
+#      empty directory for entirely the wrong reason.
+PRIVTMP="$(scratch_dir)"
+LEAKOUT="$(TMPDIR="$PRIVTMP" "$REPO_ROOT/scripts/check-shipped-version-literals.sh" 2>&1)"
+LEAKRC=$?
+RESIDUE="$(ls -A "$PRIVTMP" | wc -l)"
+if ! echo "$LEAKOUT" | grep -qF "# shipped-output version gate:"; then
+  echo "  SETUP-FAIL  entry-point leak: the gate did not run to completion (exit $LEAKRC);"
+  echo "              an empty TMPDIR would prove nothing"
+  echo "$LEAKOUT" | tail -3 | sed 's/^/        | /'
+  FAIL=$((FAIL + 1))
+elif [ "$RESIDUE" -ne 0 ]; then
+  echo "  FAIL  entry-point leak: $RESIDUE item(s) left in a private TMPDIR by one gate run"
+  ls -A "$PRIVTMP" | sed 's/^/        | /'
+  FAIL=$((FAIL + 1))
+else
+  echo "  PASS  a real gate run leaves its private TMPDIR empty"
+  PASS=$((PASS + 1))
+fi
 
 echo
 # Vacuous-pass guard for the harness itself: assert the expected number of cases

@@ -131,8 +131,10 @@ Usage: check-shipped-version-literals.py <stamped-binder-binary> [repo-root] [--
 --fix rewrites documented transcripts to the binary's own output; see
 docs/RELEASING.md step 3. It exits non-zero when it changes anything.
 """
+import atexit
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -368,6 +370,12 @@ def main() -> int:
         return 2
 
     workdir = tempfile.mkdtemp()
+    # main() returns from several points below and may raise, so the removal is
+    # registered rather than written at the end. Without it the gate leaves a
+    # scratch corpus behind on EVERY run -- small individually, and invisible
+    # until enough of them accumulate that an unrelated gate reds with a
+    # message about the disk.
+    atexit.register(shutil.rmtree, workdir, ignore_errors=True)
     src = os.path.join(workdir, "corpus")
     os.makedirs(src, exist_ok=True)
     with open(os.path.join(src, "a.md"), "w") as fh:

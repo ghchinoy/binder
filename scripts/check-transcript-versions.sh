@@ -31,4 +31,6 @@ BIN="$(build_stamped_binder --no-prerelease)"
 # The repo root is the BASE; the scanned roots (plugins/, docs/, README.md) are
 # the checker's own SCAN_ROOTS list, so they stay next to the coverage inventory
 # that must move with them.
-exec python3 scripts/check-transcript-versions.py . "$BIN"
+# NOT `exec` -- see the note in check-shipped-version-literals.sh. exec would
+# discard the EXIT trap that removes the stamped-build temp root.
+python3 scripts/check-transcript-versions.py . "$BIN"
