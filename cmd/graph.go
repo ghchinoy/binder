@@ -4,12 +4,12 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
-	"github.com/ghchinoy/binder/internal/bundle"
+	"github.com/ghchinoy/binder/internal/binder"
 	"github.com/ghchinoy/binder/internal/clijson"
-	"github.com/ghchinoy/binder/internal/graph"
 	"github.com/ghchinoy/binder/internal/okf"
 )
 
@@ -20,6 +20,9 @@ func newGraphCmd(codec okf.Codec) *cobra.Command {
 		output  string
 		jsonOut bool
 	)
+	// Construct the shared service ONCE with the composition root's codec (it is
+	// stateless and safe for concurrent use); the RunE closure reuses it.
+	svc := binder.New(codec)
 	cmd := &cobra.Command{
 		Use:   "graph <bundle>",
 		Short: "Export the bundle's concept graph (dot|json|graphml|html)",
@@ -57,28 +60,33 @@ func newGraphCmd(codec okf.Codec) *cobra.Command {
 			if today != "" && !okf.IsValidISODate(today) {
 				return clijson.Usage(fmt.Errorf("--today %q is not a valid date (expected YYYY-MM-DD)", today))
 			}
-			b, err := bundle.Load(args[0], codec)
+
+			// Read the ambient determinism state HERE (adapter edge) and apply the
+			// core rule; a malformed epoch falls back to the wall clock.
+			now, _ := binder.ResolveNow(os.Getenv("SOURCE_DATE_EPOCH"), time.Now())
+
+			// One code path: the service owns Load → Export and the Today default.
+			res, err := svc.GraphExport(cmd.Context(), binder.GraphExportRequest{
+				Bundle: args[0],
+				Format: format,
+				Now:    now,
+				Today:  today,
+			})
 			if err != nil {
 				return err
 			}
 			// Disclose unparseable files on stderr (#161): the recovered node now
 			// exists so edges no longer dangle, but the user must be told its
 			// frontmatter did not parse. stderr keeps the exported graph clean.
-			warnUnparsed(cmd.ErrOrStderr(), b)
-			if today == "" {
-				today = resolveNow().Format("2006-01-02")
-			}
-			data, err := graph.Export(b, format, today)
-			if err != nil {
-				return err
-			}
+			warnUnparsed(cmd.ErrOrStderr(), res.Bundle)
+
 			if output != "" {
-				if err := os.WriteFile(output, data, 0o644); err != nil {
+				if err := os.WriteFile(output, res.Data, 0o644); err != nil {
 					return fmt.Errorf("writing graph: %w", err)
 				}
 				return nil
 			}
-			_, err = cmd.OutOrStdout().Write(data)
+			_, err = cmd.OutOrStdout().Write(res.Data)
 			return err
 		},
 	}
@@ -86,5 +94,9 @@ func newGraphCmd(codec okf.Codec) *cobra.Command {
 	cmd.Flags().StringVarP(&output, "output", "o", "", "write graph to a file instead of stdout")
 	cmd.Flags().StringVar(&today, "today", "", "date (YYYY-MM-DD) used for staleness; defaults to now")
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "alias for --format json (the raw {nodes,edges} export, not the report envelope)")
+	// Attach the read-only introspection subcommands (query, schema-describe) that
+	// were MCP-only before Phase 2; they are thin adapters over the same service.
+	cmd.AddCommand(newGraphQueryCmd(codec))
+	cmd.AddCommand(newGraphSchemaCmd(codec))
 	return cmd
 }
