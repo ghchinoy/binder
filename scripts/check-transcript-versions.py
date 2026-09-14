@@ -131,6 +131,18 @@ SCHEMA_RE = re.compile(r'"schema"\s*:\s*"([\w.]+/v\d+)"')
 # files and docs/examples/ YAML stamps carry frozen historical versions, and
 # CHANGELOG.md is history by definition. A missing root is a coverage failure,
 # not a silent skip.
+#
+# GENERATED COMMAND DOCS ARE NOT THIS GATE'S (#185 round 2, from the #196 read).
+# `docs/commands/*.md` are produced from the binary by internal/gendocs, so the
+# version literals in them — `--verified-by ... e.g. binder/0.3.0` in
+# binder_convert.md and binder_enrich.md today — are the BINARY'S OUTPUT, quoted.
+# They belong to the shipped-output gate (#60), which runs the binary and checks
+# what it prints, and regenerating those files is what updates them. This gate
+# cannot see them today only because they are prose rather than JSON-fenced —
+# true by accident, not by decision. Writing the decision down: do not add a
+# prose rule, a NO_UNPINNED_PROSE entry, or a coverage entry for docs/commands/
+# here. Two gates with an opinion about the same bytes is a contested-ownership
+# argument later, and the accident that currently prevents it is not load-bearing.
 SCAN_ROOTS = ["plugins", "docs", "README.md"]
 
 # NO-UNPINNED-PROSE FILES (#185 follow-on). Base-relative files in which a
