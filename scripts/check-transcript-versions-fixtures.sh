@@ -28,16 +28,15 @@ CONTRACT_REL="plugins/okf-convert/skills/okf-convert/references/binder-json-cont
 GUIDE_REL="docs/user_guide.md"
 README_REL="README.md"
 
-STAMP_VERSION="${BINDER_STAMP_VERSION:-$(git describe --tags --abbrev=0)}"
-BIN="$(mktemp -d)/binder"
-echo "==> building stamped binder (cmd.Version=${STAMP_VERSION})"
-go build -ldflags "-X github.com/ghchinoy/binder/cmd.Version=${STAMP_VERSION}" -o "$BIN" .
-echo "==> stamped binder --version: $("$BIN" --version)"
+# shellcheck source=scripts/lib/stamped-binder.sh
+source "$REPO_ROOT/scripts/lib/stamped-binder.sh"
+BIN="$(build_stamped_binder --no-prerelease)"
 echo
 
 # The stamped version as the docs spell it (no leading "v"), for the cases that
 # must construct a literal carrying the CURRENT version.
-CURRENT="${STAMP_VERSION#v}"
+CURRENT="$(stamp_version)"
+CURRENT="${CURRENT#v}"
 
 PASS=0
 FAIL=0

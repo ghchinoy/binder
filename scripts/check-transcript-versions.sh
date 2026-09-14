@@ -14,17 +14,20 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
-# The current release version: the most recent tag reachable from HEAD. This is
-# the same value goreleaser injects at release time (v-prefixed; cmd.init strips
-# the leading v via normalizeVersion). Overridable via BINDER_STAMP_VERSION so a
-# release pipeline can pass the exact tag being built.
-STAMP_VERSION="${BINDER_STAMP_VERSION:-$(git describe --tags --abbrev=0)}"
+# The stamped build lives in scripts/lib/stamped-binder.sh, shared with the
+# shipped-output gate (#60) which has the identical precondition. It resolves the
+# release tag via `git describe --tags` (overridable with BINDER_STAMP_VERSION)
+# and injects it through the same ldflag goreleaser uses.
+# shellcheck source=scripts/lib/stamped-binder.sh
+source "$REPO_ROOT/scripts/lib/stamped-binder.sh"
 
-BIN="$(mktemp -d)/binder"
-echo "==> building stamped binder (cmd.Version=${STAMP_VERSION})"
-go build -ldflags "-X github.com/ghchinoy/binder/cmd.Version=${STAMP_VERSION}" -o "$BIN" .
+# The stamped build and its certification come from the shared helper: the thing
+# that BUILDS the binary is the thing that must certify it is stamped at all.
+# --no-prerelease keeps #169's stricter policy EXPLICIT here rather than hiding
+# it as the helper's default -- #60's gate deliberately permits prereleases, and
+# a shared default would silently pick one of the two policies for both.
+BIN="$(build_stamped_binder --no-prerelease)"
 
-echo "==> stamped binder --version: $("$BIN" --version)"
 # The repo root is the BASE; the scanned roots (plugins/, docs/, README.md) are
 # the checker's own SCAN_ROOTS list, so they stay next to the coverage inventory
 # that must move with them.

@@ -38,7 +38,7 @@ binder convert <src> [flags]
       --status-map string           per-directory status, e.g. "archive=deprecated,drafts=draft,default=active" (set only when status absent)
       --strict                      gate (exit 1) on unresolved links or recovery warnings; without it these never gate (never-reject)
       --type-map string             per-directory type overrides, e.g. "docs=Guide,adr=Decision"
-      --verified-by string          actor to append as a verified stamp, e.g. "human:ghchinoy" or "binder/0.3.0"; a stamp is written ONLY when passed here, or when verified_by is set in your GLOBAL config (neither BINDER_VERIFIED_BY nor a repo-local .binder.yaml authorizes stamping; valid forms: human:<id>, process:<id>, team:<id>, or <producer>/<version> (e.g. binder/0.3.0))
+      --verified-by string          actor to append as a verified stamp, e.g. "human:ghchinoy" or "binder/<version>"; a stamp is written ONLY when passed here, or when verified_by is set in your GLOBAL config (neither BINDER_VERIFIED_BY nor a repo-local .binder.yaml authorizes stamping; valid forms: human:<id>, process:<id>, team:<id>, or <producer>/<version> (e.g. binder/<version>))
       --workspace-root string       boundary within which file:// links resolve to internal edges (default: the <src> root)
 ```
 

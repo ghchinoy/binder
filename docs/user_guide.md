@@ -1594,7 +1594,7 @@ invalid actor can never be persisted:
 
 ```console
 $ binder config set verified_by "bogus actor!"; echo $?
-binder: invalid actor "bogus actor!"; valid forms: human:<id>, process:<id>, team:<id>, or <producer>/<version> (e.g. binder/0.3.0)
+binder: invalid actor "bogus actor!"; valid forms: human:<id>, process:<id>, team:<id>, or <producer>/<version> (e.g. binder/0.5.3)
 2
 ```
 
