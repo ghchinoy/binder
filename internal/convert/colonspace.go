@@ -28,15 +28,34 @@ var kvLine = regexp.MustCompile(`^([ \t]*)(?:-[ \t]+)?([^#:\s][^#:]*):(?:[ \t]+(
 // Detection is in TWO stages, both anchored on a real yaml.v3 parse (#93 calls
 // for a parser, not a regex alone; a regex is only ever a pre-filter here).
 //
-// Stage 1 — does this frontmatter block have the defect AT ALL? The whole block
-// is parsed, and a block that parses cleanly yields nothing, full stop. That is
-// not a heuristic: YAML forbids ": " inside a plain scalar outright, so a
-// genuine instance ALWAYS breaks the parse ("mapping values are not allowed in
-// this context"). It is also what #93 asks for in so many words — a plain scalar
-// containing ": " "that would fail a real YAML parse". The consequence worth
-// stating is that this advisory can only ever fire on a file that convert
-// already recovered and lint already reports as an invalid-frontmatter schema
-// violation; see the never-gates note on lint.Report.NumFindings, and
+// Stage 1 — does this frontmatter block have the defect AT ALL? This is the
+// caller's frontmatterFailed: the verdict of the codec parse convert ALREADY ran
+// on this exact file, passed in rather than recomputed. A block convert parsed
+// cleanly yields nothing, full stop. That is not a heuristic: YAML forbids ": "
+// inside a plain scalar outright, so a genuine instance ALWAYS breaks the parse
+// ("mapping values are not allowed in this context"). It is also what #93 asks
+// for in so many words — a plain scalar containing ": " "that would fail a real
+// YAML parse".
+//
+// Taking the verdict instead of re-deriving it is deliberate, and it is the
+// whole of the guarantee. An earlier revision re-parsed the block here with
+// yaml.Unmarshal into an `any`; the codec unmarshals into a yaml.Node, and the
+// two are DIFFERENT acceptance predicates — decoding into `any` additionally
+// rejects duplicate keys, unresolvable tags and recursive anchors, none of which
+// stop a Node parse. A lookalike parse can therefore call a file broken that
+// convert accepted, and open stage 2 on a document with no violation to subsume a
+// finding. That was a LATENT hazard rather than a live bug — stage 2 is
+// conservative enough to have absorbed it, since a line it would flag is itself
+// invalid YAML and so breaks the codec too — but the guarantee should not rest on
+// stage 2 staying conservative forever. There is now no second parser to
+// disagree with the first. See TestColonSpaceStage1IsTheCallersVerdictAlone and
+// TestCodecAndPlainParseDisagree.
+//
+// The consequence worth stating is that this advisory can only ever fire on a
+// file convert recovered — and lint derives the invalid-frontmatter schema
+// violation from that SAME SourceFacts.Recovered flag, so the advisory is
+// subsumed by a counted violation as a matter of data dependency rather than of
+// two parsers agreeing. See the never-gates note on lint.Report.NumFindings, and
 // TestColonSpaceAlwaysAccompaniedByViolation, which holds that property shut.
 //
 // Stage 2 — WHICH key is it? Only now is the block scanned line by line with the
@@ -62,26 +81,24 @@ var kvLine = regexp.MustCompile(`^([ \t]*)(?:-[ \t]+)?([^#:\s][^#:]*):(?:[ \t]+(
 //     absent one.
 //
 // norm is NormalizeInput's output (BOM-stripped, lone CRs translated), the same
-// bytes the codec parses. A file with no opening "---" fence yields nothing; an
-// unterminated fence is still scanned, because the trap is just as present in a
-// block the author never closed and convert recovers that file rather than
-// rejecting it.
+// bytes the codec parses, and frontmatterFailed is that codec's verdict on them.
+// A file with no opening "---" fence yields nothing; an unterminated fence is
+// still scanned, because the trap is just as present in a block the author never
+// closed and convert recovers that file rather than rejecting it.
 //
 // Like every other SourceFacts field this is purely descriptive: it never
 // rejects, gates, or mutates anything (never-reject, spec §11).
-func colonSpaceKeys(norm []byte) []string {
-	fmText, ok := frontmatterRegion(strings.ReplaceAll(string(norm), "\r\n", "\n"))
-	if !ok {
-		return nil
-	}
-
-	// Stage 1. A frontmatter block that parses is a block with no colon-space
+func colonSpaceKeys(norm []byte, frontmatterFailed bool) []string {
+	// Stage 1. A frontmatter block convert parsed is a block with no colon-space
 	// trap in it, because YAML cannot parse one. Returning here is what makes
 	// every clean-parsing document — including the multi-line quoted scalars and
 	// quoted flow entries that once tripped the line scanner — structurally
 	// incapable of producing a finding.
-	var whole any
-	if yaml.Unmarshal([]byte(fmText), &whole) == nil {
+	if !frontmatterFailed {
+		return nil
+	}
+	fmText, ok := frontmatterRegion(strings.ReplaceAll(string(norm), "\r\n", "\n"))
+	if !ok {
 		return nil
 	}
 

@@ -272,7 +272,12 @@ func Analyze(src string, opts Options) (concepts []*okf.Concept, facts []SourceF
 			// Read from the NORMALIZED source bytes, not the parsed frontmatter: a
 			// colon-space plain scalar is precisely what stops the frontmatter from
 			// parsing, so by the time there is an OrderedMap the evidence is gone.
-			ColonSpaceKeys: colonSpaceKeys(norm),
+			// `recovered` is the gate, and it is the SAME flag lint derives the
+			// invalid-frontmatter violation from, so the advisory cannot outlive the
+			// violation that subsumes it. Passing convert's own verdict — rather than
+			// re-parsing inside the detector — is what removes any second parser that
+			// could disagree with this one; see colonSpaceKeys.
+			ColonSpaceKeys: colonSpaceKeys(norm, recovered),
 		})
 
 		typ := ensureType(c.Frontmatter, outRel, opts.TypeMap, opts.DefaultType)

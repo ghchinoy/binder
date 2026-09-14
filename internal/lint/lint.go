@@ -254,14 +254,19 @@ func sortFindings(f []Finding) {
 // "Always" is load-bearing there, so it is worth saying why it holds and not
 // merely that it does. YAML forbids ": " inside a plain scalar outright, so a
 // genuine instance cannot parse; convert therefore recovers the file, and a
-// recovered file always yields the invalid-frontmatter violation above. The
-// detector closes the loop from the other side by refusing to speak at all about
-// a frontmatter block that parses (see convert.colonSpaceKeys, stage 1) — which
-// is what stops a detector bug from quietly turning the claim false, as one
-// already did once via a multi-line quoted scalar. Two tests hold it shut:
-// TestColonSpaceAlwaysAccompaniedByViolation over every corpus fixture, and
+// recovered file always yields the invalid-frontmatter violation above.
+//
+// The detector closes the loop from the other side, and it does so on the SAME
+// fact rather than on a parallel judgement of its own: convert hands it the
+// Recovered flag these violations are derived from (see convert.colonSpaceKeys,
+// stage 1), so the advisory cannot outlive the violation that subsumes it
+// without the two disagreeing about a single boolean. That matters because a
+// detector bug did quietly turn the claim false once already, via a multi-line
+// quoted scalar. Three tests hold it shut:
+// TestColonSpaceAlwaysAccompaniedByViolation over every corpus fixture,
 // convert's TestColonSpaceOnlyFiresOnUnparseableFrontmatter over every markdown
-// fixture.
+// fixture, and convert's TestColonSpaceStage1IsTheCallersVerdictAlone, which
+// fails if the detector ever starts deciding for itself again.
 //
 // Leaving it out of the single total the gate reads is also what makes "there is
 // no code path by which this rule rejects" true by construction rather than by
