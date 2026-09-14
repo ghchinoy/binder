@@ -142,12 +142,18 @@ binder review <bundle> --json | jq '.result | {by_type, tiers, orphans, stale}'
   "orphans":           [ "docs/notitle" ],
   "entrypoints":       [ "README" ],
   "stale":             [],
-  "schema_violations": [ { "concept": "adr/one", "detail": "missing type" } ]
+  "schema_violations": [ { "concept": "adr/one", "detail": "missing type" } ],
+  "colon_space_scalars": []                    // a frontmatter key whose UNQUOTED plain
+                                               // scalar contains ": " or ":\t" (e.g.
+                                               // `title: A: B`), which YAML reads as a
+                                               // nested mapping; advisory only — never
+                                               // gates, not even under --strict
 }
 ```
 
 `lint` sees the corpus *as authored* — a missing `title:`/`type:` that `convert`
-would silently default is visible here. Advisory (exit 0) unless `--strict`.
+would silently default is visible here. Advisory (exit 0) unless `--strict`
+(`colon_space_scalars` excepted: it never gates).
 
 ```bash
 binder lint <corpus> --json | jq '.result | {broken_links, missing_titles, schema_violations}'

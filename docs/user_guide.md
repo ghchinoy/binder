@@ -946,17 +946,46 @@ It reports these checks:
    invalid frontmatter recovered under never-reject
    (`Detail: "invalid frontmatter: <err>"`). A recovered file is reported once as
    invalid frontmatter, never also as "missing type".
+7. **Unquoted colon-space scalars** — a frontmatter key whose value is an
+   **unquoted plain scalar containing `": "`**, which YAML reads as a nested
+   mapping indicator rather than part of the string
+   ([#93](https://github.com/ghchinoy/binder/issues/93)):
+
+   ```yaml
+   title: Multi-View: Tabs and Windows   # not the string you meant
+   title: "Multi-View: Tabs and Windows" # the fix
+   ```
+
+   It applies to **any** key, not a fixed list — the instance measured in the
+   wild was a `title:`, not a `description:`. Only *unquoted plain scalars*
+   count: a URL (`https://example.com`), a timestamp (`12:30`), a ratio
+   (`16:9`), an already-quoted value, a multi-line quoted scalar, the interior
+   of a `|`/`>` block scalar, and a flow **sequence** are all left alone — in an
+   unquoted value the colon must be followed by a **space or a tab** to mean
+   anything. A flow **mapping** IS scanned rather than skipped, so
+   `meta: {name: Multi-View: Tabs, x: 1}` names `name`: the issue measured that
+   shape in the wild, so it is a true instance rather than a false-positive
+   class. A single-line flow mapping is scanned one level in by a dedicated
+   pass; one written across several lines is caught by the ordinary line scan,
+   because each of its inner entries sits on a line of its own. Detection
+   confirms every candidate against a real YAML parse, not a regex alone. This
+   bucket is **advisory even by `lint`'s standards**: with
+   entrypoints, one of only two buckets never counted as a finding, so it
+   cannot gate `--strict`.
+   See [Strict mode](#strict-mode) for why that is safe rather than lenient.
 
 | Flag | Default | Purpose |
 |---|---|---|
 | `--today` | now | Date (`YYYY-MM-DD`) used for the staleness check; honours `SOURCE_DATE_EPOCH`. |
 | `--json` | `false` | Emit the report as deterministic JSON (schema `binder.report/v1`, `command:"lint"`). See [JSON output](#json-output---json-and-the-exit-code-contract). |
-| `--strict` | `false` | Gate (exit 1) when any finding is present. Entrypoints are advisory and never gate. Without it `lint` never gates (exit 0). See [Strict mode](#strict-mode). |
+| `--strict` | `false` | Gate (exit 1) when any finding is present. Entrypoints and unquoted colon-space scalars are advisory and never gate. Without it `lint` never gates (exit 0). See [Strict mode](#strict-mode). |
 | `--entrypoint` | — | Concept id or path (repeatable) to treat as an **entrypoint**, not an orphan, in addition to the general rule and the recognized root. A trailing `.md` is tolerated **in any case** (`x`, `x.md`, and `x.MD` all name concept `x`), but the concept id itself is matched **case-sensitively** — `X` and `X.md` do **not** match concept `x`. |
 
 All findings are **spec-tolerated advisories**: bare `binder lint` always exits
 `0` even with findings (§11 hard conformance stays `validate`'s job over a
-bundle). `--strict` gates **exit 1** when any finding is present. That is the
+bundle). `--strict` gates **exit 1** when any finding is present — except
+unquoted colon-space scalars (check 7), which are never counted and so never
+gate in either mode. That is the
 same shared contract as `convert`/`review`. The report is always emitted before
 the gate signals. A missing or non-directory `<corpus>` path is a usage error
 (exit 2).
@@ -1796,10 +1825,12 @@ greater than zero.
 | `entrypoints` | array of string | Concept IDs with 0 inbound edge that are not orphans: outbound edges, the recognized root (`README.md`), or designated via `--entrypoint` (issue #24). Advisory; never gates. |
 | `stale` | array of string | Concept IDs stale as of `today`. |
 | `schema_violations` | array | Each `{ concept, detail }` — `"missing type"` or `"invalid frontmatter: <err>"`. |
+| `colon_space_scalars` | array | Each `{ concept, detail }`; `detail` names the frontmatter key whose unquoted plain-scalar value contains `": "` (issue #93). Advisory; **never** gates, not even under `--strict`. |
 
 All list fields are `[]` when empty. `lint`'s exit code follows the shared
 contract: `0` by default (findings are advisories), `1` under `--strict` when any
-finding is present. See the [exit-code contract](#exit-code-contract).
+finding is present — `colon_space_scalars` excepted, which is never counted. See
+the [exit-code contract](#exit-code-contract).
 
 ### `infer --json` — `result` fields
 
@@ -1999,7 +2030,7 @@ The per-command contract:
 |---|---|---|
 | `validate` | trust advisories (malformed trust, actor-convention, date-shape warnings) | spec §11 hard non-conformance (unparseable frontmatter, missing/empty `type`) |
 | `review` | any review finding: orphans, stale concepts, unresolved links, unparsed-frontmatter recoveries | — |
-| `lint` | any lint finding: broken links, missing titles, orphans, stale, schema violations | — |
+| `lint` | any lint finding: broken links, missing titles, orphans, stale, schema violations. The unquoted colon-space advisory is excluded and never gates (see below) | — |
 | `convert` | unresolved links, recovery warnings, or non-conformant `--status-map` status values | — (a clean run is exit `0` even under `--strict`) |
 | `enrich` | skipped (unparseable-frontmatter) files, preserve-or-advise findings, or non-conformant `--status-map` status values. The read-boundary normalization advisory is excluded and never gates (see below) | — (a clean run is exit `0` even under `--strict`) |
 | `infer` | any warning or inference failure (in practice, Gemini-tier warnings — the deterministic tiers do not warn) | — |
@@ -2022,6 +2053,26 @@ reports its own read-boundary advisory, which does not gate either; see the
 `convert` row above for what `convert --strict` does gate on. Bound 6 of
 *Residual bounds* under [`enrich`](/binder/reference/user-guide/#enrich) covers
 what the normalization does to the bytes.
+
+**The unquoted colon-space advisory never gates either.** When `lint` reports a
+frontmatter key whose unquoted plain-scalar value contains a colon-space
+([#93](https://github.com/ghchinoy/binder/issues/93)) it names the key to quote
+in the prose report and in `--json` under `result.colon_space_scalars`, but
+keeps it out of the findings count, so `--strict` does not escalate it. The
+reason is not squeamishness about a new rule, and it is not a claim about YAML's
+quoting rules: a colon-space can appear in plenty of documents that parse
+perfectly well, for instance inside a block scalar, where it is ordinary text and
+not a key at all. The guarantee comes from the wiring instead. The advisory is
+*derived only for a file the codec could not parse* — `convert` computes it from
+the same `recovered` flag that produces the `invalid frontmatter` schema
+violation, so the file carrying an advisory is *always* already reported by that
+violation, and that violation **does** gate under `--strict`. Counting the
+advisory too would gate twice on one defect. Nothing goes unreported; the
+advisory only says which key to quote in a file already flagged. Removing that
+gate would not be a simplification: it is the whole of the never-gates
+guarantee, and without it the rule can name a "key" in a cleanly-parsing file
+with no violation to subsume it. `result.colon_space_scalars` is additive
+to `binder.report/v1` (the schema string is unbumped).
 
 The `--status-map` vocabulary gate is the one that fires **before** anything is
 written: `convert --strict` exits `1` without creating the output directory, and
@@ -3625,9 +3676,11 @@ community-core codec adapter. This guide grows a full section for each as it lan
   [Strict mode](#strict-mode).
   [#7](https://github.com/ghchinoy/binder/issues/7)
 - **`binder lint`** — ✅ shipped: a standalone **source-corpus** linter reporting
-  broken links, missing titles, orphans, staleness, and schema violations, with
-  `--strict` for a non-zero CI gate. See [`lint`](#lint).
-  [#8](https://github.com/ghchinoy/binder/issues/8)
+  broken links, missing titles, orphans, staleness, schema violations, and
+  unquoted colon-space scalars, with `--strict` for a non-zero CI gate (the
+  colon-space advisory is never counted and never gates). See [`lint`](#lint).
+  [#8](https://github.com/ghchinoy/binder/issues/8),
+  [#93](https://github.com/ghchinoy/binder/issues/93)
 - **Richer root `index.md`** — ✅ shipped: `--group-by-type` appends an additive,
   type-grouped `# Catalog` to the root index, and `--include-backlinks` /
   `--include-graph` annotate entries with inbound/outbound resolved edges. See

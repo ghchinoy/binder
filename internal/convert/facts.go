@@ -20,6 +20,11 @@ type SourceFacts struct {
 	TypePresent  bool   `json:"type_present"`  // authored type: in frontmatter (before defaulting)
 	Recovered    bool   `json:"recovered"`     // frontmatter did not parse (invalid YAML) — preserved as body
 	RecoverErr   string `json:"recover_err"`   // the frontmatter parse error, when Recovered (else empty)
+	// ColonSpaceKeys names the frontmatter keys whose value is an unquoted plain
+	// scalar containing a colon-space (": ") — the most common OKF authoring
+	// defect in the wild (issue #93), e.g. `title: Multi-View: Tabs and Windows`.
+	// Document order; empty when the file is clean. See colonSpaceKeys.
+	ColonSpaceKeys []string `json:"colon_space_keys,omitempty"`
 }
 
 // authoredTitlePresent reports whether the file carries a title as authored: a
