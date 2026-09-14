@@ -1,8 +1,19 @@
 package infer
 
 import (
+	"context"
 	"strings"
 )
+
+// GeminiClient is the interface for semantic taxonomy inference. It is
+// deliberately free of any google.golang.org/genai type, so packages that only
+// need to offer or drive infer (the shared service, the CLI request) can name it
+// without pulling the cloud SDK. The concrete implementation lives in
+// internal/gemini (constructed by the adapter and injected via
+// Options.NewGeminiClient); tests inject a fake.
+type GeminiClient interface {
+	InferDirectoryTypes(ctx context.Context, dirs map[string][]string, sampleTitles map[string][]string) (map[string]string, error)
+}
 
 // SignalSource identifies the tier/mechanism that produced a type suggestion.
 const (
@@ -57,5 +68,14 @@ type Options struct {
 	GeminiBackend  string // "auto" | "api" | "vertex"
 	GeminiAPIKey   string
 	GeminiRequired bool
-	GeminiClient   GeminiClient // optional mock for testing
+	GeminiClient   GeminiClient // optional pre-built client (tests inject a mock)
+
+	// NewGeminiClient constructs the concrete Gemini client when UseGemini is set
+	// and no GeminiClient was pre-injected. It is a factory the ADAPTER supplies
+	// (cmd/infer.go injects internal/gemini.New) so that google.golang.org/genai
+	// and its GEMINI_API_KEY / GOOGLE_CLOUD_PROJECT env reads stay OUT of this
+	// package — and therefore off the shared service seam (design §6 Phase 4 /
+	// Residual Risk 7). When nil, the Gemini tier is simply unavailable rather
+	// than reaching for a concrete SDK from the core.
+	NewGeminiClient func(ctx context.Context, opts Options) (GeminiClient, string, string, error)
 }

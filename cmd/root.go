@@ -153,7 +153,7 @@ func NewRootCmd() *cobra.Command {
 	root.AddCommand(newProjectCmd(codec))
 	root.AddCommand(newMCPCmd(codec))
 	root.AddCommand(newInferCmd(codec, cfg))
-	root.AddCommand(newConfigCmd(cfg))
+	root.AddCommand(newConfigCmd(codec, cfg))
 	return root
 }
 
