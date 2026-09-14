@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Version-literal drift gate for plugin JSON transcripts (issue #169).
+# Version-literal drift gate for the documented JSON transcripts (issue #169;
+# scan widened from plugins/ to docs/ and README.md by issue #185).
 #
 # Builds a STAMPED binder (the real release tag injected via the same ldflag
 # goreleaser uses), then runs scripts/check-transcript-versions.py against it.
@@ -24,4 +25,7 @@ echo "==> building stamped binder (cmd.Version=${STAMP_VERSION})"
 go build -ldflags "-X github.com/ghchinoy/binder/cmd.Version=${STAMP_VERSION}" -o "$BIN" .
 
 echo "==> stamped binder --version: $("$BIN" --version)"
-exec python3 scripts/check-transcript-versions.py plugins "$BIN"
+# The repo root is the BASE; the scanned roots (plugins/, docs/, README.md) are
+# the checker's own SCAN_ROOTS list, so they stay next to the coverage inventory
+# that must move with them.
+exec python3 scripts/check-transcript-versions.py . "$BIN"

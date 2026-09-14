@@ -86,6 +86,12 @@ under [`enrich`](docs/user_guide.md#enrich).
   (`--gemini`). It is proposal-only and never writes to disk.
 - **`config`** manages persistent configuration (`get`, `set`, `unset`, `list`)
   and displays the resolved effective configuration with source attribution.
+- **`project`** projects a bundle into offline, credential-free property-graph
+  DDL for Spanner SQL/PGQ: `schema.ddl`, the loader rows (`nodes.csv`,
+  `edges.csv`, `load.sql`), and the provenance artifacts (`node_verified.csv`,
+  `derivation.sql`). It reuses the same node/edge model as `graph`, writes to
+  `--out`, and prints a `binder.report/v1` summary; `--target spanner` is the
+  only value this release accepts.
 - **`mcp`** runs binder as a stdio MCP server, exposing **seven** tools: the
   additive verbs (`convert`/`validate`/`review`/`lint`/`graph`) plus the two
   read-only graph tools `list_graphs` (schema introspection) and `query_graph`
@@ -179,7 +185,7 @@ go install github.com/ghchinoy/binder@latest
 ```
 
 `go install` stamps the binary cleanly, exactly like Homebrew and the direct
-download: `binder --version` prints `binder/0.3.0`, no leading `v`.
+download: `binder --version` prints `binder/<version>`, no leading `v`.
 
 > **Winget**: not published yet (tracked in
 > [#40](https://github.com/ghchinoy/binder/issues/40)). Windows users: take the
@@ -282,7 +288,7 @@ binder validate path/to/bundle --json
 
 ```json
 {
-  "binder": "binder/0.3.0",
+  "binder": "binder/0.5.3",
   "command": "validate",
   "schema": "binder.report/v1",
   "result": {
@@ -504,11 +510,10 @@ schemas and examples.
 
 ## Roadmap
 
-**Shipped today** (the complete v0.3.0 surface, checkable against
-`binder --help`):
+**Shipped today** (the complete surface, checkable against `binder --help`):
 
 - the CLI verbs `convert`, `validate`, `index`, `review`, `lint`, `infer`,
-  `graph`, `config`, and `enrich`, plus the stdio
+  `graph`, `config`, `enrich`, and `project`, plus the stdio
   [MCP server](#mcp-server-binder-mcp) (`binder mcp`);
 - the `okf-convert` [Agent Skill / Plugin](#agent-skill--plugin);
 - the declarative trust/lifecycle flags `--status-map`, `--stale-after-map`,
