@@ -5,12 +5,19 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/ghchinoy/binder/internal/binder"
 	"github.com/ghchinoy/binder/internal/clijson"
 	"github.com/ghchinoy/binder/internal/config"
+	"github.com/ghchinoy/binder/internal/okf"
 )
 
-func newConfigCmd(cfg *config.Config) *cobra.Command {
+func newConfigCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 	var jsonOut bool
+
+	// Construct the shared service ONCE. config get/set/unset now emit their JSON
+	// through typed service results (the binder.config/v1 contract), while the
+	// viper/pflag substrate and file I/O stay here at the adapter edge.
+	svc := binder.New(codec)
 
 	printConfig := func(cmd *cobra.Command) error {
 		resolved := cfg.Resolve()
@@ -75,12 +82,13 @@ func newConfigCmd(cfg *config.Config) *cobra.Command {
 
 			out := cmd.OutOrStdout()
 			if jsonOut {
-				result := map[string]any{
-					"key":    canonical,
-					"value":  val,
-					"source": source,
-				}
-				if err := clijson.EncodeSchema(out, Version, "config get", config.SchemaVersion, result); err != nil {
+				res := svc.ConfigGet(binder.ConfigGetRequest{
+					Version: Version,
+					Key:     canonical,
+					Value:   val,
+					Source:  source,
+				})
+				if err := res.EncodeJSON(out); err != nil {
 					return fmt.Errorf("encoding json report: %w", err)
 				}
 				return nil
@@ -124,13 +132,13 @@ func newConfigCmd(cfg *config.Config) *cobra.Command {
 
 			out := cmd.OutOrStdout()
 			if jsonOut {
-				result := map[string]any{
-					"key":    canonical,
-					"value":  val,
-					"file":   targetFile,
-					"status": "updated",
-				}
-				if err := clijson.EncodeSchema(out, Version, "config set", config.SchemaVersion, result); err != nil {
+				res := svc.ConfigSet(binder.ConfigSetRequest{
+					Version: Version,
+					Key:     canonical,
+					Value:   val,
+					File:    targetFile,
+				})
+				if err := res.EncodeJSON(out); err != nil {
 					return fmt.Errorf("encoding json report: %w", err)
 				}
 				return nil
@@ -171,16 +179,13 @@ func newConfigCmd(cfg *config.Config) *cobra.Command {
 
 			out := cmd.OutOrStdout()
 			if jsonOut {
-				status := "removed"
-				if !existed {
-					status = "noop"
-				}
-				result := map[string]any{
-					"key":    canonical,
-					"file":   targetFile,
-					"status": status,
-				}
-				if err := clijson.EncodeSchema(out, Version, "config unset", config.SchemaVersion, result); err != nil {
+				res := svc.ConfigUnset(binder.ConfigUnsetRequest{
+					Version: Version,
+					Key:     canonical,
+					File:    targetFile,
+					Existed: existed,
+				})
+				if err := res.EncodeJSON(out); err != nil {
 					return fmt.Errorf("encoding json report: %w", err)
 				}
 				return nil
