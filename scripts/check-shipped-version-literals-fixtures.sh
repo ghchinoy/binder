@@ -38,6 +38,18 @@
 # scripts/lib/stamped_version.py so the helper that BUILDS the binary is also the
 # one that decides it is fit to gate against; unifying two predicates is exactly
 # the change that can quietly relax one, so the table is run rather than trusted.
+#
+# Case 12 attacks the DISCOVERER rather than a document, and it exists because
+# every other case here attacks a document. Round-1 review found that the breadth
+# sweep — the one scanner with no floor — could be collapsed to zero commands by
+# rewording Cobra's "Available Commands:" header, after which the gate scanned 4
+# surfaces instead of 19 and EXITED 0. The failure mode was reporting a SMALLER
+# UNIVERSE rather than reporting a finding, which no document-level case can see.
+#
+# Case 13 locks `--fix`, which rewrites the documented transcripts to the
+# binary's own derived output so a release does not need a hand edit (#60 AC3).
+# It asserts the postcondition — red, then repair, then a CLEAN re-run against
+# the new version — not merely that the command exited.
 
 set -uo pipefail
 
@@ -61,7 +73,7 @@ FAIL=0
 # The number of cases this harness MUST run, asserted at the end against
 # PASS+FAIL so the harness cannot itself pass vacuously — same reasoning as
 # scripts/check-transcript-versions-fixtures.sh. Update when adding a case.
-EXPECTED_CASES=11
+EXPECTED_CASES=13
 
 # copy_tree — copy the working tree (minus VCS and node_modules) into a fresh
 # temp dir and echo its path. The copy is what gets patched, so the real tree is
@@ -407,6 +419,89 @@ else
   FAIL=$((FAIL + 1))
 fi
 rm -rf "$DOCDARK"
+
+# [12] THE DISCOVERER GOES DARK (round-1 review, R1). Every case above attacks a
+#      DOCUMENT; this one attacks the thing that decides what to look at. The
+#      breadth sweep finds commands by parsing Cobra's English "Available
+#      Commands:" header, so a Cobra upgrade or a reworded help template
+#      collapses discovery to zero — and before the floor was added, the gate
+#      scanned 4 surfaces instead of 19, found nothing to disagree with, and
+#      EXITED 0. A vacuous pass inside the gate built to remove vacuous passes.
+#
+#      The stand-in is the real stamped binary with ONLY that header reworded, so
+#      every must-reach surface still emits its literals and the must-reach floor
+#      stays satisfied. The red must therefore come from the discovery floor
+#      specifically, which is what makes this case a lock on R1 rather than a
+#      restatement of case 4.
+DARKDISC="$(mktemp -d)"
+if bin="$(build_stamped_binder)"; then
+  cat > "$DARKDISC/binder" <<PY
+#!/usr/bin/env python3
+import subprocess, sys
+p = subprocess.run(["$bin"] + sys.argv[1:], capture_output=True, text=True)
+sys.stdout.write(p.stdout.replace("Available Commands:", "Subcommands:"))
+sys.stderr.write(p.stderr)
+sys.exit(p.returncode)
+PY
+  chmod +x "$DARKDISC/binder"
+  # The stand-in must still be a CERTIFIABLE binder, or this case would red for
+  # the wrong reason and prove nothing about discovery.
+  if [ "$("$DARKDISC/binder" --version)" != "$("$bin" --version)" ]; then
+    echo "  SETUP-FAIL  stand-in binary does not report the real version"
+    FAIL=$((FAIL + 1))
+  elif "$DARKDISC/binder" --help 2>&1 | grep -qF "Available Commands:"; then
+    echo "  SETUP-FAIL  stand-in still emits the discovery header; mutation was a no-op"
+    FAIL=$((FAIL + 1))
+  else
+    out="$(python3 "$CHECKER" "$DARKDISC/binder" 2>&1)"; rc=$?
+    # Require the DISCOVERY floor by name, and require that no drift finding is
+    # what produced the red: discovery went dark without any document changing.
+    if [ "$rc" -eq 1 ] && echo "$out" | grep -qF "sweep:discovery" \
+       && echo "$out" | grep -qF "0 drift finding(s)"; then
+      echo "  PASS  command discovery goes dark -> exit 1 (discovery floor) (exit $rc)"
+      PASS=$((PASS + 1))
+    else
+      echo "  FAIL  command discovery goes dark: expected exit 1 +" \
+           "sweep:discovery coverage failure with 0 drift findings, got exit $rc"
+      echo "$out" | sed 's/^/        | /'
+      FAIL=$((FAIL + 1))
+    fi
+  fi
+else
+  echo "  FAIL  command discovery goes dark: stamped build failed"
+  FAIL=$((FAIL + 1))
+fi
+rm -rf "$DARKDISC"
+
+# [13] --fix REPAIRS THE TRANSCRIPTS FROM THE BINARY (round-1 review, R2).
+#      #60's AC3 says tutorial.md must stop needing a per-release edit. The gate
+#      derives the correct line in order to compare it, so --fix writes that same
+#      derived line back. Asserted as a POSTCONDITION: after --fix the tree is
+#      clean against the NEW version, and the repair equals the binary's own
+#      output rather than anything this harness typed.
+FIXTREE="$(copy_tree)"
+if bin999="$(cd "$FIXTREE" && BINDER_STAMP_VERSION=v9.9.9 build_stamped_binder 2>/dev/null)"; then
+  before="$(python3 "$CHECKER" "$bin999" "$FIXTREE" 2>&1)"; rc_before=$?
+  python3 "$CHECKER" "$bin999" "$FIXTREE" --fix >/dev/null 2>&1; rc_fix=$?
+  after="$(python3 "$CHECKER" "$bin999" "$FIXTREE" 2>&1)"; rc_after=$?
+  # The repaired text must be the binary's, and must mention the new version.
+  if [ "$rc_before" -eq 1 ] && echo "$before" | grep -qF "[DOC-DRIFT]" \
+     && [ "$rc_fix" -eq 1 ] \
+     && [ "$rc_after" -eq 0 ] \
+     && grep -qF "binder/9.9.9" "$FIXTREE/docs/tutorial.md"; then
+    echo "  PASS  --fix repairs transcripts from the binary -> clean re-run (exit $rc_after)"
+    PASS=$((PASS + 1))
+  else
+    echo "  FAIL  --fix: expected red(1) then fix(1) then clean(0) with 9.9.9" \
+         "written into tutorial.md; got $rc_before/$rc_fix/$rc_after"
+    echo "$after" | sed 's/^/        | /'
+    FAIL=$((FAIL + 1))
+  fi
+else
+  echo "  FAIL  --fix: stamped build failed"
+  FAIL=$((FAIL + 1))
+fi
+rm -rf "$FIXTREE"
 
 # [11] THE CERTIFIER'S TRUTH TABLE, in both policy modes.
 #      Certification moved out of the two gates and into

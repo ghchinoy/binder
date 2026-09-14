@@ -26,4 +26,9 @@ cd "$REPO_ROOT"
 source "$REPO_ROOT/scripts/lib/stamped-binder.sh"
 
 BIN="$(build_stamped_binder)"
-exec python3 scripts/check-shipped-version-literals.py "$BIN"
+
+# Arguments are forwarded so the release runbook can call `--fix` (see
+# docs/RELEASING.md step 3), which rewrites the documented invalid-actor
+# transcripts to this binary's own output instead of merely reporting the drift.
+# Pass no arguments for the CI behaviour: report only, change nothing.
+exec python3 scripts/check-shipped-version-literals.py "$BIN" "$@"
