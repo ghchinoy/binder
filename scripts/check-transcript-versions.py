@@ -46,9 +46,10 @@ So this gate is scoped so it STRUCTURALLY cannot touch the prose references:
 # visited and checked; a broken discovery path (empty/wrong base, moved file,
 # renamed fence tag, changed glob) fails LOUD instead of passing green.
 
-Exit non-zero if any pinned literal drifts OR if any must-track location was not
-reached (vacuous-pass guard); exit 0 only when every must-track location was
-visited and every checked literal matches the stamped binary.
+Exit non-zero if any pinned literal drifts OR if any must-track location does not
+yield exactly the declared number of literals (vacuous-pass guard); exit 0 only
+when every must-track location was visited in full and every checked literal
+matches the stamped binary.
 
 Usage: check-transcript-versions.py <base-dir> <stamped-binder-binary>
 
@@ -94,6 +95,24 @@ VERSION_LITERAL = re.compile(r"binder/(\d+\.\d+\.\d+)")
 # refs), tracked in #176 rather than left as tribal knowledge.
 PROSE_PROVENANCE = re.compile(r"captured from real `binder/(\d+\.\d+\.\d+)` output")
 
+# PROSE RULE ORDER — THERE ISN'T ONE, DELIBERATELY (#185 round 2, O1).
+#
+# Two rules read the same prose line: PROSE_PROVENANCE (pins the one
+# capture-provenance sentence) and NO_UNPINNED_PROSE (reports any other literal
+# in a listed file). They used to be chained — a provenance match `continue`d,
+# SHADOWING the second rule for the rest of that line, so a line carrying a
+# correct provenance sentence AND a stale literal produced zero findings. The
+# result depended on which rule ran first, which is a property of the code's
+# shape rather than of the rules.
+#
+# So each literal is now classified exactly once, by WHERE IT IS rather than by
+# WHICH RULE RAN FIRST: the provenance pass records the character span of every
+# literal it pins, and the no-unpinned-prose pass skips literals inside those
+# spans and reports the rest. Adding a third prose rule means adding another
+# pass that contributes spans; it cannot silence an existing rule by running
+# before it, and no rule needs to know the others exist. Fixture case [15] is
+# the shadowing line, and expects both the finding and the count.
+#
 # Schema literal inside a JSON envelope, used to classify which must-track
 # envelope a discovered version literal belongs to (report vs config).
 #
@@ -174,9 +193,24 @@ NO_UNPINNED_PROSE_ALLOW = {}
 # The per-location COUNT (added with the #185 roots) is what makes presence
 # meaningful in a file holding several envelopes: `docs/user_guide.md` carries
 # four report envelopes, so bare presence would still be satisfied after three of
-# them lost their fence tag. It is a minimum, so ADDING a transcript needs no
-# change here; removing or hiding one fails loud and the message says by how
-# much. Update the count when a transcript is legitimately removed.
+# them lost their fence tag.
+#
+# The count is EXACT, not a floor (#185 round 2, O3). A floor is silent about
+# ADDING a transcript, which sounds harmless and is not: the inventory then
+# drifts away from the tree it is supposed to describe, unreviewed, and the
+# declared numbers stop meaning anything. Exact makes adding a transcript a loud,
+# one-line event — update the number in the same commit that adds the block, and
+# the reviewer sees the count change.
+#
+# KNOWN LIMIT, stated rather than papered over: this is CARDINALITY, not
+# identity. Adding one transcript while hiding another in the same file and the
+# same commit nets zero and passes, under an exact count exactly as under a
+# floor — cardinality cannot distinguish four literals from a different four.
+# Exact narrows it (the add alone is now loud, so the pair has to be
+# simultaneous), but only per-literal identity would close it, which would mean
+# anchoring the inventory to each transcript's content and re-deriving it on
+# every doc edit. Not worth that cost for this failure shape; documented here so
+# nobody mistakes the guard for more than it is.
 _SKILL = "plugins/okf-convert/skills/okf-convert/SKILL.md"
 _CONTRACT = "plugins/okf-convert/skills/okf-convert/references/binder-json-contract.md"
 _GUIDE = "docs/user_guide.md"
@@ -223,6 +257,31 @@ def main() -> int:
             f'  go build -ldflags "-X github.com/ghchinoy/binder/cmd.Version='
             f'$(git describe --tags --abbrev=0)" -o <bin> .\n'
             f"before running this gate.\n"
+        )
+        return 2
+
+    # O2 (#185 round 2): an allowlist entry for the CURRENT version is a
+    # permanent silent exemption, not an exemption for one historical literal.
+    # The entry survives the release it was written against, so the day 0.5.3
+    # stops being current, every 0.5.3 literal README carries goes stale with
+    # the rule switched off over it — protection that looks like protection and
+    # is not. A historical reference is by definition NOT the version now
+    # shipping, so this can never reject a legitimate entry.
+    stamped_version = expected.split("/", 1)[1]
+    current_entries = [
+        (path, ver) for (path, ver) in NO_UNPINNED_PROSE_ALLOW
+        if ver == stamped_version
+    ]
+    if current_entries:
+        sys.stderr.write(
+            f"FATAL: NO_UNPINNED_PROSE_ALLOW exempts the CURRENT stamped "
+            f"version {expected}: "
+            + ", ".join(f"({p!r}, {v!r})" for p, v in current_entries)
+            + ".\nThe allowlist is for literals that must NOT track the "
+            "release; the current version is precisely the one that must. "
+            "Such an entry would silently exempt that literal forever, "
+            "starting the moment this version stops being current. Remove "
+            "the entry and fix the literal instead.\n"
         )
         return 2
 
@@ -283,30 +342,59 @@ def main() -> int:
                     block_lines = []
                     blocks += 1
                     continue
-                # PROSE provenance check runs on non-fenced text only.
-                m = PROSE_PROVENANCE.search(line)
-                if m:
+                # PROSE provenance check runs on non-fenced text only. Every
+                # match is recorded, and the character span of each literal it
+                # pins is collected so the no-unpinned-prose rule below can skip
+                # exactly those literals — see PROSE RULE ORDER above.
+                pinned_spans = []
+                for m in PROSE_PROVENANCE.finditer(line):
                     visited[(relpath(f), "prose-provenance")] += 1
+                    pinned_spans.append(m.span(1))
                     if ("binder/" + m.group(1)) != expected:
                         findings.append(
                             (str(f), lineno, "PROSE-PROVENANCE",
                              f"provenance sentence says binder/{m.group(1)}, "
                              f"stamped binary emits {expected}")
                         )
-                    continue
                 # No-unpinned-prose files: outside a JSON fence, a version
                 # literal here is unpinnable by construction, so report it
                 # rather than let it rot. Already-pinned provenance sentences
                 # are handled above and never reach this.
+                # NO-UNPINNED-PROSE. Runs on every prose line of a listed
+                # file, INCLUDING a line that also carried a provenance
+                # sentence: see PROSE RULE ORDER above. Literals already pinned
+                # by a prose rule are skipped by span, not by short-circuit.
                 if relpath(f) in NO_UNPINNED_PROSE:
                     for m in VERSION_LITERAL.finditer(line):
+                        if any(a <= m.start(1) and m.end(1) <= b
+                               for a, b in pinned_spans):
+                            continue  # already pinned by a prose rule above
                         if (relpath(f), m.group(1)) in NO_UNPINNED_PROSE_ALLOW:
                             continue  # documented historical reference
+                        # BOTH remedies, because this message is where the
+                        # decision actually gets made (#185 round 2, R2). Naming
+                        # only the placeholder tells a maintainer who wrote a
+                        # legitimate historical reference to DESTROY CORRECT
+                        # CONTENT, and the next cheapest move after that is
+                        # deleting the rule — which is what the allowlist above
+                        # exists to prevent. Whoever reads this is deciding
+                        # between the two cases right now, and only one of them
+                        # is a stale literal.
                         findings.append(
                             (str(f), lineno, "PROSE-UNPINNED",
                              f"unpinned version literal binder/{m.group(1)} "
-                             f"outside a JSON fence; no gate can track it — use "
-                             f"the `binder/<version>` placeholder instead")
+                             f"outside a JSON fence; no gate can track it. "
+                             f"If it should TRACK the release, write the "
+                             f"`binder/<version>` placeholder or a real JSON "
+                             f"envelope instead. If it is a LEGITIMATE "
+                             f"HISTORICAL reference that must NOT track the "
+                             f"release (a floor, a historical note, a "
+                             f"measured-with label, an actor-grammar example), "
+                             f"KEEP THE TEXT and add one line to "
+                             f"NO_UNPINNED_PROSE_ALLOW in this script: "
+                             f'("{relpath(f)}", "{m.group(1)}"): '
+                             f'"historical: <why this must not track>" — do '
+                             f"not delete the rule to silence this")
                         )
                 continue
             # inside a fenced JSON block
@@ -324,7 +412,7 @@ def main() -> int:
     coverage_fail = [
         (path, key, want, label, visited[(path, key)])
         for path, key, want, label in EXPECTED_COVERAGE
-        if visited[(path, key)] < want
+        if visited[(path, key)] != want
     ]
 
     print(f"# version-literal gate: {len(SCAN_ROOTS)} scan root(s) "
@@ -341,8 +429,13 @@ def main() -> int:
               "cause: a moved file, a renamed/removed fence tag, or a changed "
               "path glob.")
         for path, key, want, label, got in coverage_fail:
+            why = ("discovery is broken — a moved file, a renamed fence tag"
+                   if got < want else
+                   "a transcript was ADDED — update the count in "
+                   "EXPECTED_COVERAGE in the same commit")
             print(f"# MISSING-COVERAGE: {path} [{key}] ({label}): expected "
-                  f">= {want} literal(s) under {base}, checked {got}")
+                  f"exactly {want} literal(s) under {base}, checked {got} "
+                  f"({why})")
     print(f"# {len(findings)} drift finding(s), "
           f"{len(coverage_fail)} coverage failure(s), "
           f"{len(missing_roots)} missing scan root(s)")

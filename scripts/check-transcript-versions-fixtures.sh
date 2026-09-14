@@ -35,6 +35,10 @@ go build -ldflags "-X github.com/ghchinoy/binder/cmd.Version=${STAMP_VERSION}" -
 echo "==> stamped binder --version: $("$BIN" --version)"
 echo
 
+# The stamped version as the docs spell it (no leading "v"), for the cases that
+# must construct a literal carrying the CURRENT version.
+CURRENT="${STAMP_VERSION#v}"
+
 PASS=0
 FAIL=0
 
@@ -45,21 +49,34 @@ FAIL=0
 # "ran at least one" floor is weaker — it would not catch losing three of seven —
 # exactly the inventory-over-floor reasoning from round 2. Update this when you
 # add or remove a case.
-EXPECTED_CASES=15
+EXPECTED_CASES=18
 
-# assert_exit <label> <docroot> <expected-exit> [want-substring] [checker]
-# [checker] defaults to the real checker; the allowlist case passes a patched
-# copy, since the allowlist lives in the script rather than in the doc tree.
+# assert_exit <label> <docroot> <expected-exit> [want] [checker]
+# [want] is a substring of the output, or several joined by " && " when a case
+# needs to assert more than one thing about the same run (e.g. WHICH finding
+# fired and HOW MANY did). [checker] defaults to the real checker; the allowlist
+# cases pass a patched copy, since the allowlist lives in the script rather than
+# in the doc tree.
 assert_exit() {
   local label="$1" docroot="$2" expected="$3" want="${4:-}" checker="${5:-$CHECKER}"
-  local out actual
+  local out actual all_found=1 part
   out="$(python3 "$checker" "$docroot" "$BIN" 2>&1)"
   actual=$?
-  if [ "$actual" -eq "$expected" ] && { [ -z "$want" ] || echo "$out" | grep -qF "$want"; }; then
+  if [ -n "$want" ]; then
+    local rest="$want"
+    while [ -n "$rest" ]; do
+      case "$rest" in
+        *" && "*) part="${rest%%" && "*}"; rest="${rest#*" && "}" ;;
+        *)        part="$rest"; rest="" ;;
+      esac
+      echo "$out" | grep -qF "$part" || all_found=0
+    done
+  fi
+  if [ "$actual" -eq "$expected" ] && [ "$all_found" -eq 1 ]; then
     echo "  PASS  $label (exit $actual)"
     PASS=$((PASS + 1))
   else
-    echo "  FAIL  $label: expected exit $expected${want:+ + substring '$want'}, got exit $actual"
+    echo "  FAIL  $label: expected exit $expected${want:+ + '$want'}, got exit $actual"
     echo "$out" | sed 's/^/        | /'
     FAIL=$((FAIL + 1))
   fi
@@ -369,6 +386,58 @@ plant_drift "$SHIFT_DRIFT/$GUIDE_REL" "$A_GUIDE_CONFIG"
 assert_exit "37 lines inserted above the target, drifted -> exit 1 at the shifted line" \
   "$SHIFT_DRIFT" 1 "docs/user_guide.md:$((SHIFT_BASE + 37))"
 rm -rf "$SHIFT_DRIFT"
+
+# --- #185 round 2: rule interaction, allowlist abuse, inventory drift -------
+
+# [15] PROSE RULE SHADOWING. One README line carrying BOTH a correct provenance
+#      sentence and a stale literal. The provenance rule used to `continue` on a
+#      match, which silenced the no-unpinned-prose rule for the rest of that line
+#      — a crafted line like this produced ZERO findings. The rules are now
+#      span-based rather than chained, so each literal is classified once by
+#      where it is, not by which rule ran first. Two assertions: the stale
+#      literal IS reported, and the provenance literal is NOT double-reported
+#      (exactly one finding, not two).
+SHADOW="$(fresh_copy)"
+plant_prose "$SHADOW/$README_REL" "$A_README_PROSE" \
+  's#$# It was captured from real `binder/'"$CURRENT"'` output, unlike binder/0.3.0.#'
+assert_exit "provenance sentence must not shadow the unpinned-prose rule -> exit 1" \
+  "$SHADOW" 1 "[PROSE-UNPINNED] && 1 drift finding(s)"
+rm -rf "$SHADOW"
+
+# [16] ALLOWLISTING THE CURRENT VERSION IS REFUSED. An entry for the version now
+#      shipping is not an exemption for one historical literal, it is a permanent
+#      silent exemption that switches the rule off over that literal the moment
+#      this release stops being current. Exit 2 (a configuration error), not 1:
+#      the tree is fine, the gate's own configuration is not.
+ALLOW_CURRENT="$(fresh_copy)"
+CUR_CHECKER="$(mktemp -d)/check-transcript-versions.py"
+sed 's#^NO_UNPINNED_PROSE_ALLOW = {}$#NO_UNPINNED_PROSE_ALLOW = {("README.md", "'"$CURRENT"'"): "fixture: exempts the current version"}#' \
+  "$CHECKER" > "$CUR_CHECKER"
+assert_exit "allowlist entry for the CURRENT version -> exit 2" "$ALLOW_CURRENT" 2 \
+  "exempts the CURRENT stamped version" "$CUR_CHECKER"
+rm -rf "$ALLOW_CURRENT" "$(dirname "$CUR_CHECKER")"
+
+# [17] INVENTORY DRIFT: a transcript ADDED without updating the count -> RED.
+#      Under a floor this was silent, which let the declared numbers drift away
+#      from the tree they describe. Exact counts make it a loud one-line event.
+#      The appended block is a correct, current-version envelope: nothing here is
+#      drift, which is the point — the failure is the inventory, and the message
+#      says so.
+ADDED="$(fresh_copy)"
+cat >> "$ADDED/$GUIDE_REL" <<EOF
+
+\`\`\`json
+{
+  "binder": "binder/$CURRENT",
+  "command": "lint",
+  "schema": "binder.report/v1",
+  "result": { }
+}
+\`\`\`
+EOF
+assert_exit "transcript added without updating the inventory -> exit 1" "$ADDED" 1 \
+  "expected exactly 4 literal(s) && checked 5 && a transcript was ADDED"
+rm -rf "$ADDED"
 
 echo
 # Vacuous-pass guard for the harness itself: a harness whose whole job is locking
