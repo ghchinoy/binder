@@ -1,14 +1,14 @@
 # binder
 
 A Go command-line tool that converts a plain-markdown corpus into a conformant
-[Open Knowledge Format (OKF) v0.2](https://github.com/GoogleCloudPlatform/knowledge-catalog)
+[Open Knowledge Format (OKF) v0.2](https://github.com/GoogleCloudPlatform/open-knowledge-format)
 bundle and validates OKF bundles against the spec's conformance rules.
 
 ![license](https://img.shields.io/badge/license-Apache--2.0-blue)
 ![go](https://img.shields.io/badge/go-1.26.1+-00ADD8)
 
 **Available today** — a Go CLI that converts a non-OKF markdown corpus
-into a conformant [OKF v0.2](https://github.com/GoogleCloudPlatform/knowledge-catalog)
+into a conformant [OKF v0.2](https://github.com/GoogleCloudPlatform/open-knowledge-format)
 bundle, extracts every relationship signal (wikilinks, anchor links, frontmatter
 refs, hashtags), maps corpus-native provenance into the trust vocabulary,
 generates per-directory index navigation, validates bundles against the spec's

@@ -142,7 +142,7 @@ tool-agnostic **`okf-authoring`** plugin's reference:
 > `references/trust-vocabulary.md`](https://github.com/ghchinoy/agent-skills/blob/main/plugins/okf-authoring/references/trust-vocabulary.md)
 
 The OKF v0.2 spec those definitions derive from is
-[`GoogleCloudPlatform/knowledge-catalog` → `okf/SPEC.md`](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md).
+[`GoogleCloudPlatform/open-knowledge-format` → `SPEC.md`](https://github.com/GoogleCloudPlatform/open-knowledge-format/blob/main/SPEC.md).
 
 That is a **documentation pointer, not a runtime dependency** — Agent Plugins are
 self-contained and this skill resolves nothing across repos at run time. Note
