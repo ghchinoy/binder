@@ -439,10 +439,16 @@ func TestReleaseExemption(t *testing.T) {
 					"--- expression ---\n%s", exGateWorkflowPath, tc.name, err, cond)
 			}
 			if run != tc.wantRun {
-				verb := map[bool]string{true: "RUNS on", false: "is EXEMPT from"}
+				// Two maps, not one: the indicative reads after "docs-impact",
+				// the infinitive after "must". Sharing one map splices "must"
+				// onto a conjugated verb ("but it must is EXEMPT from it").
+				// "SKIPS", not "is EXEMPT from": the PR is what gets exempted,
+				// so the latter reads as the gate being exempt from the PR.
+				got := map[bool]string{true: "RUNS on", false: "SKIPS"}
+				want := map[bool]string{true: "run on", false: "skip"}
 				t.Fatalf("docs-impact %s the %q PR, but it must %s it: %s.\n"+
 					"--- expression ---\n%s\n--- PR shape ---\n%+v",
-					verb[run], tc.name, verb[tc.wantRun], tc.why, cond, pr)
+					got[run], tc.name, want[tc.wantRun], tc.why, cond, pr)
 			}
 		})
 	}
