@@ -5,9 +5,10 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/ghchinoy/binder/internal/binder"
+	"github.com/ghchinoy/binder/internal/binder/render"
 	"github.com/ghchinoy/binder/internal/clijson"
 	"github.com/ghchinoy/binder/internal/okf"
-	"github.com/ghchinoy/binder/internal/validate"
 )
 
 func newValidateCmd(codec okf.Codec) *cobra.Command {
@@ -15,6 +16,9 @@ func newValidateCmd(codec okf.Codec) *cobra.Command {
 		jsonOut bool
 		strict  bool
 	)
+	// Construct the shared service ONCE with the composition root's codec (it is
+	// stateless and safe for concurrent use); the RunE closure reuses it.
+	svc := binder.New(codec)
 	cmd := &cobra.Command{
 		Use:   "validate <bundle>",
 		Short: "Check a bundle for OKF v0.2 conformance (spec §11)",
@@ -25,52 +29,30 @@ func newValidateCmd(codec okf.Codec) *cobra.Command {
 			"absent trust families.",
 		Args: exactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			result, err := validate.Bundle(args[0], codec, okf.DefaultSpecVersion)
+			// One code path: the service owns validate.Bundle and the spec default.
+			// The adapter only resolves inputs, renders, and maps the gate to an exit.
+			res, err := svc.Validate(cmd.Context(), binder.ValidateRequest{
+				Bundle:  args[0],
+				Spec:    okf.DefaultSpecVersion,
+				Version: Version,
+			})
 			if err != nil {
 				return err
 			}
-			errs := result.Errors()
-			// The exit code is about the run, not the output format: identical in
-			// prose and --json. Non-conformance is a hard §11 violation (not an
-			// advisory) and always gates (exit 1). Trust well-formedness advisories
-			// gate only under --strict (#7): the flag flips the clijson.Gate seam.
-			hard := !result.Conformant()
-			adv := len(result.Advisories()) > 0
-			msg := fmt.Sprintf("bundle is not conformant (%d violation(s))", len(errs))
-			if !hard && strict && adv {
-				msg = fmt.Sprintf("bundle has %d advisory finding(s) (--strict)", len(result.Advisories()))
-			}
-			gate := clijson.Gate(strict, hard, adv, msg)
 
+			// Report is ALWAYS emitted before the gate signals, so the gate never
+			// suppresses output. The gate decision (hard §11 non-conformance always
+			// gates; trust advisories gate only under --strict) is the Result's,
+			// defined once in the service.
 			out := cmd.OutOrStdout()
 			if jsonOut {
-				if encErr := clijson.Encode(out, Version, "validate", result); encErr != nil {
+				if encErr := res.EncodeJSON(out); encErr != nil {
 					return fmt.Errorf("encoding json report: %w", encErr)
 				}
-				return gate
+				return res.Gate(strict)
 			}
-
-			fmt.Fprintf(out, "bundle: %s\n", result.Root)
-			fmt.Fprintf(out, "concepts: %d, reserved files: %d\n", result.NumConcepts, result.NumReserved)
-			// Make the unchecked scope explicit so `conformant` is not read as
-			// covering the reserved files, which are counted but not structurally
-			// examined (spec §8/§9 deferred, #77). Never fabricate trust: the
-			// verdict must not silently claim a surface it never inspected.
-			if !result.ReservedStructureChecked && result.NumReserved > 0 {
-				fmt.Fprintf(out, "scope: reserved-file structure (index.md, log.md) not validated; verdict covers concept files only\n")
-			}
-			for _, f := range result.Advisories() {
-				fmt.Fprintf(out, "%s\n", f)
-			}
-			for _, f := range errs {
-				fmt.Fprintf(out, "%s\n", f)
-			}
-			if result.Conformant() {
-				fmt.Fprintf(out, "RESULT: conformant (OKF %s)\n", okf.DefaultSpecVersion)
-			} else {
-				fmt.Fprintf(out, "RESULT: NOT conformant (%d violation(s))\n", len(errs))
-			}
-			return gate
+			fmt.Fprint(out, render.Validate(res))
+			return res.Gate(strict)
 		},
 	}
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "emit the validation result as deterministic JSON (schema "+clijson.SchemaVersion+") instead of prose")
