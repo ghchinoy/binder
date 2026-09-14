@@ -18,12 +18,20 @@ the release archive: a release archive holds the binary, `LICENSE`, and
 git clone https://github.com/ghchinoy/binder.git
 cd binder
 make build        # -> bin/binder
-make check        # gate: gofmt + go vet + go test ./...
+make check        # gate: gofmt + go vet + actionlint + go test ./...
+make actionlint   # just the GitHub Actions workflow lint
 ```
 
 Requires **Go 1.26.1+** (the floor declared in `go.mod`). Dependency pinning and
 the module-proxy requirement are described under
 [Reproducible build invariants](docs/RELEASING.md#reproducible-build-invariants).
+`make check` also lints every file under `.github/workflows/` with
+[actionlint](https://github.com/rhysd/actionlint), pinned by version in the
+Makefile and run via `go run`, so it needs the module proxy but no separate
+install. It is there because the workflows carry logic — the `docs-impact` job's
+release-PR exemption is an expression, and actionlint parses it with GitHub's own
+grammar, independently of the evaluator in `internal/docsimpact`'s exemption
+control (issue #127).
 `make check` is the toolchain-only gate; the project's full exit gate adds an
 external cross-check, described under
 [Differential-validation exit gate](docs/RELEASING.md#differential-validation-exit-gate).

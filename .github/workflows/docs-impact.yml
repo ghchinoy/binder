@@ -57,12 +57,28 @@ jobs:
     # contributor opt out of the gate. Creating that branch on THIS repo already
     # requires write access.
     #
-    # Both clauses are kept: a release PR that is one day authored by a genuine
-    # bot token stays exempt through the first clause, and the second stops
-    # depending on the author at all. The exemption is deliberately NOT widened
+    # COUPLED LITERAL: `release-please--branches--` is release-please's own
+    # naming convention, external to this repo, and the SAME string is the
+    # exReleaseRefPrefix constant in internal/docsimpact/exemption_test.go. If
+    # release-please renames the prefix upstream, BOTH must be changed together:
+    # changing only this file reds the control (good), but leaving both stale
+    # keeps the control green while the gate silently stops exempting release PRs
+    # — #127 returning, without a red to announce it. Nothing in the tree can
+    # detect that; a red docs-impact on the next release PR is the signal.
+    #
+    # Both clauses are kept, and the bot clause is LOAD-BEARING — AND onto it,
+    # never replace it. Dependabot's PRs report `user.type == "Bot"` (set
+    # server-side, unforgeable) and their bodies carry no "## Docs impact"
+    # section, so removing that clause fails every dependency bump; the SHA-pin
+    # automation that makes Dependabot open PRs here landed alongside this fix. A
+    # release PR that is one day authored by a genuine bot token also stays exempt
+    # through it, while the second clause stops the exemption depending on the
+    # author at all. The exemption is deliberately NOT widened
     # beyond these two shapes — a normal code PR from this repo or a fork still
     # runs the gate. The control that pins that, in both directions, is
-    # TestReleaseExemption in internal/docsimpact (see the header note above).
+    # TestReleaseExemption in internal/docsimpact (see the header note above);
+    # `make check` also runs actionlint over this file, which parses the
+    # expression with GitHub's own grammar rather than the control's evaluator.
     #
     # NOTE for whoever later wires branch protection: this skips the whole job
     # for bot and release PRs, and GitHub records a skipped required check as
