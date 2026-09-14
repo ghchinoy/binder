@@ -49,7 +49,7 @@ FAIL=0
 # "ran at least one" floor is weaker — it would not catch losing three of seven —
 # exactly the inventory-over-floor reasoning from round 2. Update this when you
 # add or remove a case.
-EXPECTED_CASES=19
+EXPECTED_CASES=20
 
 # assert_exit <label> <docroot> <expected-exit> [want] [checker]
 # [want] is a substring of the output, or several joined by " && " when a case
@@ -128,6 +128,15 @@ rm -rf "$CLEAN"
 
 # The anchors. Each identifies one transcript and must match exactly one line.
 A_SKILL_CONTRACT='^## The binder JSON contract \(what you parse\)$'
+# DOUBLE DUTY, and deliberately so. The line A_CONTRACT_PROSE matches is ALSO the
+# checker's own `prose-provenance` inventory entry for this file — this harness
+# and the gate address the same line by different means. That is a feature: if a
+# doc edit moves the sentence out from under the gate, this anchor goes stale in
+# the same edit, and the harness aborts naming the anchor instead of the gate
+# going quietly under-covered. It is also a trap for whoever re-points ONE of the
+# two: the anchor starts at column 1 because the sentence WRAPS there today, and
+# the gate's pattern is line-local for the same reason. Case [19] pins the
+# consequence. See #176.
 A_CONTRACT_PROSE='^was captured from real `binder/'
 A_README_ENVELOPE='^binder validate path/to/bundle --json$'
 A_README_PROSE='prints `binder/<version>`, no leading'
@@ -492,6 +501,34 @@ assert_exit "allowlist entry that exempts nothing -> exit 1" "$STALE_ALLOW_TREE"
   'STALE-ALLOWLIST && ("README.md", "0.2.1") exempted nothing && 1 stale allowlist entry(ies)' \
   "$STALE_CHECKER"
 rm -rf "$STALE_ALLOW_TREE" "$(dirname "$STALE_CHECKER")"
+
+# --- #185 round 5: the provenance sentence is line-local --------------------
+
+# [19] A REFLOWED PROVENANCE SENTENCE IS CAUGHT, AND DIAGNOSED AS A REFLOW.
+#      The prose-provenance pattern matches within ONE line. The sentence it
+#      tracks sits mid-paragraph in binder-json-contract.md, so re-wrapping that
+#      paragraph — no reworded text, no fence touched, a change nobody would
+#      describe as touching the gate — can put the phrase and its literal on
+#      different lines and take the match to zero. Measured across wrap widths
+#      60-100 with the wording held identical: the match is LOST at 25 of the 41
+#      widths, and survives at 16. Today's file is wrapped at ~79, which is
+#      inside a surviving band — the gate holds by wrapping luck, not by design.
+#      Two distinct assertions here, and the second is the new one:
+#        - it REDS. The exact inventory already guaranteed that (checked 0 of 1),
+#          so this half is a regression lock on #185's own work.
+#        - it says WHY. Before this round the message read "discovery is broken —
+#          a moved file, a renamed fence tag", which is true of every other key
+#          and false of this one: it points a maintainer at fences while the
+#          cause is a paragraph two hunks away. A loud failure with a wrong cause
+#          spends the reader's attention in the wrong file.
+#      The split is planted by CONTENT, at the space before the literal, so it
+#      survives any rewrap of the file. Closing #176's second axis; the first
+#      axis (pattern narrowness) is [15].
+REFLOW="$(fresh_copy)"
+plant_prose "$REFLOW/$CONTRACT_REL" "$A_CONTRACT_PROSE" 's# `binder/#\n`binder/#'
+assert_exit "reflowed provenance sentence -> exit 1, diagnosed as a reflow" "$REFLOW" 1 \
+  '[prose-provenance] && checked 0 && REFLOWED across two lines && line-local && #176'
+rm -rf "$REFLOW"
 
 # --- THE SWEEP (#185 round 4, R5) ------------------------------------------
 # Two independent misses of the same kind in one file means the enumeration was

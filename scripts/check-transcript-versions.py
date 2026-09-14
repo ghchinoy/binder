@@ -521,10 +521,24 @@ def main() -> int:
               "cause: a moved file, a renamed/removed fence tag, or a changed "
               "path glob.")
         for path, key, want, label, got in coverage_fail:
-            why = ("discovery is broken — a moved file, a renamed fence tag"
-                   if got < want else
-                   "a transcript was ADDED — update the count in "
-                   "EXPECTED_COVERAGE in the same commit")
+            # The cause is key-specific, and a wrong cause is worse than a vague
+            # one: "a renamed fence tag" sends a maintainer to look at fences
+            # when what happened is a prose reflow two hunks away. The provenance
+            # pattern is LINE-LOCAL, so re-wrapping the paragraph that holds the
+            # sentence breaks the match with the wording untouched — measured on
+            # the live instance, 25 of 41 plausible wrap widths lose it. Loud
+            # (this very assertion) but misdiagnosed, until now. See #176.
+            if got > want:
+                why = ("a transcript was ADDED — update the count in "
+                       "EXPECTED_COVERAGE in the same commit")
+            elif key == "prose-provenance":
+                why = ("the sentence was reworded, or REFLOWED across two lines "
+                       "— this pattern is line-local, so a pure re-wrap breaks "
+                       "it with the wording unchanged (#176). Check that the "
+                       "whole phrase still sits on ONE line before looking "
+                       "anywhere else")
+            else:
+                why = "discovery is broken — a moved file, a renamed fence tag"
             print(f"# MISSING-COVERAGE: {path} [{key}] ({label}): expected "
                   f"exactly {want} literal(s) under {base}, checked {got} "
                   f"({why})")
