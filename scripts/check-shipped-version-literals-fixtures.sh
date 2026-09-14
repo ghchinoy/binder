@@ -83,14 +83,14 @@ FAIL=0
 # The number of cases this harness MUST run, asserted at the end against
 # PASS+FAIL so the harness cannot itself pass vacuously — same reasoning as
 # scripts/check-transcript-versions-fixtures.sh. Update when adding a case.
-EXPECTED_CASES=14
+EXPECTED_CASES=15
 
 # copy_tree — copy the working tree (minus VCS and node_modules) into a fresh
 # temp dir and echo its path. The copy is what gets patched, so the real tree is
 # never modified and an interrupted run cannot leave it dirty.
 copy_tree() {
   local tmp
-  tmp="$(mktemp -d)"
+  tmp="$(scratch_dir)"
   tar -c --exclude=./.git --exclude=./node_modules --exclude=./bin -C "$REPO_ROOT" . \
     | tar -x -C "$tmp"
   echo "$tmp"
@@ -248,7 +248,7 @@ rm -rf "$DARK"
 # [5] an UNSTAMPED binary must abort with exit 2, not silently compare literals
 #     against binder/dev. Degrading to a no-op when the precondition is unmet is
 #     the failure mode #169 documented and this gate inherits the refusal.
-UNSTAMPED="$(mktemp -d)/binder"
+UNSTAMPED="$(scratch_dir)/binder"
 go build -o "$UNSTAMPED" . 2>/dev/null
 UNSTAMPED_OUT="$(python3 "$CHECKER" "$UNSTAMPED" 2>&1)"
 UNSTAMPED_EXIT=$?
@@ -272,7 +272,7 @@ fi
 #     Case 5 is therefore environment-dependent by construction. This one stamps
 #     the pseudo-version EXPLICITLY, so the refusal is locked regardless of how
 #     the tree or the checkout happens to look.
-PSEUDO="$(mktemp -d)/binder"
+PSEUDO="$(scratch_dir)/binder"
 go build -ldflags \
   "-X github.com/ghchinoy/binder/cmd.Version=0.5.4-0.20260914164646-656b05e16068" \
   -o "$PSEUDO" . 2>/dev/null
@@ -443,7 +443,7 @@ rm -rf "$DOCDARK"
 #      stays satisfied. The red must therefore come from the discovery floor
 #      specifically, which is what makes this case a lock on R1 rather than a
 #      restatement of case 4.
-DARKDISC="$(mktemp -d)"
+DARKDISC="$(scratch_dir)"
 if bin="$(build_stamped_binder)"; then
   cat > "$DARKDISC/binder" <<PY
 #!/usr/bin/env python3
@@ -529,7 +529,7 @@ rm -rf "$FIXTREE"
 #      The fix is identity at DEPTH: `config set` is reachable only by recursing,
 #      so requiring it is a direct claim that the recursion ran. This case locks
 #      that, and the ablation below proves it reds against the PREVIOUS checker.
-HALFDARK="$(mktemp -d)"
+HALFDARK="$(scratch_dir)"
 if bin="$(build_stamped_binder)"; then
   # Reword the header ONLY for subcommand help, never for the root. Root
   # discovery therefore succeeds completely and the collapse is depth-only.
@@ -597,6 +597,52 @@ else
   echo "  FAIL  certifier truth table"
   FAIL=$((FAIL + 1))
 fi
+
+# [15] THE BUILD HELPER LEAVES NOTHING BEHIND.
+#      Every stamped build is a ~28 MB binary in a temp directory. The helper
+#      created one per call and removed none, which is invisible until it isn't:
+#      a local acceptance run of the two harnesses reported "stamped build
+#      failed" six times, reading exactly like a gate regression, and the actual
+#      cause was `no space left on device` from 399 leaked directories. A gate
+#      that reds for a reason unrelated to the code under test is worse than one
+#      that stays quiet, because it spends the reader's trust.
+#
+#      ASSERT THE POSTCONDITION, NOT THE CALL. Grepping the helper for `trap`
+#      would pass on a trap that is installed and never fires — which is the
+#      precise bug, since bash resets traps inside the command-substitution
+#      subshell the helper is always called from. So: run a CHILD shell that
+#      sources the helper, builds, and prints its temp root; let the child EXIT;
+#      then assert from out here that the root is gone and the binary with it.
+#      Nothing but real cleanup satisfies that.
+CHILD="$(scratch_file)"
+cat > "$CHILD" <<'CHILDEOF'
+set -euo pipefail
+cd "$1"
+. scripts/lib/stamped-binder.sh
+bin="$(build_stamped_binder 2>/dev/null)"
+[ -x "$bin" ] || { echo "CHILD-BUILD-FAILED"; exit 3; }
+printf '%s\n%s\n' "$_STAMPED_BINDER_TMPROOT" "$bin"
+CHILDEOF
+child_out="$(bash "$CHILD" "$REPO_ROOT" 2>/dev/null)"; child_rc=$?
+child_root="$(echo "$child_out" | sed -n 1p)"
+child_bin="$(echo "$child_out" | sed -n 2p)"
+if [ "$child_rc" -ne 0 ] || [ -z "$child_root" ]; then
+  echo "  FAIL  temp-root cleanup: child shell did not build (rc $child_rc)"
+  echo "$child_out" | sed 's/^/        | /'
+  FAIL=$((FAIL + 1))
+elif [ -z "$child_bin" ] || case "$child_bin" in "$child_root"/*) false ;; *) true ;; esac then
+  # If the binary were built OUTSIDE the root, the root could vanish while the
+  # leak continued, and this case would certify the opposite of the truth.
+  echo "  SETUP-FAIL  temp-root cleanup: binary '$child_bin' is not under root '$child_root'"
+  FAIL=$((FAIL + 1))
+elif [ -e "$child_root" ]; then
+  echo "  FAIL  temp-root cleanup: '$child_root' still exists after the sourcing shell exited"
+  FAIL=$((FAIL + 1))
+else
+  echo "  PASS  stamped-build temp root removed when the sourcing shell exits"
+  PASS=$((PASS + 1))
+fi
+rm -f "$CHILD"
 
 echo
 # Vacuous-pass guard for the harness itself: assert the expected number of cases

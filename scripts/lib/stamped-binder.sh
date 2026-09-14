@@ -23,6 +23,40 @@
 # the only point where the value is guaranteed correct.
 _STAMPED_BINDER_LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# ONE temp ROOT, owned by the sourcing shell, cleaned on its exit. Each build
+# gets a fresh subdirectory underneath it.
+#
+# The obvious shape -- mktemp -d per build, remember the path, rm it in an EXIT
+# trap -- DOES NOT WORK HERE, and it fails silently by leaking rather than
+# loudly by breaking. build_stamped_binder is called as
+# `BIN="$(build_stamped_binder)"`, i.e. inside a COMMAND SUBSTITUTION SUBSHELL.
+# Bash resets traps to their inherited defaults in such a subshell and discards
+# any variable the subshell assigns, so (a) a path recorded during the build
+# never reaches the parent's cleanup list, and (b) a trap that DID fire at
+# subshell exit would delete the binary before the caller could run it. Both
+# failure modes end in an exit-0 run: the first leaks ~28 MB per build until the
+# disk fills, the second makes the gate look like a build failure.
+#
+# Capturing the root AT SOURCE TIME, in the parent, sidesteps both: the subshell
+# creates its subdir inside a directory the parent already knows the name of.
+_STAMPED_BINDER_TMPROOT="$(mktemp -d)"
+_stamped_binder_cleanup() { rm -rf "$_STAMPED_BINDER_TMPROOT"; }
+# scripts/check-shipped-version-literals-fixtures.sh asserts the POSTCONDITION --
+# that the root is gone after a sourcing shell exits -- rather than asserting
+# that this line was written.
+trap _stamped_binder_cleanup EXIT
+
+# scratch_dir/scratch_file hand out temp paths INSIDE that same root.
+#
+# They exist so that no caller needs an EXIT trap of its own. `trap ... EXIT`
+# REPLACES rather than appends, so a caller that installed one would silently
+# disarm the cleanup above -- and the symptom of that is a slow disk leak, which
+# is the one failure mode nobody notices until four unrelated gates go red at
+# once. One root, one trap, one owner: a caller that cannot install a competing
+# trap cannot clobber this one.
+scratch_dir() { mktemp -d -p "$_STAMPED_BINDER_TMPROOT" "$@"; }
+scratch_file() { mktemp -p "$_STAMPED_BINDER_TMPROOT" "$@"; }
+
 # stamp_version echoes the version to inject: the most recent tag reachable from
 # HEAD, which is the same value goreleaser injects at release time (v-prefixed;
 # cmd.init strips the leading v via normalizeVersion). BINDER_STAMP_VERSION
@@ -70,7 +104,7 @@ build_stamped_binder() {
     return 1
   fi
   version="$(stamp_version)"
-  bin="$(mktemp -d)/binder"
+  bin="$(mktemp -d -p "$_STAMPED_BINDER_TMPROOT")/binder"
   echo "==> building stamped binder (cmd.Version=${version})" >&2
   if ! go build -ldflags "-X github.com/ghchinoy/binder/cmd.Version=${version}" -o "$bin" . >&2; then
     return 1
