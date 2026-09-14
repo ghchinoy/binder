@@ -156,3 +156,70 @@ func TestColonSpaceNeverGates(t *testing.T) {
 		t.Errorf("NumFindings changed when the advisory was removed: %d -> %d", before, after)
 	}
 }
+
+// TestColonAtEndOfLineIsAnAcceptedFalseNegative locks a deliberate narrowing.
+//
+// Two fixtures. `title: A: B` is the detector's trigger — a colon followed by a
+// space in an unquoted plain scalar — and the advisory names the key. `title: A:`
+// is NOT the trigger and is not named, though it fails the YAML parse just as
+// hard. That is a decision, not an oversight, and it is only defensible because
+// the file is still reported — as an invalid-frontmatter schema violation. This
+// test pins BOTH halves: if the second half ever stops holding, the narrowing
+// stops being acceptable and this goes red.
+//
+// Deliberately absent above: any statement of when YAML treats a colon as an
+// indicator. The docs carried one ("must be followed by a space or a tab to mean
+// anything") as the reason for this skip, and it was false. Two replacements
+// written during review were executed against yaml.v3 and were also false — the
+// last falsified by `m: {a:{b: 1}}`, a plain scalar whose colon is followed by a
+// non-space character and still is not inert. The reason for the skip is the
+// schema violation asserted below, not a rule about YAML, so that is what this
+// test asserts.
+func TestColonAtEndOfLineIsAnAcceptedFalseNegative(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name, body string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+			t.Fatalf("writing %s: %v", name, err)
+		}
+	}
+	// The positive control shares the corpus so the detector is proven ALIVE on
+	// the same run that proves it silent on the other file. An absence measured
+	// by an instrument that was never shown to work is not a measurement.
+	write("spaced.md", "---\ntitle: A: B\n---\n\nbody\n")
+	write("eol.md", "---\ntitle: A:\n---\n\nbody\n")
+
+	rep := lintCorpus(t, dir)
+
+	var sawPositive, sawEOL bool
+	for _, f := range rep.ColonSpaceScalars {
+		switch f.Concept {
+		case "spaced":
+			sawPositive = true
+		case "eol":
+			sawEOL = true
+		}
+	}
+	if !sawPositive {
+		t.Fatal("vacuous: the advisory did not fire on `title: A: B` either, so the " +
+			"silence on `title: A:` says nothing about the narrowing")
+	}
+	if sawEOL {
+		t.Error("`title: A:` was named by the advisory — detection widened past " +
+			"colon-space/colon-tab; update the docs and this test together")
+	}
+
+	// The half that makes the false negative acceptable.
+	var eolViolation bool
+	for _, f := range rep.SchemaViolations {
+		if f.Concept == "eol" && strings.HasPrefix(f.Detail, "invalid frontmatter") {
+			eolViolation = true
+		}
+	}
+	if !eolViolation {
+		t.Errorf("`title: A:` is neither named by the advisory NOR reported as an "+
+			"invalid-frontmatter violation — it is now silently unreported, which is "+
+			"the one outcome the narrowing was justified by ruling out.\nviolations: %+v",
+			rep.SchemaViolations)
+	}
+}
