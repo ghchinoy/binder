@@ -2,14 +2,10 @@ package cmd
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
-	"sort"
 
 	"github.com/spf13/cobra"
 
-	"github.com/ghchinoy/binder/internal/bundle"
-	"github.com/ghchinoy/binder/internal/convert"
+	"github.com/ghchinoy/binder/internal/binder"
 	"github.com/ghchinoy/binder/internal/okf"
 )
 
@@ -20,6 +16,9 @@ func newIndexCmd(codec okf.Codec) *cobra.Command {
 		includeBacklinks bool
 		includeGraph     bool
 	)
+	// Construct the shared service ONCE with the composition root's codec (stateless,
+	// safe for concurrent use); the RunE closure reuses it.
+	svc := binder.New(codec)
 	cmd := &cobra.Command{
 		Use:   "index <bundle>",
 		Short: "(Re)generate the per-directory index.md nav tree (spec §8)",
@@ -33,48 +32,36 @@ func newIndexCmd(codec okf.Codec) *cobra.Command {
 			// --include-backlinks/--include-graph only annotate the --group-by-type
 			// catalog; warn (stderr only) if passed without it. Never gates.
 			hintCatalogFlags(cmd, groupByType, includeBacklinks, includeGraph)
-			root := args[0]
-			b, err := bundle.Load(root, codec)
-			if err != nil {
-				return err
-			}
-			// Disclose files the loader could not parse (#161/#163): they are kept in
-			// the nav (recovered as body) rather than silently omitted, but the user
-			// must be told their frontmatter did not parse. Warnings go to stderr so
-			// the write manifest on stdout stays clean.
-			warnUnparsed(cmd.ErrOrStderr(), b)
-			indexes := convert.GenerateIndexes(b.Concepts, b.OKFVersion, convert.IndexOptions{
+
+			// One code path: the service loads the bundle, collects the unparsed-file
+			// advisories, and performs the writes (sorted order, write-vs-regenerate
+			// classification, dry-run short-circuit). It returns the write manifest and
+			// the advisories as DATA; the adapter renders the manifest to stdout and the
+			// warnings to stderr. On a mid-run IO failure the service returns the partial
+			// manifest (files already written) plus the error, so the adapter renders
+			// what happened before surfacing the failure — matching the old loop.
+			res, err := svc.Index(cmd.Context(), binder.IndexRequest{
+				Root:             args[0],
+				DryRun:           dryRun,
 				GroupByType:      groupByType,
 				IncludeBacklinks: includeBacklinks,
 				IncludeGraph:     includeGraph,
 			})
 
-			rels := make([]string, 0, len(indexes))
-			for rel := range indexes {
-				rels = append(rels, rel)
+			// Disclose files the loader could not parse (#161/#163) on stderr so the
+			// write manifest on stdout stays clean.
+			for _, w := range res.Warnings {
+				fmt.Fprintln(cmd.ErrOrStderr(), w)
 			}
-			sort.Strings(rels)
-
 			out := cmd.OutOrStdout()
-			for _, rel := range rels {
-				dst := filepath.Join(root, filepath.FromSlash(rel))
-				action := "write"
-				if _, err := os.Stat(dst); err == nil {
-					action = "regenerate"
+			for _, e := range res.Entries {
+				if res.DryRun {
+					fmt.Fprintf(out, "would %s %s\n", e.Action, e.Rel)
+				} else {
+					fmt.Fprintf(out, "%s %s\n", e.Action, e.Rel)
 				}
-				if dryRun {
-					fmt.Fprintf(out, "would %s %s\n", action, rel)
-					continue
-				}
-				if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-					return err
-				}
-				if err := os.WriteFile(dst, indexes[rel], 0o644); err != nil {
-					return err
-				}
-				fmt.Fprintf(out, "%s %s\n", action, rel)
 			}
-			return nil
+			return err
 		},
 	}
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "report which index.md files would be written without writing")

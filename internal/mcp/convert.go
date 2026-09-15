@@ -3,22 +3,24 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/ghchinoy/binder/internal/binder"
 	"github.com/ghchinoy/binder/internal/config"
-	"github.com/ghchinoy/binder/internal/convert"
 	"github.com/ghchinoy/binder/internal/okf"
 )
 
 // convertInput mirrors `binder convert`'s conversion flags 1:1 (design §Tool
 // surface). Raw map/list params use the same "k=v,k=v" / "a,b" grammar as the
-// CLI flags and are parsed with the same convert.Parse* helpers; external_root
-// is the one repeatable path flag, so it is a genuine []string (matching the
-// CLI's StringArrayVar) rather than a comma-joined string — paths can contain
-// commas, and inventing a split would create an escaping problem. The
-// transport-only --json/--report flags are intentionally absent: this tool is a
+// CLI flags and are parsed with the same convert.Parse* helpers (now inside the
+// shared service); external_root is the one repeatable path flag, so it is a genuine
+// []string (matching the CLI's StringArrayVar) rather than a comma-joined string —
+// paths can contain commas, and inventing a split would create an escaping problem.
+// The transport-only --json/--report flags are intentionally absent: this tool is a
 // transport, not a report-producing command (design §Non-Goals).
 type convertInput struct {
 	Src                string   `json:"src" jsonschema:"source markdown corpus directory to convert"`
@@ -42,74 +44,45 @@ type convertInput struct {
 	Strict             bool     `json:"strict,omitempty" jsonschema:"gate semantics only; does not change the payload (parity with the CLI flag)"`
 }
 
-// mcpVerifiedBySource is the disclosure source token for an MCP-supplied
-// verified_by. MCP resolves the actor from tool input ONLY (never config), so a
-// set value is an explicit per-invocation input; unset means no stamp. It maps to
-// the same VerifiedStampReport.Source vocabulary the CLI uses.
-func mcpVerifiedBySource(actor string) string {
-	if actor == "" {
-		return "none"
-	}
-	return "input"
-}
-
-// registerConvert wires the convert tool. dry_run:true → convert.Analyze (the
-// preview; never writes); dry_run:false → convert.Convert writing to out. The
-// returned *convert.Report is byte-identical to `binder convert --json` /
-// `binder convert --dry-run --json`. Malformed maps and an invalid verified_by
-// are usage-class tool errors; verified_by is applied ONLY when explicitly set
-// (never-fabricate-trust).
+// registerConvert wires the convert tool. dry_run:true → the analysis preview
+// (writes nothing); dry_run:false → writes the bundle to out. It drives the SAME
+// shared binder.Service.Convert the CLI uses, so the returned envelope is
+// byte-identical to `binder convert --json` / `binder convert --dry-run --json`. The
+// service parses the flag grammars, routes the trust decision, and assembles
+// convert.Options — this handler only validates the transport-level inputs and maps
+// the result. Malformed maps and an invalid verified_by are usage-class tool errors;
+// verified_by is applied ONLY when explicitly set (never-fabricate-trust).
 func registerConvert(s *mcp.Server, d *deps) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "convert",
 		Description: "Convert a markdown corpus into an OKF v0.2 bundle. With dry_run it writes " +
 			"nothing and returns the ingestion-analysis preview. Returns the binder.report/v1 " +
 			"convert payload (identical to `binder convert --json`).",
-	}, func(_ context.Context, _ *mcp.CallToolRequest, in convertInput) (*mcp.CallToolResult, any, error) {
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in convertInput) (*mcp.CallToolResult, any, error) {
 		if in.Out == "" && !in.DryRun {
 			return nil, nil, fmt.Errorf("out is required (or set dry_run:true)")
 		}
 
-		typeMap, err := convert.ParseTypeMap(in.TypeMap)
-		if err != nil {
-			return nil, nil, err
-		}
-		statusMap, statusDefault, err := convert.ParseStatusMap(in.StatusMap)
-		if err != nil {
-			return nil, nil, err
-		}
-		// Mirror the CLI's OKF §5.4 status-vocabulary handling (issue #23) so the
-		// two surfaces do not diverge: non-conformant values are surfaced in the
-		// report's status_notes, and canonicalize_status opts into the same fixed
-		// alias rewrite. Non-conformant values are reported, never rejected, keeping
-		// parity with this tool's never-reject payload posture (strict here is
-		// gate-semantics only and does not change the payload).
-		statusMap, statusDefault, statusVocab := convert.ResolveStatusVocabulary(statusMap, statusDefault, in.CanonicalizeStatus)
-		staleAfterMap, err := convert.ParseStaleAfterMap(in.StaleAfterMap)
-		if err != nil {
-			return nil, nil, err
-		}
-
 		// --external-root parity (issue #25). Declared sibling roots are a genuine
 		// repeatable list, so external_root is a []string mirroring the CLI's
-		// StringArrayVar. An empty value is a usage-class tool error, the same gate
-		// as the CLI; a well-formed path that does not exist is accepted on purpose
-		// (a declared sibling may be absent from this checkout) and no stat is done.
+		// StringArrayVar. An empty value is a usage-class tool error, the same gate as
+		// the CLI (which phrases it as --external-root); a well-formed path that does
+		// not exist is accepted on purpose (a declared sibling may be absent from this
+		// checkout) and no stat is done.
 		for _, er := range in.ExternalRoot {
 			if strings.TrimSpace(er) == "" {
 				return nil, nil, fmt.Errorf("external_root value must not be empty")
 			}
 		}
 
-		// Never-fabricate-trust: apply verified_by ONLY when explicitly passed;
-		// an invalid actor is a usage-class error (same okf.IsValidActor gate as
-		// the CLI). The server never auto-stamps verified/sources.
-		// The forms hint is taken from config.ActorFormsHint rather than restated
-		// here, so this surface cannot drift from the CLI's wording — and so the
-		// worked example tracks the live version instead of a hand-maintained
-		// literal (issue #60: this copy said "binder/0.3.0" at v0.5.3). The CLI's
-		// config.InvalidActorError is deliberately NOT reused: it wraps the error
-		// in clijson.Usage to set a CLI exit code, which is meaningless over MCP.
+		// Never-fabricate-trust: apply verified_by ONLY when explicitly passed; an
+		// invalid actor is a usage-class error (same okf.IsValidActor gate as the CLI).
+		// The server never auto-stamps. The forms hint is taken from
+		// config.ActorFormsHint rather than restated here, so this surface cannot drift
+		// from the CLI's wording — and so the worked example tracks the live version
+		// instead of a hand-maintained literal (issue #60). The CLI's
+		// config.InvalidActorError is deliberately NOT reused: it wraps the error in
+		// clijson.Usage to set a CLI exit code, which is meaningless over MCP.
 		if in.VerifiedBy != "" && !okf.IsValidActor(in.VerifiedBy) {
 			return nil, nil, fmt.Errorf("invalid actor %q; %s", in.VerifiedBy, config.ActorFormsHint())
 		}
@@ -120,38 +93,49 @@ func registerConvert(s *mcp.Server, d *deps) {
 			defaultType = "Note"
 		}
 
-		opts := convert.Options{
-			Codec:         d.codec,
-			DefaultType:   defaultType,
-			TypeMap:       typeMap,
-			StatusMap:     statusMap,
-			StatusDefault: statusDefault,
-			StatusNotes:   statusVocab.Notes,
-			StaleAfterMap: staleAfterMap,
-			VerifiedBy:    in.VerifiedBy,
-			// MCP resolves verified_by from tool input ONLY and never loads config
-			// (unchanged). A passed actor is therefore an EXPLICIT per-invocation act,
-			// like a --verified-by flag: it stamps and may co-sign (Residual A exempt).
-			VerifiedByExplicit: in.VerifiedBy != "",
-			VerifiedBySource:   mcpVerifiedBySource(in.VerifiedBy),
-			FMRefKeys:          convert.ParseFMRefKeys(in.FMRefKeys),
-			Version:            d.version,
-			Now:                resolveNow(),
+		// MCP resolves verified_by from tool input ONLY and never loads config: a set
+		// actor is an EXPLICIT per-invocation act (binder.TrustInput → stamps, may
+		// co-sign, source "input"); unset is binder.TrustNone. Strict is false — the
+		// MCP surface never gates; the payload is identical either way.
+		origin := binder.TrustNone
+		if in.VerifiedBy != "" {
+			origin = binder.TrustInput
+		}
+
+		// Read SOURCE_DATE_EPOCH at the adapter edge and apply the shared determinism
+		// rule (the one that used to be duplicated as this package's resolveNow on the
+		// convert path); a malformed epoch falls back to the wall clock, matching the CLI.
+		now, _ := binder.ResolveNow(os.Getenv("SOURCE_DATE_EPOCH"), time.Now())
+
+		res, err := d.svc.Convert(ctx, binder.ConvertRequest{
+			Src:                in.Src,
+			Out:                in.Out,
 			DryRun:             in.DryRun,
+			DefaultType:        defaultType,
+			TypeMapRaw:         in.TypeMap,
+			StatusMapRaw:       in.StatusMap,
+			StaleAfterMapRaw:   in.StaleAfterMap,
+			FMRefKeysRaw:       in.FMRefKeys,
+			SourceKeysRaw:      in.SourceKeys,
+			CanonicalizeStatus: in.CanonicalizeStatus,
 			MapCitations:       in.MapCitations,
-			SourceKeys:         convert.ParseFMRefKeys(in.SourceKeys),
 			MapDraft:           in.MapDraft,
+			VerifiedBy:         in.VerifiedBy,
+			TrustOrigin:        origin,
 			WorkspaceRoot:      in.WorkspaceRoot,
 			ExternalRoots:      in.ExternalRoot,
 			GroupByType:        in.GroupByType,
 			IncludeBacklinks:   in.IncludeBacklinks,
 			IncludeGraph:       in.IncludeGraph,
-		}
-
-		report, err := convert.Convert(in.Src, in.Out, opts)
+			Version:            d.version,
+			Now:                now,
+			Strict:             false,
+		})
 		if err != nil {
 			return nil, nil, err
 		}
-		return d.encode("convert", report)
+		// The envelope is produced by the core Result and framed by the one shared
+		// helper — byte-identical to `binder convert --json` and to the CLI's output.
+		return encodeResult(res)
 	})
 }
