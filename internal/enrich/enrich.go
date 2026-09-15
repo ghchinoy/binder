@@ -69,9 +69,14 @@ type Options struct {
 	// VerifiedBySource is the disclosure token for the resolved actor's origin
 	// ("flag" | "config" | "none"), surfaced in the report (Residual B). This is a
 	// narrower set than report.go's Source, which also lists "input" (MCP): enrich
-	// is CLI-fed only (cmd/enrich.go passes vb.Source) and has no MCP tool, so an
-	// enrich source can never be "input".
+	// is CLI-fed only (Service.Enrich passes the resolved decision) and has no MCP
+	// tool, so an enrich source can never be "input".
 	VerifiedBySource string
+	// VerifiedByNote discloses a resolved-but-unhonored verifier (a refused env or
+	// repo-local value) straight into report.Verified.Note, so the report is COMPLETE
+	// after Enrich and no adapter patches it (Residual B). Empty (the default) leaves
+	// the note absent. The text is produced once by binder.ResolveTrust.
+	VerifiedByNote string
 
 	// StatusNotes are pre-computed OKF §5.4 status-vocabulary messages (issue #23)
 	// — non-conformant --status-map values and any opt-in canonicalization
@@ -242,6 +247,9 @@ func Enrich(src string, opts Options) (*Report, error) {
 	if opts.VerifiedBySource != "" {
 		rep.Verified.Source = opts.VerifiedBySource
 	}
+	// A resolved-but-unhonored verifier (a refused env/repo-local value) is disclosed
+	// here so the report is COMPLETE — the field the CLI used to patch after the call.
+	rep.Verified.Note = opts.VerifiedByNote
 
 	codec := opts.Codec
 	for _, f := range files {
