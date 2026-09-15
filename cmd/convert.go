@@ -10,9 +10,10 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/ghchinoy/binder/internal/binder"
+	"github.com/ghchinoy/binder/internal/binder/render"
 	"github.com/ghchinoy/binder/internal/clijson"
 	"github.com/ghchinoy/binder/internal/config"
-	"github.com/ghchinoy/binder/internal/convert"
 	"github.com/ghchinoy/binder/internal/okf"
 )
 
@@ -40,6 +41,9 @@ func newConvertCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 		includeBacklinks bool
 		includeGraph     bool
 	)
+	// Construct the shared service ONCE with the composition root's codec (stateless,
+	// safe for concurrent use); the RunE closure reuses it.
+	svc := binder.New(codec)
 
 	cmd := &cobra.Command{
 		Use:   "convert <src>",
@@ -59,30 +63,13 @@ func newConvertCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 			// --include-backlinks/--include-graph only annotate the --group-by-type
 			// catalog; warn (stderr only) if passed without it. Never gates.
 			hintCatalogFlags(cmd, groupByType, includeBacklinks, includeGraph)
-			// Malformed map shapes/values are usage errors (exit 2).
-			typeMap, err := convert.ParseTypeMap(typeMapRaw)
-			if err != nil {
-				return clijson.Usage(err)
-			}
-			// Malformed map shapes/values are usage errors (exit 2). Non-conformant
-			// §5.4 status values warn on the default path and gate under --strict,
-			// BEFORE any file is written (issue #23); --canonicalize-status opts into
-			// the fixed alias rewrite. resolveStatusMap wraps a malformed argument in
-			// clijson.Usage internally, so a bare return preserves the exit-2 contract.
-			statusMap, statusDefault, statusNotes, err := resolveStatusMap(statusMapRaw, canonicalizeStat, strict)
-			if err != nil {
-				return err
-			}
-			staleAfterMap, err := convert.ParseStaleAfterMap(staleAfterRaw)
-			if err != nil {
-				return clijson.Usage(err)
-			}
 			// --external-root declares KNOWN sibling workspace roots so their
 			// file:// links stay external without advising (issue #25). An empty
 			// value is a usage error (exit 2); a well-formed path that does not
 			// exist is accepted on purpose — a declared sibling may be absent from
 			// this checkout (e.g. in CI), and requiring existence would defeat the
-			// flag. No stat is performed.
+			// flag. No stat is performed. This wording is CLI-specific, so it stays
+			// at the adapter edge (the MCP tool phrases it as external_root).
 			for _, er := range externalRoots {
 				if strings.TrimSpace(er) == "" {
 					return clijson.Usage(fmt.Errorf("--external-root value must not be empty"))
@@ -95,59 +82,59 @@ func newConvertCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 			cfg.BindFlag(config.KeyDefaultType, cmd.Flags().Lookup("default-type"))
 			defaultType = cfg.GetString(config.KeyDefaultType)
 
-			// Resolve verified_by under the never-fabricate-trust ruling: an explicit
-			// --verified-by always stamps; otherwise a stamp is written only when the
-			// resolved origin satisfies the user-set exception (config.PermitsStampWithoutFlag).
-			// The resolved actor is validated (invalid ⇒ usage error, exit 2) even when
-			// it will not be honored. The config default was already validated fail-fast
-			// at config-load.
+			// Resolve+validate verified_by at the edge and classify its origin; the
+			// never-fabricate-trust routing (Source vocabulary + refused-verifier Note)
+			// lives in the service. An invalid actor is a usage error (exit 2) even when
+			// it will not be honored; the config default was validated fail-fast at load.
 			cfg.BindFlag(config.KeyVerifiedBy, cmd.Flags().Lookup("verified-by"))
-			vb, err := resolveVerifiedBy(cfg)
+			verifiedBy, trustOrigin, err := resolveVerifiedBy(cfg)
 			if err != nil {
 				return err
 			}
-			verifiedBy = vb.Actor
 
-			opts := convert.Options{
-				Codec:              codec,
-				DefaultType:        defaultType,
-				TypeMap:            typeMap,
-				StatusMap:          statusMap,
-				StatusDefault:      statusDefault,
-				StatusNotes:        statusNotes,
-				StaleAfterMap:      staleAfterMap,
-				VerifiedBy:         verifiedBy,
-				VerifiedByExplicit: vb.Explicit,
-				VerifiedBySource:   vb.Source,
-				FMRefKeys:          convert.ParseFMRefKeys(fmRefKeysRaw),
-				Version:            Version,
-				Now:                resolveNow(),
+			// Read the ambient determinism state HERE (adapter edge) and apply the core
+			// rule; a malformed epoch falls back to the wall clock, preserving the
+			// historical silent-fallback contract.
+			now, _ := binder.ResolveNow(os.Getenv("SOURCE_DATE_EPOCH"), time.Now())
+
+			// One code path: the service parses the flag grammars, applies the
+			// status-vocabulary pre-write gate, routes the trust decision, assembles
+			// convert.Options, and returns a COMPLETE report (report.Verified.Note
+			// included). The adapter only resolves inputs, renders, and gates.
+			res, err := svc.Convert(cmd.Context(), binder.ConvertRequest{
+				Src:                args[0],
+				Out:                output,
 				DryRun:             dryRun,
+				DefaultType:        defaultType,
+				TypeMapRaw:         typeMapRaw,
+				StatusMapRaw:       statusMapRaw,
+				StaleAfterMapRaw:   staleAfterRaw,
+				FMRefKeysRaw:       fmRefKeysRaw,
+				SourceKeysRaw:      sourceKeys,
+				CanonicalizeStatus: canonicalizeStat,
 				MapCitations:       mapCitations,
-				SourceKeys:         convert.ParseFMRefKeys(sourceKeys),
 				MapDraft:           mapDraft,
+				VerifiedBy:         verifiedBy,
+				TrustOrigin:        trustOrigin,
 				WorkspaceRoot:      workspaceRoot,
 				ExternalRoots:      externalRoots,
-
-				GroupByType:      groupByType,
-				IncludeBacklinks: includeBacklinks,
-				IncludeGraph:     includeGraph,
-			}
-			report, err := convert.Convert(args[0], output, opts)
+				GroupByType:        groupByType,
+				IncludeBacklinks:   includeBacklinks,
+				IncludeGraph:       includeGraph,
+				Version:            Version,
+				Now:                now,
+				Strict:             strict,
+			})
 			if err != nil {
 				return err
 			}
-			// Disclose a resolved-but-unhonored verifier (a BINDER_VERIFIED_BY env
-			// default or a repo-local config, neither of which authorizes stamping)
-			// so the decision is observable (Residual B).
-			report.Verified.Note = vb.Note
 
 			// --json and prose share the same report; --report writes whichever
 			// format --json selects, so the file and stdout never disagree.
-			out := report.String()
+			out := render.Convert(res)
 			if jsonOut {
 				var buf bytes.Buffer
-				if err := clijson.Encode(&buf, Version, "convert", report); err != nil {
+				if err := res.EncodeJSON(&buf); err != nil {
 					return fmt.Errorf("encoding json report: %w", err)
 				}
 				out = buf.String()
@@ -159,14 +146,9 @@ func newConvertCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 				}
 			}
 
-			// convert has no hard non-conformance; under --strict unresolved links
-			// and recovery warnings (unparseable frontmatter preserved as body) gate
-			// at exit 1. Without --strict it never gates (never-reject; exit 0). The
-			// report is already emitted, so the signal never suppresses output.
-			gatingPresent := report.NumUnresolved > 0 || report.NumRecovered > 0
-			return clijson.Gate(strict, false, gatingPresent,
-				fmt.Sprintf("convert produced %d unresolved link(s) and %d recovery warning(s) (--strict)",
-					report.NumUnresolved, report.NumRecovered))
+			// The gate decision (bare convert never gates; --strict gates on unresolved
+			// links or recovery warnings) is the Result's, defined once in the service.
+			return res.Gate(strict)
 		},
 	}
 

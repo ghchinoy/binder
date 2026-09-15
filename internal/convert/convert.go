@@ -76,6 +76,13 @@ type Options struct {
 	// ("flag" | "config" | "input" (MCP) | "none"), surfaced in the report's trust
 	// disclosure (Residual B). Empty is treated as "none".
 	VerifiedBySource string
+	// VerifiedByNote discloses a resolved-but-unhonored verifier: a verified_by
+	// resolved from BINDER_VERIFIED_BY or a repo-local .binder.yaml, neither of which
+	// authorizes a stamp (Residual B). It is written straight into
+	// report.Verified.Note so the report is COMPLETE after Convert/Analyze and no
+	// adapter patches it. Empty (the default) leaves the note absent, keeping output
+	// byte-identical. The text is produced once by binder.ResolveTrust.
+	VerifiedByNote string
 
 	// StatusNotes are pre-computed, deterministically-ordered status-vocabulary
 	// messages (issue #23): non-conformant --status-map values and any opt-in
@@ -216,6 +223,9 @@ func Analyze(src string, opts Options) (concepts []*okf.Concept, facts []SourceF
 	if opts.VerifiedBySource != "" {
 		report.Verified.Source = opts.VerifiedBySource
 	}
+	// A resolved-but-unhonored verifier (a refused env/repo-local value) is disclosed
+	// here so the report is COMPLETE — the field the CLI used to patch after the call.
+	report.Verified.Note = opts.VerifiedByNote
 
 	// Phase 1: resolve output paths, renaming reserved-name source files so they
 	// are never dropped (spec §3.1).

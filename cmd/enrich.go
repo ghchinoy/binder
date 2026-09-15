@@ -4,13 +4,14 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
+	"github.com/ghchinoy/binder/internal/binder"
+	"github.com/ghchinoy/binder/internal/binder/render"
 	"github.com/ghchinoy/binder/internal/clijson"
 	"github.com/ghchinoy/binder/internal/config"
-	"github.com/ghchinoy/binder/internal/convert"
-	"github.com/ghchinoy/binder/internal/enrich"
 	"github.com/ghchinoy/binder/internal/okf"
 )
 
@@ -27,6 +28,9 @@ func newEnrichCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 		jsonOut          bool
 		strict           bool
 	)
+	// Construct the shared service ONCE with the composition root's codec (stateless,
+	// safe for concurrent use); the RunE closure reuses it.
+	svc := binder.New(codec)
 
 	cmd := &cobra.Command{
 		Use:   "enrich <src>",
@@ -65,34 +69,9 @@ func newEnrichCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 
 			// A missing/non-directory source path is a usage error (exit 2),
 			// checked up front so it is distinguishable from a mid-walk IO
-			// failure (exit 3).
+			// failure (exit 3). This CLI-specific wording stays at the adapter edge.
 			if info, err := os.Stat(src); err != nil || !info.IsDir() {
 				return clijson.Usage(fmt.Errorf("source %q is not a readable directory", src))
-			}
-
-			typeMap, err := convert.ParseTypeMap(typeMapRaw)
-			if err != nil {
-				return clijson.Usage(err)
-			}
-			// Malformed map shapes/values are usage errors (exit 2). Non-conformant
-			// §5.4 status values warn on the default path and gate under --strict,
-			// BEFORE any file is written (issue #23); --canonicalize-status opts into
-			// the fixed alias rewrite.
-			statusMap, statusDefault, statusNotes, err := resolveStatusMap(statusMapRaw, canonicalizeStat, strict)
-			if err != nil {
-				return err
-			}
-			staleAfterMap, err := convert.ParseStaleAfterMap(staleAfterRaw)
-			if err != nil {
-				return clijson.Usage(err)
-			}
-			// --overwrite-keys is the opt-in, scoped exception to additive-only
-			// (issue #22). A malformed list, or naming a trust/attestation-carrying
-			// key, is a usage error (exit 2) that names the offending key and
-			// modifies no file.
-			overwriteKeys, err := enrich.ParseOverwriteKeys(overwriteRaw)
-			if err != nil {
-				return clijson.Usage(err)
 			}
 
 			// Resolve default_type through config precedence (flag > env > file >
@@ -100,65 +79,59 @@ func newEnrichCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 			cfg.BindFlag(config.KeyDefaultType, cmd.Flags().Lookup("default-type"))
 			defaultType = cfg.GetString(config.KeyDefaultType)
 
-			// Resolve verified_by under the never-fabricate-trust ruling, mirroring
-			// convert exactly: explicit --verified-by always stamps; otherwise a stamp
-			// is written only when the resolved origin satisfies the user-set exception
-			// (config.PermitsStampWithoutFlag). An invalid actor is a usage error (exit 2).
+			// Resolve+validate verified_by at the edge and classify its origin; the
+			// never-fabricate-trust routing lives in the service. An invalid actor is a
+			// usage error (exit 2) even when it will not be honored.
 			cfg.BindFlag(config.KeyVerifiedBy, cmd.Flags().Lookup("verified-by"))
-			vb, err := resolveVerifiedBy(cfg)
+			verifiedBy, trustOrigin, err := resolveVerifiedBy(cfg)
 			if err != nil {
 				return err
 			}
-			verifiedBy = vb.Actor
 
-			opts := enrich.Options{
-				Codec:              codec,
+			// Read the ambient determinism state HERE (adapter edge) and apply the core
+			// rule; a malformed epoch falls back to the wall clock.
+			now, _ := binder.ResolveNow(os.Getenv("SOURCE_DATE_EPOCH"), time.Now())
+
+			// One code path: the service parses the flag grammars, applies the
+			// status-vocabulary pre-write gate, routes the trust decision, assembles
+			// enrich.Options, and returns a COMPLETE report (report.Verified.Note
+			// included). The adapter only resolves inputs, renders, and gates.
+			res, err := svc.Enrich(cmd.Context(), binder.EnrichRequest{
+				Src:                src,
 				DefaultType:        defaultType,
-				TypeMap:            typeMap,
-				StatusMap:          statusMap,
-				StatusDefault:      statusDefault,
-				StatusNotes:        statusNotes,
-				StaleAfterMap:      staleAfterMap,
+				TypeMapRaw:         typeMapRaw,
+				StatusMapRaw:       statusMapRaw,
+				StaleAfterMapRaw:   staleAfterRaw,
+				OverwriteKeysRaw:   overwriteRaw,
+				CanonicalizeStatus: canonicalizeStat,
 				VerifiedBy:         verifiedBy,
-				VerifiedByExplicit: vb.Explicit,
-				VerifiedBySource:   vb.Source,
-				OverwriteKeys:      overwriteKeys,
+				TrustOrigin:        trustOrigin,
 				Version:            Version,
-				Now:                resolveNow(),
+				Now:                now,
 				DryRun:             dryRun,
-			}
-			rep, err := enrich.Enrich(src, opts)
+				Strict:             strict,
+			})
 			if err != nil {
-				// Path already validated above; any failure here is IO/internal (exit 3).
+				// Path already validated above; a service failure is a parse usage error
+				// (exit 2), the status-vocab pre-write gate (exit 1), or IO/internal (exit 3).
 				return err
 			}
-			// Disclose a resolved-but-unhonored verifier (a BINDER_VERIFIED_BY env
-			// default or a repo-local config, neither of which authorizes stamping).
-			rep.Verified.Note = vb.Note
 
 			// The report is ALWAYS emitted before the gate signals, so the gate
 			// never suppresses output.
 			if jsonOut {
-				if err := clijson.Encode(cmd.OutOrStdout(), Version, "enrich", rep); err != nil {
+				if err := res.EncodeJSON(cmd.OutOrStdout()); err != nil {
 					return fmt.Errorf("encoding json report: %w", err)
 				}
 			} else {
-				fmt.Fprint(cmd.OutOrStdout(), rep.String())
+				fmt.Fprint(cmd.OutOrStdout(), render.Enrich(res))
 			}
 
-			// This is the post-run gate, and it covers only what NumFindings
-			// counts: skipped files (unparseable frontmatter) and preserve-or-advise
-			// warnings. It is NARROWER than "gating findings" in the user guide,
-			// which also covers the non-conformant --status-map OKF §5.4 value gated
-			// pre-write in resolveStatusMap (cmd/statusmap.go) and never counted
-			// here. Bare enrich never gates (exit 0); --strict gates on the counted
-			// findings (exit 1). The boundary-normalization advisory (#124) is
-			// reported but excluded from NumFindings, so it never gates. The message
-			// names each real quantity separately: printing the findings total as
-			// "skipped N file(s)" claimed skips that had not happened (issue #154).
-			return clijson.Gate(strict, false, rep.NumFindings() > 0,
-				fmt.Sprintf("enrich skipped %d file(s) and raised %d warning(s) (--strict)",
-					rep.NumSkipped, len(rep.Warnings)))
+			// The gate decision (bare enrich never gates; --strict gates on the counted
+			// findings — skipped files and preserve-or-advise warnings, NARROWER than
+			// the user guide's "gating findings" which also covers the pre-write
+			// status-vocab gate) is the Result's, defined once in the service.
+			return res.Gate(strict)
 		},
 	}
 
