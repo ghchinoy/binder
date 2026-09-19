@@ -3,6 +3,7 @@ package cmd
 import (
 	"github.com/spf13/cobra"
 
+	"github.com/ghchinoy/binder/internal/binder"
 	mcpserver "github.com/ghchinoy/binder/internal/mcp"
 	"github.com/ghchinoy/binder/internal/okf"
 )
@@ -30,7 +31,7 @@ func newMCPCmd(codec okf.Codec) *cobra.Command {
 			"harness, e.g.: claude mcp add binder -- binder mcp",
 		Args: exactArgs(0),
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return mcpserver.Serve(cmd.Context(), codec, Version)
+			return mcpserver.Serve(cmd.Context(), codec, binder.Version)
 		},
 	}
 }

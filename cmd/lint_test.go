@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ghchinoy/binder/internal/binder"
 	"github.com/ghchinoy/binder/internal/clijson"
 )
 
@@ -95,8 +96,8 @@ func TestLintJSONEnvelope(t *testing.T) {
 	if env.Schema != clijson.SchemaVersion {
 		t.Errorf("schema = %q, want %q", env.Schema, clijson.SchemaVersion)
 	}
-	if env.Binder != "binder/"+Version {
-		t.Errorf("binder = %q, want binder/%s", env.Binder, Version)
+	if env.Binder != "binder/"+binder.Version {
+		t.Errorf("binder = %q, want binder/%s", env.Binder, binder.Version)
 	}
 	result, ok := env.Result.(map[string]any)
 	if !ok {

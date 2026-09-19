@@ -120,7 +120,7 @@ func newConvertCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 				GroupByType:        groupByType,
 				IncludeBacklinks:   includeBacklinks,
 				IncludeGraph:       includeGraph,
-				Version:            Version,
+				Version:            binder.Version,
 				Now:                now,
 				Strict:             strict,
 			})

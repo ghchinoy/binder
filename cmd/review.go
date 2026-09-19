@@ -55,7 +55,7 @@ func newReviewCmd(codec okf.Codec) *cobra.Command {
 				Entrypoints: entrypoints,
 				Now:         now,
 				Today:       today,
-				Version:     Version,
+				Version:     binder.Version,
 			})
 			if err != nil {
 				return err

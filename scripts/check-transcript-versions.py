@@ -304,7 +304,7 @@ def main() -> int:
         sys.stderr.write(
             f"FATAL: `{binder} --version` returned {expected!r}, not a stamped "
             f"release version (binder/X.Y.Z). Build a stamped binary with\n"
-            f'  go build -ldflags "-X github.com/ghchinoy/binder/cmd.Version='
+            f'  go build -ldflags "-X github.com/ghchinoy/binder/internal/binder.Version='
             f'$(git describe --tags --abbrev=0)" -o <bin> .\n'
             f"before running this gate.\n"
         )

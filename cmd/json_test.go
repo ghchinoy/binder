@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ghchinoy/binder/internal/binder"
 	"github.com/ghchinoy/binder/internal/clijson"
 )
 
@@ -37,8 +38,8 @@ func TestConvertJSONGolden(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &env); err != nil {
 		t.Fatalf("output is not valid JSON: %v\n%s", err, out)
 	}
-	if env.Binder != "binder/"+Version {
-		t.Errorf("binder = %q, want %q", env.Binder, "binder/"+Version)
+	if env.Binder != "binder/"+binder.Version {
+		t.Errorf("binder = %q, want %q", env.Binder, "binder/"+binder.Version)
 	}
 	if env.Command != "convert" {
 		t.Errorf("command = %q, want convert", env.Command)

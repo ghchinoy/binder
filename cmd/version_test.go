@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ghchinoy/binder/internal/binder"
 	"github.com/ghchinoy/binder/internal/clijson"
 )
 
@@ -48,13 +49,13 @@ func TestNormalizeVersion(t *testing.T) {
 // It drives a v-prefixed raw version through normalizeVersion (the same funnel
 // init() uses) so the assertion exercises the production path, not a copy.
 func TestTrustStampMatchesVersion(t *testing.T) {
-	old := Version
-	Version = normalizeVersion("v0.3.0")
-	defer func() { Version = old }()
+	old := binder.Version
+	binder.Version = normalizeVersion("v0.3.0")
+	defer func() { binder.Version = old }()
 
 	const want = "binder/0.3.0"
-	if strings.Contains("binder/"+Version, "binder/v") {
-		t.Fatalf("funnel left a leading v: Version = %q", Version)
+	if strings.Contains("binder/"+binder.Version, "binder/v") {
+		t.Fatalf("funnel left a leading v: binder.Version = %q", binder.Version)
 	}
 
 	// Surface 1: `binder --version`.

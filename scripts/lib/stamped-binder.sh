@@ -105,8 +105,8 @@ build_stamped_binder() {
   fi
   version="$(stamp_version)"
   bin="$(mktemp -d -p "$_STAMPED_BINDER_TMPROOT")/binder"
-  echo "==> building stamped binder (cmd.Version=${version})" >&2
-  if ! go build -ldflags "-X github.com/ghchinoy/binder/cmd.Version=${version}" -o "$bin" . >&2; then
+  echo "==> building stamped binder (internal/binder.Version=${version})" >&2
+  if ! go build -ldflags "-X github.com/ghchinoy/binder/internal/binder.Version=${version}" -o "$bin" . >&2; then
     return 1
   fi
   reported="$("$bin" --version 2>&1)"

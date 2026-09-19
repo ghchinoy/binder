@@ -2,13 +2,15 @@
 // binder shows in user-facing help and error text ("e.g. binder/0.5.3").
 //
 // It exists because of an import-direction problem (issue #60). The live
-// version lives in `var cmd.Version`, because that is what goreleaser's
-// -ldflags "-X github.com/ghchinoy/binder/cmd.Version=<tag>" can reach. But the
-// exemplar is needed by internal/config (the shared actor-forms hint, used by
-// both the flag validator and the config-load validator) and by internal/mcp —
-// and `cmd` imports both, so neither can import `cmd` back. A leaf package that
-// `cmd` PUSHES the resolved version into is the only direction that works
-// without moving the ldflags target, which is release infrastructure.
+// version lives in `var binder.Version` (internal/binder), because that is what
+// goreleaser's
+// -ldflags "-X github.com/ghchinoy/binder/internal/binder.Version=<tag>" can
+// reach. But the exemplar is needed by internal/config (the shared actor-forms
+// hint, used by both the flag validator and the config-load validator) and by
+// internal/mcp — and `cmd` imports both, so neither can import `cmd` back. A leaf
+// package that `cmd` PUSHES the resolved version into is the only direction that
+// works. (`cmd`'s init resolves and normalizes binder.Version, then pushes it
+// here; see cmd/root.go.)
 //
 // # Initialization order (the trap this package is built around)
 //
