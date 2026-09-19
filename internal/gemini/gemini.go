@@ -1,4 +1,16 @@
-package infer
+// Package gemini is the concrete Gemini adapter for infer's optional semantic
+// tier. It is the ONE place google.golang.org/genai (a heavy cloud SDK) and the
+// GEMINI_API_KEY / GOOGLE_CLOUD_PROJECT environment reads live.
+//
+// It is deliberately kept OUT of internal/infer and off the service seam
+// (internal/binder): infer.Infer takes an infer.GeminiClient through the
+// injectable Options.NewGeminiClient factory, so the pure capability and the
+// shared service never import genai. Only the CLI adapter (cmd/infer.go) imports
+// this package and injects New as the factory. This keeps the cloud SDK out of
+// the future committed pkg/ surface and out of every external consumer's
+// dependency graph (design §6 Phase 4 / Decision 3 / Residual Risk 7). If infer
+// is ever split to its own module, this package moves with it.
+package gemini
 
 import (
 	"context"
@@ -8,21 +20,22 @@ import (
 	"strings"
 
 	"google.golang.org/genai"
+
+	"github.com/ghchinoy/binder/internal/infer"
 )
 
-// GeminiClient is the interface for semantic taxonomy inference.
-type GeminiClient interface {
-	InferDirectoryTypes(ctx context.Context, dirs map[string][]string, sampleTitles map[string][]string) (map[string]string, error)
-}
-
-type realGeminiClient struct {
+// realClient talks to the Gemini API / Vertex AI through the genai SDK.
+type realClient struct {
 	client *genai.Client
 	model  string
 }
 
-// NewGeminiClient constructs a Gemini client using the requested options,
-// auto-detecting API key vs Vertex AI with ADC. Returns (client, model, backendName, error).
-func NewGeminiClient(ctx context.Context, opts Options) (GeminiClient, string, string, error) {
+// New constructs a Gemini client using the requested options, auto-detecting API
+// key vs Vertex AI with ADC. It reads GEMINI_API_KEY / GOOGLE_CLOUD_PROJECT from
+// the environment here — at the adapter edge — never on the service path. It
+// matches the infer.Options.NewGeminiClient factory signature so cmd/infer.go can
+// inject it: (client, model, backendName, error).
+func New(ctx context.Context, opts infer.Options) (infer.GeminiClient, string, string, error) {
 	model := strings.TrimSpace(opts.GeminiModel)
 	if model == "" {
 		model = "gemini-3.5-flash-lite"
@@ -76,10 +89,10 @@ func NewGeminiClient(ctx context.Context, opts Options) (GeminiClient, string, s
 		return nil, "", "", fmt.Errorf("initializing Gemini client (%s): %w", backendName, err)
 	}
 
-	return &realGeminiClient{client: client, model: model}, model, backendName, nil
+	return &realClient{client: client, model: model}, model, backendName, nil
 }
 
-func (g *realGeminiClient) InferDirectoryTypes(ctx context.Context, dirs map[string][]string, sampleTitles map[string][]string) (map[string]string, error) {
+func (g *realClient) InferDirectoryTypes(ctx context.Context, dirs map[string][]string, sampleTitles map[string][]string) (map[string]string, error) {
 	if len(dirs) == 0 {
 		return nil, nil
 	}

@@ -6,9 +6,11 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/ghchinoy/binder/internal/binder"
+	"github.com/ghchinoy/binder/internal/binder/render"
 	"github.com/ghchinoy/binder/internal/clijson"
 	"github.com/ghchinoy/binder/internal/config"
-	"github.com/ghchinoy/binder/internal/infer"
+	"github.com/ghchinoy/binder/internal/gemini"
 	"github.com/ghchinoy/binder/internal/okf"
 )
 
@@ -25,6 +27,9 @@ func newInferCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 		strict         bool
 	)
 
+	// Construct the shared service ONCE with the composition root's codec (it is
+	// stateless and safe for concurrent use); the RunE closure reuses it.
+	svc := binder.New(codec)
 	cmd := &cobra.Command{
 		Use:   "infer <corpus>",
 		Short: "Inspect a source markdown corpus and propose a --type-map",
@@ -45,7 +50,8 @@ func newInferCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 				return clijson.Usage(fmt.Errorf("corpus %q is not a readable directory", src))
 			}
 
-			// Bind flags to config keys
+			// Bind flags to config keys — the viper/pflag substrate stays at the
+			// adapter edge; only resolved values cross the service seam.
 			cfg.BindFlag(config.KeyDefaultType, cmd.Flags().Lookup("default-type"))
 			cfg.BindFlag(config.KeyGeminiModel, cmd.Flags().Lookup("gemini-model"))
 			cfg.BindFlag(config.KeyGeminiLocation, cmd.Flags().Lookup("location"))
@@ -58,40 +64,47 @@ func newInferCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 			geminiProject = cfg.GetString(config.KeyGeminiProject)
 			geminiBackend = cfg.GetString(config.KeyGeminiBackend)
 
-			opts := infer.Options{
-				DefaultType:    defaultType,
-				UseGemini:      useGemini,
-				GeminiModel:    geminiModel,
-				GeminiLocation: geminiLocation,
-				GeminiProject:  geminiProject,
-				GeminiBackend:  geminiBackend,
-				GeminiRequired: geminiRequired,
-			}
-
-			rep, err := infer.Infer(cmd.Context(), src, codec, opts)
+			// One code path: the service owns the infer orchestration and the
+			// gating-finding definition. The concrete Gemini client (which imports
+			// google.golang.org/genai and reads GEMINI_API_KEY / GOOGLE_CLOUD_PROJECT)
+			// is injected here, at the adapter edge, via gemini.New — so the SDK
+			// never reaches the service seam.
+			res, err := svc.Infer(cmd.Context(), binder.InferRequest{
+				Src:                 src,
+				DefaultType:         defaultType,
+				UseGemini:           useGemini,
+				GeminiModel:         geminiModel,
+				GeminiLocation:      geminiLocation,
+				GeminiProject:       geminiProject,
+				GeminiBackend:       geminiBackend,
+				GeminiRequired:      geminiRequired,
+				GeminiClientFactory: gemini.New,
+				Version:             Version,
+			})
 			if err != nil {
 				return err
 			}
 
 			if jsonOut {
-				if err := clijson.Encode(cmd.OutOrStdout(), Version, "infer", rep); err != nil {
+				if err := res.EncodeJSON(cmd.OutOrStdout()); err != nil {
 					return fmt.Errorf("encoding json report: %w", err)
 				}
-			} else if len(rep.Mappings) == 0 {
+			} else if res.Empty() {
 				// Zero mappings: the human-readable diagnostic goes to stderr so
 				// stdout stays machine-consumable and empty. This keeps the
 				// documented `--type-map "$(binder infer SRC)"` idiom working —
 				// the substitution yields "", which enrich/convert accept as a
 				// --type-map that maps nothing (they still do the rest of their
-				// work). Exit stays 0: this is not a failure condition.
-				fmt.Fprint(cmd.ErrOrStderr(), rep.String())
+				// work). Exit stays 0: this is not a failure condition. The routing
+				// signal (Empty) is defined once in the service.
+				fmt.Fprint(cmd.ErrOrStderr(), render.Infer(res))
 			} else {
-				fmt.Fprint(cmd.OutOrStdout(), rep.String())
+				fmt.Fprint(cmd.OutOrStdout(), render.Infer(res))
 			}
 
-			hasWarnings := len(rep.Warnings) > 0
-			return clijson.Gate(strict, false, hasWarnings,
-				fmt.Sprintf("infer encountered %d warning(s) (--strict)", len(rep.Warnings)))
+			// The gate decision (bare infer never gates; --strict gates on any
+			// warning) is the Result's, defined once in the service.
+			return res.Gate(strict)
 		},
 	}
 

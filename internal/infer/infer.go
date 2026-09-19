@@ -13,6 +13,17 @@ import (
 )
 
 // Infer inspects a markdown corpus at src and proposes a type-map report.
+//
+// The optional Gemini semantic tier (opts.UseGemini) is driven through the
+// genai-free GeminiClient interface. A client is taken from opts.GeminiClient
+// when pre-injected, otherwise built by opts.NewGeminiClient. When UseGemini is
+// set but BOTH are nil, the tier is simply unavailable: the run degrades to the
+// deterministic tiers, and opts.GeminiRequired does NOT force an error in that
+// case — GeminiRequired only escalates a factory or inference *failure*, not the
+// absence of a client. Shipping code always supplies a factory (cmd/infer.go
+// injects internal/gemini.New), so the nil-both state is a programmatic-caller
+// concern only; a future pkg/binder caller that sets UseGemini+GeminiRequired
+// without a client/factory will degrade rather than error.
 func Infer(ctx context.Context, src string, codec okf.Codec, opts Options) (*Report, error) {
 	if codec == nil {
 		return nil, fmt.Errorf("infer: codec is required")
@@ -189,8 +200,12 @@ func Infer(ctx context.Context, src string, codec okf.Codec, opts Options) (*Rep
 				modelName = "gemini-3.5-flash-lite"
 			}
 			backendName = "mock"
-		} else {
-			client, m, b, err := NewGeminiClient(ctx, opts)
+		} else if opts.NewGeminiClient != nil {
+			// The concrete client (and its genai import + env reads) is built by the
+			// adapter-supplied factory, keeping google.golang.org/genai out of this
+			// package. The graceful-degrade / GeminiRequired handling stays here so
+			// the disclosed warning text and error path are unchanged.
+			client, m, b, err := opts.NewGeminiClient(ctx, opts)
 			if err != nil {
 				if opts.GeminiRequired {
 					return nil, fmt.Errorf("gemini client initialization: %w", err)
