@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
@@ -173,15 +172,4 @@ func newConvertCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 	cmd.Flags().BoolVar(&includeBacklinks, "include-backlinks", false, "annotate catalog entries with inbound resolved edges (requires --group-by-type)")
 	cmd.Flags().BoolVar(&includeGraph, "include-graph", false, "annotate catalog entries with outbound resolved edges (requires --group-by-type)")
 	return cmd
-}
-
-// resolveNow honors SOURCE_DATE_EPOCH for reproducible builds, falling back to
-// the wall clock. generated.at is stamped from this instant.
-func resolveNow() time.Time {
-	if v := os.Getenv("SOURCE_DATE_EPOCH"); v != "" {
-		if secs, err := strconv.ParseInt(v, 10, 64); err == nil {
-			return time.Unix(secs, 0).UTC()
-		}
-	}
-	return time.Now()
 }

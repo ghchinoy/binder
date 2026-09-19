@@ -7,11 +7,28 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/ghchinoy/binder/internal/binder"
 	"github.com/ghchinoy/binder/internal/okf/native"
 )
+
+// todayOrNow returns the explicit today, or the date derived from the shared
+// service determinism rule (binder.ResolveNow over SOURCE_DATE_EPOCH) when today
+// is empty — the same default every service-backed handler applies. The
+// production mcp.resolveNow/todayOrNow helpers were removed in Phase 5 once the
+// determinism path routed exclusively through binder.ResolveNow; this test-only
+// helper computes the expected `today` through the SAME rule the code under test
+// uses, so the SOURCE_DATE_EPOCH determinism assertions still hold.
+func todayOrNow(today string) string {
+	if today != "" {
+		return today
+	}
+	now, _ := binder.ResolveNow(os.Getenv("SOURCE_DATE_EPOCH"), time.Now())
+	return now.Format("2006-01-02")
+}
 
 // testVersion is the binder version the tests stamp; it must match the CLI's
 // cmd.Version so the parity comparison is byte-identical.
