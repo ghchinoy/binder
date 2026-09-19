@@ -27,6 +27,12 @@ const (
 	// NOT import the viper/pflag config substrate merely to name its own contract
 	// (design Residual Risk 8). Byte-identity goldens and the plugindocs drift gate
 	// pin the two to the same value.
+	//
+	// NOTE: this literal is INTENTIONALLY duplicated with internal/config.SchemaVersion
+	// — a knowing DRY trade-off to keep viper/pflag off the service seam, not an
+	// oversight. It is drift-gated: config_test.go goldens and
+	// internal/plugindocs/drift_proving_test.go both pin this value, so any
+	// divergence fails the test gate. See phase4/infer-config-decisions.md §2.
 	configSchemaVersion = "binder.config/v1"
 )
 

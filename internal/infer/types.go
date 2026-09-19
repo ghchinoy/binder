@@ -67,6 +67,10 @@ type Options struct {
 	GeminiProject  string
 	GeminiBackend  string // "auto" | "api" | "vertex"
 	GeminiAPIKey   string
+	// GeminiRequired escalates a Gemini factory/inference FAILURE into a hard
+	// error instead of degrading to the deterministic tiers. It does not fire when
+	// no client/factory is supplied at all: with both GeminiClient and
+	// NewGeminiClient nil the tier is unavailable and the run degrades (see Infer).
 	GeminiRequired bool
 	GeminiClient   GeminiClient // optional pre-built client (tests inject a mock)
 

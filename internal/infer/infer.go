@@ -13,6 +13,17 @@ import (
 )
 
 // Infer inspects a markdown corpus at src and proposes a type-map report.
+//
+// The optional Gemini semantic tier (opts.UseGemini) is driven through the
+// genai-free GeminiClient interface. A client is taken from opts.GeminiClient
+// when pre-injected, otherwise built by opts.NewGeminiClient. When UseGemini is
+// set but BOTH are nil, the tier is simply unavailable: the run degrades to the
+// deterministic tiers, and opts.GeminiRequired does NOT force an error in that
+// case — GeminiRequired only escalates a factory or inference *failure*, not the
+// absence of a client. Shipping code always supplies a factory (cmd/infer.go
+// injects internal/gemini.New), so the nil-both state is a programmatic-caller
+// concern only; a future pkg/binder caller that sets UseGemini+GeminiRequired
+// without a client/factory will degrade rather than error.
 func Infer(ctx context.Context, src string, codec okf.Codec, opts Options) (*Report, error) {
 	if codec == nil {
 		return nil, fmt.Errorf("infer: codec is required")
