@@ -2,14 +2,12 @@ package binder
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 
 	"github.com/ghchinoy/binder/internal/bundle"
 	"github.com/ghchinoy/binder/internal/convert"
-	"github.com/ghchinoy/binder/internal/okf"
 )
 
 // IndexRequest carries the RESOLVED inputs an index run needs. index has no JSON
@@ -104,26 +102,4 @@ func (s *Service) Index(ctx context.Context, req IndexRequest) (IndexResult, err
 		res.Entries = append(res.Entries, IndexEntry{Action: action, Rel: rel})
 	}
 	return res, nil
-}
-
-// UnparsedWarnings returns the stderr disclosure lines for every file the bundle
-// loader could not parse (#161/#163), as DATA — one message per unparsed concept
-// (kept in the nav, recovered as body, never dropped) and one for an unparseable root
-// index.md (okf_version not adopted). Each line is complete but carries no trailing
-// newline; the caller frames it. This is the single home for the text that
-// Service.Index and cmd.warnUnparsed both emit, so the two cannot drift. It returns
-// no lines when the bundle parsed cleanly.
-func UnparsedWarnings(b *okf.Bundle) []string {
-	var out []string
-	for _, u := range b.Unparsed {
-		out = append(out, fmt.Sprintf(
-			"warning: %s: frontmatter did not parse (%s); kept as body under never-reject and reported as unparsed",
-			u.RelPath, u.Err))
-	}
-	if b.RootVersionUnparsed != nil {
-		out = append(out, fmt.Sprintf(
-			"warning: %s: frontmatter did not parse (%s); okf_version not adopted, using default %s",
-			b.RootVersionUnparsed.RelPath, b.RootVersionUnparsed.Err, b.OKFVersion))
-	}
-	return out
 }

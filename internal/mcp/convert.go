@@ -41,7 +41,12 @@ type convertInput struct {
 	GroupByType        bool     `json:"group_by_type,omitempty" jsonschema:"append an additive \"# Catalog\" of all concepts grouped by type to the root index.md"`
 	IncludeBacklinks   bool     `json:"include_backlinks,omitempty" jsonschema:"annotate catalog entries with inbound resolved edges (requires group_by_type)"`
 	IncludeGraph       bool     `json:"include_graph,omitempty" jsonschema:"annotate catalog entries with outbound resolved edges (requires group_by_type)"`
-	Strict             bool     `json:"strict,omitempty" jsonschema:"gate semantics only; does not change the payload (parity with the CLI flag)"`
+	// Strict is accepted for CLI flag parity but IGNORED by this handler: the MCP
+	// surface never gates (the call below hardcodes Strict:false) and Strict does not
+	// change the payload, so reading it would be a no-op. Base ignored it for the
+	// payload too, so this is not a behavior change. The field is retained for now to
+	// avoid a transport-schema change; its removal is deferred to Phase 5.
+	Strict bool `json:"strict,omitempty" jsonschema:"gate semantics only; does not change the payload (parity with the CLI flag)"`
 }
 
 // registerConvert wires the convert tool. dry_run:true → the analysis preview
@@ -63,6 +68,22 @@ func registerConvert(s *mcp.Server, d *deps) {
 			return nil, nil, fmt.Errorf("out is required (or set dry_run:true)")
 		}
 
+		// Validation precedence (deliberate; see PR #226 review FYI-2). This adapter
+		// validates the transport-level inputs — external_root-empty and invalid-actor —
+		// BEFORE the shared service parses the map grammars, whereas base parsed the maps
+		// first. That reorder is a STRUCTURAL consequence of the Phase-3 collapse: map
+		// parsing now lives in the shared Service.Convert, while these two checks stay
+		// surface-specific (their wording differs from the CLI's — external_root vs
+		// --external-root, and the MCP actor error uses config.ActorFormsHint instead of
+		// the CLI's clijson.Usage-wrapped form), so they cannot move into the shared core.
+		// Restoring the base order would require re-adding adapter-side map parsing —
+		// undoing the exact duplication this phase removed. For any SINGLE invalid input
+		// the emitted error and result are byte-identical to base; only a call carrying
+		// MULTIPLE invalid inputs at once changes WHICH usage-class error surfaces first
+		// (both remain usage-class errors). The CLI adapter reordered identically, so the
+		// two surfaces stay mutually consistent — as they were in base (both parse-first),
+		// they are now both edge-check-first.
+		//
 		// --external-root parity (issue #25). Declared sibling roots are a genuine
 		// repeatable list, so external_root is a []string mirroring the CLI's
 		// StringArrayVar. An empty value is a usage-class tool error, the same gate as
