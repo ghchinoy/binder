@@ -139,6 +139,10 @@ Homebrew's shorthand for the `ghchinoy/homebrew-tap` repo, and the formula's own
   output + trust-stamp format).
 - The OKF spec level binder targets is a **separate axis**: advertise it in the
   README/CHANGELOG, never encode it in binder's SemVer.
+- The **Go SDK** (the exported surface a program gets by importing binder's
+  packages) is a **third, independent axis** — provisional while `0.x`, with its
+  own future stability commitment distinct from this reserved `v1.0.0`. See
+  [`docs/api-stability.md`](api-stability.md).
 
 ## How the version reaches the binary (single-source: the tag)
 
