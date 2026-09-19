@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/ghchinoy/binder/internal/binder"
 	"github.com/ghchinoy/binder/internal/okf"
 )
 
@@ -14,12 +15,13 @@ import (
 // user must be told, so a "clean" exit is never a silent one. Warnings go to
 // stderr so a command's primary output (a write manifest, a report, a graph)
 // stays uncontaminated. It writes nothing when the bundle parsed cleanly.
+//
+// The disclosure TEXT now lives in exactly one place — binder.UnparsedWarnings —
+// so the read-side commands (graph/project) and the service-backed `index` write
+// path emit byte-identical wording; this helper only frames each line to w. The
+// service-backed commands (index) surface the same lines as data on their Result.
 func warnUnparsed(w io.Writer, b *okf.Bundle) {
-	for _, u := range b.Unparsed {
-		fmt.Fprintf(w, "warning: %s: frontmatter did not parse (%s); kept as body under never-reject and reported as unparsed\n", u.RelPath, u.Err)
-	}
-	if b.RootVersionUnparsed != nil {
-		fmt.Fprintf(w, "warning: %s: frontmatter did not parse (%s); okf_version not adopted, using default %s\n",
-			b.RootVersionUnparsed.RelPath, b.RootVersionUnparsed.Err, b.OKFVersion)
+	for _, line := range binder.UnparsedWarnings(b) {
+		fmt.Fprintln(w, line)
 	}
 }

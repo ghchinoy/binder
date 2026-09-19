@@ -26,3 +26,18 @@ func Lint(res binder.LintResult) string {
 func Infer(res binder.InferResult) string {
 	return res.Report.String()
 }
+
+// Convert returns the deterministic human-readable convert report for a
+// ConvertResult, byte-identical to what the CLI printed before the collapse. The
+// canonical prose (including the trust-disclosure block) is owned by
+// convert.Report.String(); this is the core seam adapters call.
+func Convert(res binder.ConvertResult) string {
+	return res.Report.String()
+}
+
+// Enrich returns the deterministic human-readable enrich report for an EnrichResult,
+// byte-identical to what the CLI printed before the collapse. The canonical prose is
+// owned by enrich.Report.String(); this is the core seam adapters call.
+func Enrich(res binder.EnrichResult) string {
+	return res.Report.String()
+}
