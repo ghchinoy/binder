@@ -2,13 +2,15 @@ package cmd
 
 import (
 	"fmt"
+	"os"
+	"time"
 
 	"github.com/spf13/cobra"
 
-	"github.com/ghchinoy/binder/internal/bundle"
+	"github.com/ghchinoy/binder/internal/binder"
+	"github.com/ghchinoy/binder/internal/binder/render"
 	"github.com/ghchinoy/binder/internal/clijson"
 	"github.com/ghchinoy/binder/internal/okf"
-	"github.com/ghchinoy/binder/internal/review"
 )
 
 func newReviewCmd(codec okf.Codec) *cobra.Command {
@@ -18,6 +20,9 @@ func newReviewCmd(codec okf.Codec) *cobra.Command {
 		strict      bool
 		entrypoints []string
 	)
+	// Construct the shared service ONCE with the composition root's codec (it is
+	// stateless and safe for concurrent use); the RunE closure reuses it.
+	svc := binder.New(codec)
 	cmd := &cobra.Command{
 		Use:   "review <bundle>",
 		Short: "Summarize a bundle: concepts, unresolved links, orphans, trust tiers, stale",
@@ -36,29 +41,36 @@ func newReviewCmd(codec okf.Codec) *cobra.Command {
 			if today != "" && !okf.IsValidISODate(today) {
 				return clijson.Usage(fmt.Errorf("--today %q is not a valid date (expected YYYY-MM-DD)", today))
 			}
-			b, err := bundle.Load(args[0], codec)
+
+			// Read the ambient determinism state HERE (adapter edge) and apply the
+			// core rule; a malformed epoch falls back to the wall clock exactly as
+			// cmd.resolveNow did, so the historical silent-fallback contract holds.
+			now, _ := binder.ResolveNow(os.Getenv("SOURCE_DATE_EPOCH"), time.Now())
+
+			// One code path: the service owns Load → Review, the Today default, and
+			// the gating-finding definition. The adapter only resolves inputs,
+			// renders, and maps the gate error to an exit code.
+			res, err := svc.Review(cmd.Context(), binder.ReviewRequest{
+				Bundle:      args[0],
+				Entrypoints: entrypoints,
+				Now:         now,
+				Today:       today,
+				Version:     Version,
+			})
 			if err != nil {
 				return err
 			}
-			if today == "" {
-				today = resolveNow().Format("2006-01-02")
-			}
-			rep := review.Review(b, today, entrypoints)
-			// review has no hard non-conformance; under --strict any review finding
-			// (orphans, stale, unresolved/broken edges, unparsed-frontmatter
-			// recoveries) gates at exit 1. Without --strict it never gates (exit 0).
-			findings := len(rep.Orphans) + len(rep.Stale) + len(rep.Unresolved) + len(rep.UnparsedFrontmatter)
-			gate := clijson.Gate(strict, false, findings > 0,
-				fmt.Sprintf("review found %d gating finding(s) (--strict)", findings))
 
+			// Report is ALWAYS emitted before the gate signals, so the gate never
+			// suppresses output.
 			if jsonOut {
-				if err := clijson.Encode(cmd.OutOrStdout(), Version, "review", rep); err != nil {
+				if err := res.EncodeJSON(cmd.OutOrStdout()); err != nil {
 					return fmt.Errorf("encoding json report: %w", err)
 				}
-				return gate
+				return res.Gate(strict)
 			}
-			fmt.Fprint(cmd.OutOrStdout(), rep.String())
-			return gate
+			fmt.Fprint(cmd.OutOrStdout(), render.Review(res))
+			return res.Gate(strict)
 		},
 	}
 	cmd.Flags().StringVar(&today, "today", "", "date (YYYY-MM-DD) used for staleness; defaults to now")
