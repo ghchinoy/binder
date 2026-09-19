@@ -1,0 +1,114 @@
+# ==== binder service surface (internal/binder -> pkg/binder at Phase 6) ====
+const OpLookup GraphQueryOp
+const OpNeighborhood GraphQueryOp
+const OpNeighbors GraphQueryOp
+const OpPath GraphQueryOp
+const OpPattern GraphQueryOp
+const TrustConfig
+const TrustEnv
+const TrustFlag
+const TrustInput
+const TrustNone TrustOrigin
+const TrustRepoConfig
+func New(codec okf.Codec) *Service
+func ResolveNow(sourceDateEpoch string, fallback time.Time) (time.Time, error)
+func ResolveNowFromEnv() (time.Time, error)
+func ResolveTrust(actor string, origin TrustOrigin) TrustDecision
+func UnparsedWarnings(b *okf.Bundle) []string
+type ConfigGetRequest struct {Key string; Source string; Value string; Version string}
+type ConfigGetResult struct {Key string `json:"key"`; Source string `json:"source"`; Value string `json:"value"`}
+  func (ConfigGetResult) EncodeJSON(w io.Writer) error
+type ConfigSetRequest struct {File string; Key string; Value string; Version string}
+type ConfigSetResult struct {File string `json:"file"`; Key string `json:"key"`; Status string `json:"status"`; Value string `json:"value"`}
+  func (ConfigSetResult) EncodeJSON(w io.Writer) error
+type ConfigUnsetRequest struct {Existed bool; File string; Key string; Version string}
+type ConfigUnsetResult struct {File string `json:"file"`; Key string `json:"key"`; Status string `json:"status"`}
+  func (ConfigUnsetResult) EncodeJSON(w io.Writer) error
+type ConvertRequest struct {CanonicalizeStatus bool; DefaultType string; DryRun bool; ExternalRoots []string; FMRefKeysRaw string; GroupByType bool; IncludeBacklinks bool; IncludeGraph bool; MapCitations bool; MapDraft bool; Now time.Time; Out string; SourceKeysRaw string; Src string; StaleAfterMapRaw string; StatusMapRaw string; Strict bool; TrustOrigin TrustOrigin; TypeMapRaw string; VerifiedBy string; Version string; WorkspaceRoot string}
+type ConvertResult struct {Report *convert.Report}
+  func (ConvertResult) EncodeJSON(w io.Writer) error
+  func (ConvertResult) Gate(strict bool) error
+type EnrichRequest struct {CanonicalizeStatus bool; DefaultType string; DryRun bool; Now time.Time; OverwriteKeysRaw string; Src string; StaleAfterMapRaw string; StatusMapRaw string; Strict bool; TrustOrigin TrustOrigin; TypeMapRaw string; VerifiedBy string; Version string}
+type EnrichResult struct {Report *enrich.Report}
+  func (EnrichResult) EncodeJSON(w io.Writer) error
+  func (EnrichResult) Gate(strict bool) error
+type GraphDescribeRequest struct {Bundle string; IDKey string; Now time.Time; Today string; Version string}
+type GraphDescribeResult struct {Set *graph.SchemaSet}
+  func (GraphDescribeResult) EncodeJSON(w io.Writer) error
+type GraphExportRequest struct {Bundle string; Format string; Now time.Time; Today string}
+type GraphExportResult struct {Bundle *okf.Bundle; Data []byte}
+type GraphQueryOp string
+type GraphQueryRequest struct {Bundle string; Depth int; Direction string; From string; ID string; IDKey string; Label string; MaxDepth int; Now time.Time; Op GraphQueryOp; Rel string; To string; ToLabel string; Today string; Version string; Where *graph.WhereClause}
+type GraphQueryResult struct {}
+  func (GraphQueryResult) EncodeJSON(w io.Writer) error
+type IndexEntry struct {Action string; Rel string}
+type IndexRequest struct {DryRun bool; GroupByType bool; IncludeBacklinks bool; IncludeGraph bool; Root string}
+type IndexResult struct {DryRun bool; Entries []IndexEntry; Warnings []string}
+type InferRequest struct {DefaultType string; GeminiAPIKey string; GeminiBackend string; GeminiClient infer.GeminiClient; GeminiClientFactory func(ctx context.Context, opts infer.Options) (infer.GeminiClient, string, string, error); GeminiLocation string; GeminiModel string; GeminiProject string; GeminiRequired bool; Src string; UseGemini bool; Version string}
+type InferResult struct {Report *infer.Report}
+  func (InferResult) Empty() bool
+  func (InferResult) EncodeJSON(w io.Writer) error
+  func (InferResult) Gate(strict bool) error
+  func (InferResult) Warnings() int
+type LintRequest struct {Entrypoints []string; Now time.Time; Src string; Today string; Version string}
+type LintResult struct {Report *lint.Report}
+  func (LintResult) EncodeJSON(w io.Writer) error
+  func (LintResult) Gate(strict bool) error
+  func (LintResult) GatingFindings() int
+type ProjectArtifact struct {Bytes int `json:"bytes"`; Name string `json:"name"`}
+type ProjectReport struct {Artifacts []ProjectArtifact `json:"artifacts"`; Counts graph.Counts `json:"counts"`; IdentityStability graph.IdentityStability `json:"identity_stability"`; NodeKey graph.NodeKey `json:"node_key"`; ProjectedAsOf string `json:"projected_as_of"`; Target string `json:"target"`}
+type ProjectRequest struct {Bundle string; IDKey string; Now time.Time; Out string; Target string; Today string; Version string}
+type ProjectResult struct {Bundle *okf.Bundle; Report ProjectReport}
+  func (ProjectResult) EncodeJSON(w io.Writer) error
+type ReviewRequest struct {Bundle string; Entrypoints []string; Now time.Time; Today string; Version string}
+type ReviewResult struct {Report *review.Report}
+  func (ReviewResult) EncodeJSON(w io.Writer) error
+  func (ReviewResult) Gate(strict bool) error
+  func (ReviewResult) GatingFindings() int
+type Service struct {}
+  func (*Service) ConfigGet(req ConfigGetRequest) ConfigGetResult
+  func (*Service) ConfigSet(req ConfigSetRequest) ConfigSetResult
+  func (*Service) ConfigUnset(req ConfigUnsetRequest) ConfigUnsetResult
+  func (*Service) Convert(ctx context.Context, req ConvertRequest) (ConvertResult, error)
+  func (*Service) Enrich(ctx context.Context, req EnrichRequest) (EnrichResult, error)
+  func (*Service) GraphDescribe(ctx context.Context, req GraphDescribeRequest) (GraphDescribeResult, error)
+  func (*Service) GraphExport(ctx context.Context, req GraphExportRequest) (GraphExportResult, error)
+  func (*Service) GraphQuery(ctx context.Context, req GraphQueryRequest) (GraphQueryResult, error)
+  func (*Service) Index(ctx context.Context, req IndexRequest) (IndexResult, error)
+  func (*Service) Infer(ctx context.Context, req InferRequest) (InferResult, error)
+  func (*Service) Lint(ctx context.Context, req LintRequest) (LintResult, error)
+  func (*Service) Project(ctx context.Context, req ProjectRequest) (ProjectResult, error)
+  func (*Service) Review(ctx context.Context, req ReviewRequest) (ReviewResult, error)
+  func (*Service) Validate(ctx context.Context, req ValidateRequest) (ValidateResult, error)
+type TrustDecision struct {Actor string; Explicit bool; Note string; Source string}
+type TrustOrigin int
+type ValidateRequest struct {Bundle string; Spec okf.SpecVersion; Version string}
+type ValidateResult struct {Result *validate.Result; Spec okf.SpecVersion}
+  func (ValidateResult) EncodeJSON(w io.Writer) error
+  func (ValidateResult) Gate(strict bool) error
+  func (ValidateResult) GatingFindings() int
+var Version
+
+# ==== okf MUST vocabulary (packaging/phase2/okf-export-trace.md) ====
+const DefaultSpecVersion
+func IsValidActor(actor string) bool
+func IsValidISODate(s string) bool
+func NewOrderedMap() *OrderedMap
+func ProtectedTrustKeys() []string
+type Actorstamp struct {At string; By string}
+type Bundle struct {Concepts []*Concept; OKFVersion SpecVersion; Root string; RootVersionUnparsed *UnparsedConcept; Unparsed []UnparsedConcept}
+type Codec interface {ConceptIDFromRel(rel string) (id string, ok bool); IsReservedFile(name string) bool; ParseConcept(relPath string, raw []byte) (*Concept, error); RelFromConceptID(id string) (rel string, err error); Serialize(c *Concept) ([]byte, error)}
+type Concept struct {Body string; Frontmatter *OrderedMap; ID string; Links []Link; OriginalFrontmatter []byte; RelPath string; Trust TrustSignals; Type string}
+type DateRange struct {From string; To string}
+type Link struct {RawTarget string; Resolved bool; TargetID string; Text string}
+type OrderedMap struct {}
+  func (*OrderedMap) Get(key string) (any, bool)
+  func (*OrderedMap) Has(key string) bool
+  func (*OrderedMap) Keys() []string
+  func (*OrderedMap) Len() int
+  func (*OrderedMap) Set(key string, value any)
+type Source struct {Author string; ID string; LastModified string; Resource string; Title string; UsageCount string}
+type Span struct {End int; Start int}
+type SpecVersion string
+type TrustSignals struct {Attested bool; Generated *Actorstamp; Sources []Source; StaleAfter string; Status string; UsageWindow *DateRange; Verified []Actorstamp}
+type UnparsedConcept struct {Err string `json:"error"`; ID string `json:"id,omitempty"`; RelPath string `json:"rel_path"`}
