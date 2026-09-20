@@ -1,6 +1,6 @@
 // Package cmd wires binder's Cobra command tree. cmd/root.go is the composition
 // root: the ONE place a concrete codec is selected and injected as an
-// okf.Codec/okf.LinkGraph. Every other command (and all of internal/convert and
+// okf.Codec/okfrules.LinkGraph. Every other command (and all of internal/convert and
 // internal/validate) depends only on the binder-owned okf interfaces, never on
 // factile or a concrete codec (dependency rule, design-v2 §2.2).
 package cmd
@@ -12,18 +12,18 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/ghchinoy/binder/internal/binder"
-	"github.com/ghchinoy/binder/internal/clijson"
 	"github.com/ghchinoy/binder/internal/config"
-	"github.com/ghchinoy/binder/internal/okf"
-	"github.com/ghchinoy/binder/internal/okf/native"
 	"github.com/ghchinoy/binder/internal/version"
+	"github.com/ghchinoy/binder/pkg/binder"
+	"github.com/ghchinoy/binder/pkg/clijson"
+	"github.com/ghchinoy/binder/pkg/okf"
+	"github.com/ghchinoy/binder/pkg/okf/native"
 )
 
 // The canonical version var lives in the core: binder.Version (see
 // internal/binder/version.go), so a library consumer can read binder's version
 // without importing the CLI and goreleaser injects it there via
-// -ldflags "-X github.com/ghchinoy/binder/internal/binder.Version=<version>".
+// -ldflags "-X github.com/ghchinoy/binder/pkg/binder.Version=<version>".
 // The cmd/ adapter keeps only the binary-specific RESOLUTION of that var: the
 // build-info fallback and the single normalizeVersion funnel, applied in init().
 //

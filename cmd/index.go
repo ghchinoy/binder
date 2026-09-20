@@ -5,8 +5,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/ghchinoy/binder/internal/binder"
-	"github.com/ghchinoy/binder/internal/okf"
+	"github.com/ghchinoy/binder/pkg/binder"
+	"github.com/ghchinoy/binder/pkg/okf"
 )
 
 func newIndexCmd(codec okf.Codec) *cobra.Command {

@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/ghchinoy/binder/internal/clijson"
+	"github.com/ghchinoy/binder/pkg/clijson"
 )
 
 // writeTree writes rel→content files under a fresh temp dir and returns it.

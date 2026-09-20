@@ -7,9 +7,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/ghchinoy/binder/internal/binder"
-	"github.com/ghchinoy/binder/internal/clijson"
-	"github.com/ghchinoy/binder/internal/okf"
+	"github.com/ghchinoy/binder/pkg/binder"
+	"github.com/ghchinoy/binder/pkg/clijson"
+	"github.com/ghchinoy/binder/pkg/okf"
 )
 
 // newGraphSchemaCmd is the thin CLI adapter for the read-only schema-describe
@@ -41,7 +41,7 @@ func newGraphSchemaCmd(codec okf.Codec) *cobra.Command {
 		Args: exactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Validate --today up front as a usable date (exit 2), matching the other
-			// commands; okf.IsStale is left untouched.
+			// commands; okfrules.IsStale is left untouched.
 			if today != "" && !okf.IsValidISODate(today) {
 				return clijson.Usage(fmt.Errorf("--today %q is not a valid date (expected YYYY-MM-DD)", today))
 			}

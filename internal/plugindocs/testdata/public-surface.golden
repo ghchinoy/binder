@@ -1,4 +1,4 @@
-# ==== binder service surface (internal/binder -> pkg/binder at Phase 6) ====
+# ==== binder service surface (pkg/binder, published Phase 6) ====
 const OpLookup GraphQueryOp
 const OpNeighborhood GraphQueryOp
 const OpNeighbors GraphQueryOp
@@ -93,7 +93,6 @@ var Version
 const DefaultSpecVersion
 func IsValidActor(actor string) bool
 func IsValidISODate(s string) bool
-func NewOrderedMap() *OrderedMap
 func ProtectedTrustKeys() []string
 type Actorstamp struct {At string; By string}
 type Bundle struct {Concepts []*Concept; OKFVersion SpecVersion; Root string; RootVersionUnparsed *UnparsedConcept; Unparsed []UnparsedConcept}

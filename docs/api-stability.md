@@ -47,12 +47,12 @@ structs as the first committed slice of the Go-SDK contract**:
 
 | Command | Go report struct | Package |
 |---------|------------------|---------|
-| `convert` | `Report` | `internal/convert` |
-| `enrich`  | `Report` | `internal/enrich`  |
-| `graph`   | `Model`  | `internal/graph`   |
+| `convert` | `Report` | `pkg/convert` |
+| `enrich`  | `Report` | `pkg/enrich`  |
+| `graph`   | `Model`  | `pkg/graph`   |
 | `infer`   | `Report` | `internal/infer`   |
-| `lint`    | `Report` | `internal/lint`    |
-| `review`  | `Report` | `internal/review`  |
+| `lint`    | `Report` | `pkg/lint`    |
+| `review`  | `Report` | `pkg/review`  |
 
 (The paths above are the pre-publication `internal/` homes; they move to `pkg/`
 when the surface is published, with no shape change.)
@@ -81,7 +81,7 @@ Two complementary gates, both in `internal/plugindocs`, both run by
   (plus `validate` and the shared element structs). The authoritative field-level
   enumeration is `packaging/phase2/plugindocs-locked-fields.md`.
 - **Go surface** — `pubsurface_drift_test.go` locks the **exported Go surface**
-  intended for publication in Phase 6: the whole `internal/binder` service surface
+  intended for publication in Phase 6: the whole `pkg/binder` service surface
   (every `Request`/`Result`, `Service` method, helper) plus the confirmed-MUST
   `okf` vocabulary, compared to a committed golden. It guards additions,
   removals, renames, re-typings, and tag changes across that surface. This gate

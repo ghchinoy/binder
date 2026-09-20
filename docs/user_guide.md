@@ -56,7 +56,7 @@ blanket promise across every command:
 - **Native codec.** binder parses and serializes OKF with a single owned codec
   ([`goldmark`](https://github.com/yuin/goldmark) for markdown +
   [`gopkg.in/yaml.v3`](https://gopkg.in/yaml.v3) `yaml.Node` for frontmatter).
-  Every package above `internal/okf` depends only on binder-owned interfaces
+  Every package above `pkg/okf` depends only on binder-owned interfaces
   (`Codec`, `LinkGraph`) — the **dependency rule** — so the codec is swappable
   without touching the converter, CLI, or validators.
 - **Lossless frontmatter round-trip, where binder recognises the fence.**

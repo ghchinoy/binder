@@ -8,9 +8,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/ghchinoy/binder/internal/binder"
-	"github.com/ghchinoy/binder/internal/clijson"
-	"github.com/ghchinoy/binder/internal/okf"
+	"github.com/ghchinoy/binder/pkg/binder"
+	"github.com/ghchinoy/binder/pkg/clijson"
+	"github.com/ghchinoy/binder/pkg/okf"
 )
 
 func newGraphCmd(codec okf.Codec) *cobra.Command {
@@ -54,9 +54,9 @@ func newGraphCmd(codec okf.Codec) *cobra.Command {
 				return clijson.Usage(fmt.Errorf("unknown graph format %q (want dot|json|graphml|html)", format))
 			}
 			// Validate --today up front as a usable date (exit 2). A malformed value
-			// would otherwise be silently accepted by okf.IsStale's string compare
+			// would otherwise be silently accepted by okfrules.IsStale's string compare
 			// and misreport staleness. Uses the same YYYY-MM-DD parse the rest of the
-			// code uses (okf.IsValidISODate); okf.IsStale is left untouched.
+			// code uses (okf.IsValidISODate); okfrules.IsStale is left untouched.
 			if today != "" && !okf.IsValidISODate(today) {
 				return clijson.Usage(fmt.Errorf("--today %q is not a valid date (expected YYYY-MM-DD)", today))
 			}

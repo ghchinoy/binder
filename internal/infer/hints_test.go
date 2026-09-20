@@ -3,14 +3,14 @@ package infer
 import (
 	"testing"
 
-	"github.com/ghchinoy/binder/internal/okf"
+	"github.com/ghchinoy/binder/internal/okfrules"
 )
 
 func TestInferFromFrontmatter(t *testing.T) {
-	fmProposal := okf.NewOrderedMap()
+	fmProposal := okfrules.NewOrderedMap()
 	fmProposal.Set("goal", "migrate to new auth")
 
-	fmAttested := okf.NewOrderedMap()
+	fmAttested := okfrules.NewOrderedMap()
 	fmAttested.Set("runtime", "python:3.12")
 
 	cases := []struct {

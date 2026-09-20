@@ -22,9 +22,9 @@ import (
 	"os"
 	"time"
 
-	"github.com/ghchinoy/binder/internal/binder"
-	"github.com/ghchinoy/binder/internal/binder/render"
-	"github.com/ghchinoy/binder/internal/okf/native"
+	"github.com/ghchinoy/binder/pkg/binder"
+	"github.com/ghchinoy/binder/pkg/binder/render"
+	"github.com/ghchinoy/binder/pkg/okf/native"
 )
 
 func main() {

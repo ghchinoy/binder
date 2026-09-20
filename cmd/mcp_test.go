@@ -4,8 +4,8 @@ import (
 	"regexp"
 	"testing"
 
-	mcpserver "github.com/ghchinoy/binder/internal/mcp"
-	"github.com/ghchinoy/binder/internal/okf/native"
+	mcpserver "github.com/ghchinoy/binder/pkg/mcp"
+	"github.com/ghchinoy/binder/pkg/okf/native"
 )
 
 // TestMCPLongEnumeratesAllTools is the regression guard for Defect #1: the

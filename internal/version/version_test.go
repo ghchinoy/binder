@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ghchinoy/binder/internal/okf"
+	"github.com/ghchinoy/binder/pkg/okf"
 )
 
 // setCurrent swaps the package state for one test and restores it after, so the

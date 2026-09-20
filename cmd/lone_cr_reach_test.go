@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/ghchinoy/binder/internal/clijson"
+	"github.com/ghchinoy/binder/pkg/clijson"
 )
 
 // Reach coverage for issue #123 — which config origins REACH the codec write path

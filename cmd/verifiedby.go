@@ -1,9 +1,9 @@
 package cmd
 
 import (
-	"github.com/ghchinoy/binder/internal/binder"
 	"github.com/ghchinoy/binder/internal/config"
-	"github.com/ghchinoy/binder/internal/okf"
+	"github.com/ghchinoy/binder/pkg/binder"
+	"github.com/ghchinoy/binder/pkg/okf"
 )
 
 // resolveVerifiedBy resolves the verified_by actor and classifies its origin for the

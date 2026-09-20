@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ghchinoy/binder/internal/clijson"
+	"github.com/ghchinoy/binder/pkg/clijson"
 )
 
 // writeExternalRootCLICorpus lays out a corpus that links (via file://) to a doc

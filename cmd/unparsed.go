@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/ghchinoy/binder/internal/binder"
-	"github.com/ghchinoy/binder/internal/okf"
+	"github.com/ghchinoy/binder/pkg/binder"
+	"github.com/ghchinoy/binder/pkg/okf"
 )
 
 // warnUnparsed emits a stderr disclosure for every file the loader could not

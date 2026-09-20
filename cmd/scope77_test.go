@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ghchinoy/binder/internal/clijson"
+	"github.com/ghchinoy/binder/pkg/clijson"
 )
 
 // writeScopeBundle writes files into a temp dir and returns its path.

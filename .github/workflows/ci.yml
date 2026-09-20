@@ -140,7 +140,7 @@ jobs:
 
   conformance:
     # Cross-language error-string + trust conformance (issue #171). Binds the Go
-    # source of truth (internal/okf/native, internal/okf/trust) to the astro-okf
+    # source of truth (pkg/okf/native, pkg/okf/trust) to the astro-okf
     # TypeScript codec, the validate-plugin.sh Python copy, and the two testdata
     # prose fixtures. The expected values are derived LIVE from the Go code, so
     # editing a Go error string or actor rule turns this job red once per copy

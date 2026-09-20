@@ -4,9 +4,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ghchinoy/binder/internal/binder"
-	"github.com/ghchinoy/binder/internal/clijson"
 	"github.com/ghchinoy/binder/internal/version"
+	"github.com/ghchinoy/binder/pkg/binder"
+	"github.com/ghchinoy/binder/pkg/clijson"
 )
 
 // pinVersion publishes a fake resolved release version for one test, exactly as

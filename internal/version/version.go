@@ -4,7 +4,7 @@
 // It exists because of an import-direction problem (issue #60). The live
 // version lives in `var binder.Version` (internal/binder), because that is what
 // goreleaser's
-// -ldflags "-X github.com/ghchinoy/binder/internal/binder.Version=<tag>" can
+// -ldflags "-X github.com/ghchinoy/binder/pkg/binder.Version=<tag>" can
 // reach. But the exemplar is needed by internal/config (the shared actor-forms
 // hint, used by both the flag validator and the config-load validator) and by
 // internal/mcp — and `cmd` imports both, so neither can import `cmd` back. A leaf

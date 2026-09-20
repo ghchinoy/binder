@@ -22,7 +22,7 @@ REPO_ROOT="$(cd "$SELF_DIR/../.." && pwd)"
 cd "$REPO_ROOT"
 
 CONF="$SELF_DIR/cross-language-conformance.sh"
-NATIVE="internal/okf/native/native.go"
+NATIVE="pkg/okf/native/native.go"
 TRUST_TS="packages/astro-okf/src/trust.ts"
 CORPUS="scripts/conformance/corpus.json"
 
@@ -106,7 +106,7 @@ note "[2] MUTATE the Go error strings (source of truth) — expect RED per copy"
 #
 # MAINTAINER NOTE: the two sed search patterns just below are the ONLY textual
 # copies of the Go error wording in this file. They are deliberately bound, not a
-# fourth unbound copy: if the Go wording in internal/okf/native/native.go changes
+# fourth unbound copy: if the Go wording in pkg/okf/native/native.go changes
 # and these patterns are NOT updated to match, the sed no-ops, the conformance
 # check stays GREEN, and this fixture fails with "expected RED, got GREEN" (see
 # expect_red_naming). So a stale pattern is loud, not silent. Even so, when you

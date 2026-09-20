@@ -7,9 +7,9 @@
 --   tier : 'unverified'        when the node has no NodeVerified rows
 --          'human-reviewed'    when any NodeVerified.is_human is TRUE
 --          'machine-confirmed' otherwise
---          (mirrors okf.TrustTier over verified[])
+--          (mirrors TrustTier over verified[])
 --   stale: stale_after IS NOT NULL AND <as_of> >= stale_after
---          (mirrors okf.IsStale; a node without stale_after is never stale)
+--          (mirrors IsStale; a node without stale_after is never stale)
 --
 -- The view recomputes as of CURRENT_DATE(). To recompute for any chosen date,
 -- replace CURRENT_DATE() with a DATE literal, e.g. DATE '2026-08-18'.

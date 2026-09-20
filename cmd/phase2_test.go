@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ghchinoy/binder/internal/clijson"
+	"github.com/ghchinoy/binder/pkg/clijson"
 )
 
 // TestValidateJSON asserts validate --json emits the enveloped Result and that

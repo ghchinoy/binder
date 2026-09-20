@@ -19,9 +19,9 @@ import (
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 
-	"github.com/ghchinoy/binder/internal/clijson"
-	"github.com/ghchinoy/binder/internal/okf"
 	"github.com/ghchinoy/binder/internal/version"
+	"github.com/ghchinoy/binder/pkg/clijson"
+	"github.com/ghchinoy/binder/pkg/okf"
 )
 
 // SchemaVersion identifies the `binder config` JSON report contract. It is

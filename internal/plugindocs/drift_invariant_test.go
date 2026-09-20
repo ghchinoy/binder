@@ -5,13 +5,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ghchinoy/binder/internal/convert"
-	"github.com/ghchinoy/binder/internal/enrich"
-	"github.com/ghchinoy/binder/internal/graph"
 	"github.com/ghchinoy/binder/internal/infer"
-	"github.com/ghchinoy/binder/internal/lint"
-	"github.com/ghchinoy/binder/internal/okf"
-	"github.com/ghchinoy/binder/internal/review"
+	"github.com/ghchinoy/binder/internal/okfrules"
+	"github.com/ghchinoy/binder/pkg/convert"
+	"github.com/ghchinoy/binder/pkg/enrich"
+	"github.com/ghchinoy/binder/pkg/graph"
+	"github.com/ghchinoy/binder/pkg/lint"
+	"github.com/ghchinoy/binder/pkg/review"
 )
 
 // hasMandatoryJSONField reports whether t serializes AT LEAST ONE JSON key that
@@ -165,7 +165,7 @@ func TestRegisterElem_EveryIndexedElemTypeHasMandatoryField(t *testing.T) {
 		"graph.nodes[]":                   reflect.TypeOf(graph.Node{}),
 		"graph.edges[]":                   reflect.TypeOf(graph.Edge{}),
 		"infer.result.mappings[]":         reflect.TypeOf(infer.Mapping{}),
-		"validate.result.findings[]":      reflect.TypeOf(okf.Finding{}),
+		"validate.result.findings[]":      reflect.TypeOf(okfrules.Finding{}),
 	}
 
 	// (1) ENFORCEMENT: each indexed element type must keep >=1 mandatory field.

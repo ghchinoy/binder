@@ -3,7 +3,7 @@ package infer
 import (
 	"strings"
 
-	"github.com/ghchinoy/binder/internal/okf"
+	"github.com/ghchinoy/binder/pkg/okf"
 )
 
 // FileInfo holds metadata about a source file for inference.

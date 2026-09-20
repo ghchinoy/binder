@@ -12,10 +12,10 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/ghchinoy/binder/internal/bundle"
-	"github.com/ghchinoy/binder/internal/clijson"
-	"github.com/ghchinoy/binder/internal/graph"
-	"github.com/ghchinoy/binder/internal/okf/native"
+	"github.com/ghchinoy/binder/pkg/bundle"
+	"github.com/ghchinoy/binder/pkg/clijson"
+	"github.com/ghchinoy/binder/pkg/graph"
+	"github.com/ghchinoy/binder/pkg/okf/native"
 )
 
 const projectCorpus = "../testdata/project/corpus"

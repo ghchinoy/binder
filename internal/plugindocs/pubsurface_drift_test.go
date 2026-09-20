@@ -39,14 +39,14 @@ func TestPublicSurface_NoDrift(t *testing.T) {
 	root := repoRoot(t)
 
 	var b strings.Builder
-	b.WriteString("# ==== binder service surface (internal/binder -> pkg/binder at Phase 6) ====\n")
-	binderEntries, _ := packageSurface(t, filepath.Join(root, "internal", "binder"), nil)
+	b.WriteString("# ==== binder service surface (pkg/binder, published Phase 6) ====\n")
+	binderEntries, _ := packageSurface(t, filepath.Join(root, "pkg", "binder"), nil)
 	for _, e := range binderEntries {
 		b.WriteString(e)
 		b.WriteString("\n")
 	}
 	b.WriteString("\n# ==== okf MUST vocabulary (packaging/phase2/okf-export-trace.md) ====\n")
-	okfEntries, foundOKF := packageSurface(t, filepath.Join(root, "internal", "okf"), okfMustVocabulary)
+	okfEntries, foundOKF := packageSurface(t, filepath.Join(root, "pkg", "okf"), okfMustVocabulary)
 	for _, e := range okfEntries {
 		b.WriteString(e)
 		b.WriteString("\n")
@@ -130,11 +130,13 @@ var okfMustVocabulary = map[string]bool{
 	"TrustSignals":    true,
 	"UnparsedConcept": true,
 	"OrderedMap":      true,
-	"NewOrderedMap":   true,
-	"Source":          true,
-	"Actorstamp":      true,
-	"DateRange":       true,
-	"Span":            true,
+	// NewOrderedMap is DEFERRED, not exported (OQ2 owner ruling): OrderedMap is
+	// public, its constructor is not. Callers use &okf.OrderedMap{} or the
+	// internal okfrules helper. Dropped from the guarded MUST set accordingly.
+	"Source":     true,
+	"Actorstamp": true,
+	"DateRange":  true,
+	"Span":       true,
 }
 
 // packageSurface parses every non-test .go file in dir and renders a normalized,

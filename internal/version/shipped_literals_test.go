@@ -38,7 +38,7 @@ var mustVisit = []string{
 	"cmd/convert.go",
 	"cmd/enrich.go",
 	"internal/config/config.go",
-	"internal/mcp/convert.go",
+	"pkg/mcp/convert.go",
 }
 
 // skipDirs are trees whose version literals are legitimate and must NOT track
