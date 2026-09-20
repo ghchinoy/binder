@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ghchinoy/binder/internal/binder"
 	"github.com/ghchinoy/binder/internal/clijson"
 	"github.com/ghchinoy/binder/internal/version"
 )
@@ -138,16 +139,18 @@ func TestExemplarUsesTheNormalizedVersion(t *testing.T) {
 }
 
 // TestInitPublishesTheResolvedVersion pins the init-order contract that makes
-// all of the above safe: cmd's init() publishes Version to internal/version, so
-// by the time any test (or main()) runs, the two agree. A future edit that drops
-// the version.Set call, or that publishes before normalizeVersion, fails here.
+// all of the above safe: cmd's init() publishes binder.Version to
+// internal/version, so by the time any test (or main()) runs, the two agree. A
+// future edit that drops the version.Set call, or that publishes before
+// normalizeVersion, fails here.
 func TestInitPublishesTheResolvedVersion(t *testing.T) {
-	// In a `go test` build Version is the unstamped "dev", which Set rejects, so
-	// the published value is "" and the exemplar is the placeholder. Assert the
-	// relationship rather than a literal, so this holds for a stamped build too.
-	if cur := version.Current(); cur != "" && cur != Version {
-		t.Errorf("internal/version has %q but cmd.Version is %q; init() must publish "+
-			"the normalized value", cur, Version)
+	// In a `go test` build binder.Version is the unstamped "dev", which Set
+	// rejects, so the published value is "" and the exemplar is the placeholder.
+	// Assert the relationship rather than a literal, so this holds for a stamped
+	// build too.
+	if cur := version.Current(); cur != "" && cur != binder.Version {
+		t.Errorf("internal/version has %q but binder.Version is %q; init() must publish "+
+			"the normalized value", cur, binder.Version)
 	}
 	if strings.Contains(version.ActorExemplar(), "binder/v") {
 		t.Errorf("published exemplar %q is v-prefixed", version.ActorExemplar())

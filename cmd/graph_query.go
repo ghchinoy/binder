@@ -93,7 +93,7 @@ func newGraphQueryCmd(codec okf.Codec) *cobra.Command {
 				From:      from,
 				To:        to,
 				MaxDepth:  maxDepth,
-				Version:   Version,
+				Version:   binder.Version,
 			})
 			if err != nil {
 				return err

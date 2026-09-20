@@ -12,6 +12,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/ghchinoy/binder/internal/binder"
 	"github.com/ghchinoy/binder/internal/clijson"
 	"github.com/ghchinoy/binder/internal/config"
 	"github.com/ghchinoy/binder/internal/okf"
@@ -19,34 +20,28 @@ import (
 	"github.com/ghchinoy/binder/internal/version"
 )
 
-// Version is the binder version, stamped into generated.by ("binder/<version>")
-// and printed by `binder --version`. It is single-sourced from the git tag: at
-// release time goreleaser injects the tag via
-// -ldflags "-X github.com/ghchinoy/binder/cmd.Version=<version>" (see
-// .goreleaser.yaml). It MUST stay a var (not a const) so the linker's -X can
-// override it — a const cannot be overridden. The literal default "dev" is a
-// constant string expression, which is what makes -X effective.
-//
-// The trust-provenance stamp is load-bearing (design-v2 §2.3): every converted
-// concept records generated.by = "binder/<Version>", so a release binary must
-// carry the real tag or it corrupts trust metadata forever.
+// The canonical version var lives in the core: binder.Version (see
+// internal/binder/version.go), so a library consumer can read binder's version
+// without importing the CLI and goreleaser injects it there via
+// -ldflags "-X github.com/ghchinoy/binder/internal/binder.Version=<version>".
+// The cmd/ adapter keeps only the binary-specific RESOLUTION of that var: the
+// build-info fallback and the single normalizeVersion funnel, applied in init().
 //
 // The canonical form is NO leading "v": "binder/<X.Y.Z>". That form matches the
 // shipped release artifacts (the majority install path), the baked exemplars,
-// and common semver-string usage. Two different sources feed this var and they
-// disagree on the "v": goreleaser's -X injects the v-STRIPPED tag, while the
+// and common semver-string usage. Two different sources feed binder.Version and
+// they disagree on the "v": goreleaser's -X injects the v-STRIPPED tag, while the
 // debug.ReadBuildInfo() fallback below returns the v-PREFIXED module version.
 // Left unchecked they write two different trust stamps for one release. init()
 // therefore routes BOTH sources through normalizeVersion — the single funnel —
 // so the stamped and fallback paths can never diverge again.
-var Version = "dev"
 
 // init recovers the version from Go's build metadata for builds that were not
 // stamped by goreleaser's ldflags — most importantly `go install
 // github.com/ghchinoy/binder@vX.Y.Z`, which embeds the module version. The
-// build-info recovery only runs when Version is still the "dev" default, so it
-// never clobbers an ldflags-injected value (nor does it alter test builds, whose
-// module version is "(devel)"). Whichever source wins, the final assignment
+// build-info recovery only runs when binder.Version is still the "dev" default,
+// so it never clobbers an ldflags-injected value (nor does it alter test builds,
+// whose module version is "(devel)"). Whichever source wins, the final assignment
 // passes it through normalizeVersion so both paths converge on the canonical
 // no-leading-v form.
 //
@@ -54,21 +49,21 @@ var Version = "dev"
 // single source of the `<producer>/<version>` exemplar shown in help and error
 // text (issue #60). The push is required rather than stylistic: the exemplar is
 // consumed by internal/config and internal/mcp, and `cmd` imports both, so they
-// cannot import `cmd` back to read Version. It is deliberately the LAST
+// cannot import `cmd` back to read the version. It is deliberately the LAST
 // statement here, after normalizeVersion, so internal/version can never observe
 // a v-prefixed or unnormalized value. Every consumer reads the exemplar at run
 // time (flag registration happens inside NewRootCmd, which main() calls), so
 // this init() always precedes the first read.
 func init() {
-	if Version == "dev" {
+	if binder.Version == "dev" {
 		if bi, ok := debug.ReadBuildInfo(); ok {
 			if v := bi.Main.Version; v != "" && v != "(devel)" {
-				Version = v
+				binder.Version = v
 			}
 		}
 	}
-	Version = normalizeVersion(Version)
-	version.Set(Version)
+	binder.Version = normalizeVersion(binder.Version)
+	version.Set(binder.Version)
 }
 
 // normalizeVersion canonicalizes a binder version string to the no-leading-v
@@ -97,7 +92,7 @@ func NewRootCmd() *cobra.Command {
 	root := &cobra.Command{
 		Use:           "binder",
 		Short:         "Convert a plain-markdown corpus into a conformant OKF v0.2 bundle",
-		Version:       Version,
+		Version:       binder.Version,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		// Resolve configuration before any command runs. A missing config file is

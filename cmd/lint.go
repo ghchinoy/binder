@@ -75,7 +75,7 @@ func newLintCmd(codec okf.Codec) *cobra.Command {
 				Entrypoints: entrypoints,
 				Now:         now,
 				Today:       today,
-				Version:     Version,
+				Version:     binder.Version,
 			})
 			if err != nil {
 				// Path already validated above; any analysis failure here is

@@ -79,7 +79,7 @@ func newInferCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 				GeminiBackend:       geminiBackend,
 				GeminiRequired:      geminiRequired,
 				GeminiClientFactory: gemini.New,
-				Version:             Version,
+				Version:             binder.Version,
 			})
 			if err != nil {
 				return err

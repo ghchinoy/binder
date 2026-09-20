@@ -73,7 +73,7 @@ func newProjectCmd(codec okf.Codec) *cobra.Command {
 				IDKey:   idKey,
 				Now:     now,
 				Today:   today,
-				Version: Version,
+				Version: binder.Version,
 			})
 			if err != nil {
 				return err

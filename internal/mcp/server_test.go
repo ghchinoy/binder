@@ -7,14 +7,31 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/ghchinoy/binder/internal/binder"
 	"github.com/ghchinoy/binder/internal/okf/native"
 )
 
-// testVersion is the binder version the tests stamp; it must match the CLI's
-// cmd.Version so the parity comparison is byte-identical.
+// todayOrNow returns the explicit today, or the date derived from the shared
+// service determinism rule (binder.ResolveNow over SOURCE_DATE_EPOCH) when today
+// is empty — the same default every service-backed handler applies. The
+// production mcp.resolveNow/todayOrNow helpers were removed in Phase 5 once the
+// determinism path routed exclusively through binder.ResolveNow; this test-only
+// helper computes the expected `today` through the SAME rule the code under test
+// uses, so the SOURCE_DATE_EPOCH determinism assertions still hold.
+func todayOrNow(today string) string {
+	if today != "" {
+		return today
+	}
+	now, _ := binder.ResolveNow(os.Getenv("SOURCE_DATE_EPOCH"), time.Now())
+	return now.Format("2006-01-02")
+}
+
+// testVersion is the binder version the tests stamp; it must match the canonical
+// binder.Version so the parity comparison is byte-identical.
 const testVersion = "0.1.0"
 
 // goldenBundle is a stable, conformant OKF v0.2 fixture shared with the
@@ -33,13 +50,13 @@ func TestMain(m *testing.M) {
 	binderBin = filepath.Join(dir, "binder")
 	// Build the real CLI from the module root so parity tests exercise the
 	// genuine cmd/*.go path (deps are pinned in go.mod/go.sum and fetched from
-	// the module proxy). Pin cmd.Version via
+	// the module proxy). Pin the canonical binder.Version via
 	// ldflags to testVersion exactly as the release pipeline does
 	// (.goreleaser.yaml), so the stamped "binder/<version>" is deterministic and
 	// matches the MCP side — otherwise Go embeds a VCS pseudo-version, which the
-	// cmd.Version build-info fallback would surface.
+	// binder.Version build-info fallback would surface.
 	cmd := exec.Command("go", "build",
-		"-ldflags", "-X github.com/ghchinoy/binder/cmd.Version="+testVersion,
+		"-ldflags", "-X github.com/ghchinoy/binder/internal/binder.Version="+testVersion,
 		"-o", binderBin, "github.com/ghchinoy/binder")
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {

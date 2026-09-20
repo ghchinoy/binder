@@ -106,7 +106,7 @@ func newEnrichCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 				CanonicalizeStatus: canonicalizeStat,
 				VerifiedBy:         verifiedBy,
 				TrustOrigin:        trustOrigin,
-				Version:            Version,
+				Version:            binder.Version,
 				Now:                now,
 				DryRun:             dryRun,
 				Strict:             strict,

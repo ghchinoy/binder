@@ -362,7 +362,7 @@ def main() -> int:
         sys.stderr.write(
             f"FATAL: `{binder} --version` did not certify — {reason}.\n"
             f"This gate is not a stamped release build. Build one with\n"
-            f'  go build -ldflags "-X github.com/ghchinoy/binder/cmd.Version='
+            f'  go build -ldflags "-X github.com/ghchinoy/binder/internal/binder.Version='
             f'$(git describe --tags --abbrev=0)" -o <bin> .\n'
             f"or just use scripts/lib/stamped-binder.sh, which builds AND "
             f"certifies in one step.\n"

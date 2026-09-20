@@ -3,6 +3,8 @@ package cmd
 import (
 	"strings"
 	"testing"
+
+	"github.com/ghchinoy/binder/internal/binder"
 )
 
 // TestVersionMatchesEnvelope asserts --version prints "binder/<version>", the
@@ -13,7 +15,7 @@ func TestVersionMatchesEnvelope(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("--version exit = %d, want 0", code)
 	}
-	want := "binder/" + Version + "\n"
+	want := "binder/" + binder.Version + "\n"
 	if out != want {
 		t.Errorf("--version = %q, want %q", out, want)
 	}

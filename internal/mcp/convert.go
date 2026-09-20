@@ -41,12 +41,11 @@ type convertInput struct {
 	GroupByType        bool     `json:"group_by_type,omitempty" jsonschema:"append an additive \"# Catalog\" of all concepts grouped by type to the root index.md"`
 	IncludeBacklinks   bool     `json:"include_backlinks,omitempty" jsonschema:"annotate catalog entries with inbound resolved edges (requires group_by_type)"`
 	IncludeGraph       bool     `json:"include_graph,omitempty" jsonschema:"annotate catalog entries with outbound resolved edges (requires group_by_type)"`
-	// Strict is accepted for CLI flag parity but IGNORED by this handler: the MCP
-	// surface never gates (the call below hardcodes Strict:false) and Strict does not
-	// change the payload, so reading it would be a no-op. Base ignored it for the
-	// payload too, so this is not a behavior change. The field is retained for now to
-	// avoid a transport-schema change; its removal is deferred to Phase 5.
-	Strict bool `json:"strict,omitempty" jsonschema:"gate semantics only; does not change the payload (parity with the CLI flag)"`
+	// The former `strict` transport field was removed in Phase 5. The MCP surface
+	// never gates — Service.Convert is always driven with Strict:false here — and
+	// the field never affected the payload, so it was dead on this transport. It
+	// was retained through Phase 3 only to defer the transport-schema change to
+	// this phase; the convert tool's input schema no longer advertises `strict`.
 }
 
 // registerConvert wires the convert tool. dry_run:true → the analysis preview

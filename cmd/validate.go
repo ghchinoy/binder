@@ -34,7 +34,7 @@ func newValidateCmd(codec okf.Codec) *cobra.Command {
 			res, err := svc.Validate(cmd.Context(), binder.ValidateRequest{
 				Bundle:  args[0],
 				Spec:    okf.DefaultSpecVersion,
-				Version: Version,
+				Version: binder.Version,
 			})
 			if err != nil {
 				return err

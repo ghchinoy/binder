@@ -444,7 +444,7 @@ excepted — `dot` on the CLI, `json` here; the MCP-only `list_graphs` and
 
 | Tool | Key params | Returns |
 |---|---|---|
-| `convert` | `src` (req), `out` (req unless `dry_run`), `dry_run`, `default_type`, `type_map`, `fm_ref_keys`, `source_keys`, `map_citations`, `map_draft`, `status_map`, `canonicalize_status`, `stale_after_map`, `verified_by`, `workspace_root`, `external_root` (repeatable), `group_by_type`, `include_backlinks`, `include_graph`, `strict` | `convert` report envelope (`dry_run:true` → the ingestion-analysis preview, writes nothing) |
+| `convert` | `src` (req), `out` (req unless `dry_run`), `dry_run`, `default_type`, `type_map`, `fm_ref_keys`, `source_keys`, `map_citations`, `map_draft`, `status_map`, `canonicalize_status`, `stale_after_map`, `verified_by`, `workspace_root`, `external_root` (repeatable), `group_by_type`, `include_backlinks`, `include_graph` | `convert` report envelope (`dry_run:true` → the ingestion-analysis preview, writes nothing) |
 | `validate` | `bundle` (req), `strict` | `validate` report envelope |
 | `review` | `bundle` (req), `entrypoints` (array of concept id or path — the parity param for the repeatable `--entrypoint`), `today`, `strict` | `review` report envelope |
 | `lint` | `src` (req), `entrypoints` (array of concept id or path — the parity param for the repeatable `--entrypoint`), `today`, `strict` | `lint` report envelope |

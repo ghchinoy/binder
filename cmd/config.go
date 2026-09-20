@@ -23,7 +23,7 @@ func newConfigCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 		resolved := cfg.Resolve()
 		out := cmd.OutOrStdout()
 		if jsonOut {
-			if err := clijson.EncodeSchema(out, Version, "config", config.SchemaVersion, resolved); err != nil {
+			if err := clijson.EncodeSchema(out, binder.Version, "config", config.SchemaVersion, resolved); err != nil {
 				return fmt.Errorf("encoding json report: %w", err)
 			}
 			return nil
@@ -83,7 +83,7 @@ func newConfigCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 			out := cmd.OutOrStdout()
 			if jsonOut {
 				res := svc.ConfigGet(binder.ConfigGetRequest{
-					Version: Version,
+					Version: binder.Version,
 					Key:     canonical,
 					Value:   val,
 					Source:  source,
@@ -133,7 +133,7 @@ func newConfigCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 			out := cmd.OutOrStdout()
 			if jsonOut {
 				res := svc.ConfigSet(binder.ConfigSetRequest{
-					Version: Version,
+					Version: binder.Version,
 					Key:     canonical,
 					Value:   val,
 					File:    targetFile,
@@ -180,7 +180,7 @@ func newConfigCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 			out := cmd.OutOrStdout()
 			if jsonOut {
 				res := svc.ConfigUnset(binder.ConfigUnsetRequest{
-					Version: Version,
+					Version: binder.Version,
 					Key:     canonical,
 					File:    targetFile,
 					Existed: existed,

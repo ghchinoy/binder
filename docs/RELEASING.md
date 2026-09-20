@@ -139,15 +139,20 @@ Homebrew's shorthand for the `ghchinoy/homebrew-tap` repo, and the formula's own
   output + trust-stamp format).
 - The OKF spec level binder targets is a **separate axis**: advertise it in the
   README/CHANGELOG, never encode it in binder's SemVer.
+- The **Go SDK** (the exported surface a program gets by importing binder's
+  packages) is a **third, independent axis** — provisional while `0.x`, with its
+  own future stability commitment distinct from this reserved `v1.0.0`. See
+  [`docs/api-stability.md`](api-stability.md).
 
 ## How the version reaches the binary (single-source: the tag)
 
-`cmd/root.go` declares `var Version = "dev"`, and two different sources can fill
-it in:
+`internal/binder/version.go` declares the canonical `var Version = "dev"` (the
+CLI reads it as `binder.Version`; it becomes `pkg/binder.Version` at publish),
+and two different sources can fill it in:
 
 - **goreleaser** injects the tag at build time:
-  `-ldflags "-X github.com/ghchinoy/binder/cmd.Version={{ .Version }}"`. Note
-  that goreleaser's `.Version` is the tag with its `v` **stripped**.
+  `-ldflags "-X github.com/ghchinoy/binder/internal/binder.Version={{ .Version }}"`.
+  Note that goreleaser's `.Version` is the tag with its `v` **stripped**.
 - **`go install github.com/ghchinoy/binder@vX.Y.Z`** gets no ldflags, so an
   `init()` fallback recovers the module version from `debug.ReadBuildInfo()`.
   That value is `v`-**prefixed**.
@@ -169,7 +174,7 @@ envelope's `binder` field contains, and what lands in `generated.by` — identic
 across the goreleaser, `go install`, and `go build` paths. What normalization
 does *not* do is invent a version. A plain `go build` — and `make build`, which
 is `go build -o bin/binder .` — passes **no `-ldflags`**, so nothing sets
-`cmd.Version` and the `init()` fallback reports the Go module pseudo-version
+`binder.Version` and the `init()` fallback reports the Go module pseudo-version
 instead (e.g. `binder/0.2.2-0.20260816074947-7f4ca6b4c816`). This has nothing to
 do with whether the clone is tagged: a clone sitting on `v0.2.1-12-gdd8c35e`
 still reports the pseudo-version, because the tag only reaches the binary
@@ -178,7 +183,7 @@ through `-ldflags`. That is why the release path must inject it.
 To rehearse the stamp locally, build the way the release builds:
 
 ```sh
-go build -ldflags "-X github.com/ghchinoy/binder/cmd.Version=0.3.0" -o /tmp/binder .
+go build -ldflags "-X github.com/ghchinoy/binder/internal/binder.Version=0.3.0" -o /tmp/binder .
 /tmp/binder --version     # binder/0.3.0
 ```
 

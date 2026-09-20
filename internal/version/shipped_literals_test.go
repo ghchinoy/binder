@@ -191,7 +191,7 @@ const concatSentinel = "\x00"
 // binder version. Every such literal is either stale now or will be at the next
 // release — that is the whole content of #60, which fired through v0.4.0 and
 // again through v0.5.3. The live version is available via version.ActorExemplar
-// (user-facing text) or cmd.Version (trust stamps); a literal is never correct.
+// (user-facing text) or binder.Version (trust stamps); a literal is never correct.
 //
 // The complementary half runs in CI against a STAMPED binary
 // (scripts/check-shipped-version-literals.py): this test cannot pin literals to
@@ -220,7 +220,7 @@ func TestNoHardCodedVersionLiteralInShippedGo(t *testing.T) {
 
 	for _, f := range findings {
 		t.Errorf("%s: shipped string literal carries a hard-coded binder version: %q\n"+
-			"\tUse version.ActorExemplar() for user-facing examples, or cmd.Version for "+
+			"\tUse version.ActorExemplar() for user-facing examples, or binder.Version for "+
 			"trust stamps. A hand-maintained literal goes stale at the next release "+
 			"(issue #60).", f.pos, f.literal)
 	}

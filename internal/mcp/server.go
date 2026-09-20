@@ -18,9 +18,6 @@ import (
 	"bytes"
 	"context"
 	"io"
-	"os"
-	"strconv"
-	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -80,29 +77,6 @@ func newServer(codec okf.Codec, version string) *mcp.Server {
 	registerQueryGraph(s, d)
 
 	return s
-}
-
-// resolveNow mirrors cmd.resolveNow: it honors SOURCE_DATE_EPOCH for
-// reproducible output, falling back to the wall clock. Duplicated (rather than
-// exported from cmd) to keep the SDK-quarantined server free of a cmd import;
-// the SOURCE_DATE_EPOCH contract is identical so payloads match the CLI's.
-func resolveNow() time.Time {
-	if v := os.Getenv("SOURCE_DATE_EPOCH"); v != "" {
-		if secs, err := strconv.ParseInt(v, 10, 64); err == nil {
-			return time.Unix(secs, 0).UTC()
-		}
-	}
-	return time.Now()
-}
-
-// todayOrNow returns the explicit today param, or today's date derived from
-// resolveNow when the param is empty — the same default the CLI applies for
-// review/lint/graph.
-func todayOrNow(today string) string {
-	if today != "" {
-		return today
-	}
-	return resolveNow().Format("2006-01-02")
 }
 
 // textResult frames text as a tool call's single text-content result. It is the
