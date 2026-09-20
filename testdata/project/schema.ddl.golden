@@ -29,7 +29,7 @@ CREATE TABLE NodeVerified (
   seq      INT64 NOT NULL,        -- OQ-8: stable index within the concept's verified[]
   by       STRING(MAX),           -- OQ-8: verified[].by, verbatim as authored
   at       STRING(MAX),           -- OQ-8: verified[].at, verbatim as authored
-  is_human BOOL,                  -- OQ-8: is-human-actor(by) — the TrustTier predicate
+  is_human BOOL,                  -- OQ-8: okf.IsHumanActor(by) — the TrustTier predicate
 ) PRIMARY KEY (node_key, seq);
 
 CREATE PROPERTY GRAPH OkfGraph

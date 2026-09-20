@@ -36,7 +36,7 @@ var nodeVerifiedColumns = []ddlColumn{
 	{"seq", "INT64", true, "OQ-8: stable index within the concept's verified[]"},
 	{"by", "STRING(MAX)", false, "OQ-8: verified[].by, verbatim as authored"},
 	{"at", "STRING(MAX)", false, "OQ-8: verified[].at, verbatim as authored"},
-	{"is_human", "BOOL", false, "OQ-8: is-human-actor(by) — the TrustTier predicate"},
+	{"is_human", "BOOL", false, "OQ-8: okf.IsHumanActor(by) — the TrustTier predicate"},
 }
 
 // nodeVerifiedCSVHeader is the fixed CSV header for node_verified.csv. Column
@@ -117,9 +117,9 @@ const derivationViewSQL = `-- derivation.sql — offline tier/stale recomputatio
 --   tier : 'unverified'        when the node has no NodeVerified rows
 --          'human-reviewed'    when any NodeVerified.is_human is TRUE
 --          'machine-confirmed' otherwise
---          (mirrors TrustTier over verified[])
+--          (mirrors okf.TrustTier over verified[])
 --   stale: stale_after IS NOT NULL AND <as_of> >= stale_after
---          (mirrors IsStale; a node without stale_after is never stale)
+--          (mirrors okf.IsStale; a node without stale_after is never stale)
 --
 -- The view recomputes as of CURRENT_DATE(). To recompute for any chosen date,
 -- replace CURRENT_DATE() with a DATE literal, e.g. DATE '2026-08-18'.

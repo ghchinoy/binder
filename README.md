@@ -482,9 +482,11 @@ schemas and examples.
 
 ## How it works
 
-- `pkg/okf` — the OKF domain model plus two small interfaces, `Codec`
-  (parse/serialize concepts) and `LinkGraph` (extract/resolve links). Trust tiers,
-  staleness, and the Attested flag are *derived* from frontmatter, never stored.
+- `pkg/okf` — the published OKF domain model plus the `Codec` interface
+  (parse/serialize concepts). Trust tiers, staleness, and the Attested flag are
+  *derived* from frontmatter, never stored. The `LinkGraph` interface
+  (extract/resolve links) and the non-published spec-rule helpers live in
+  `internal/okfrules`, keeping the published `okf` surface narrow.
 - `pkg/okf/native` — the sole codec: [`goldmark`](https://github.com/yuin/goldmark)
   for markdown/link extraction and [`gopkg.in/yaml.v3`](https://gopkg.in/yaml.v3)
   (`yaml.Node`) for order-preserving frontmatter. Unmodified frontmatter is
