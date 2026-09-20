@@ -55,16 +55,27 @@ structs as the first committed slice of the Go-SDK contract**:
 | `lint`    | `Report` | `pkg/lint`    |
 | `review`  | `Report` | `pkg/review`  |
 
-Five of the six now live under `pkg/` (relocated in Phase 6). **`infer.Report` is
-the exception: the `infer` package stays `internal/` for now** — it is the seam
-that reaches the optional Gemini semantic tier, and keeping it internal is what
-holds `google.golang.org/genai` out of every `pkg/` dependency (`go list -deps
-./pkg/...` is genai-free). Its shape is still guarded and still surfaced to
-library callers: `pkg/binder.InferResult` carries an `*infer.Report`, and the
-`infer` package exposes only the genai-free `GeminiClient` interface (the concrete
-client is injected by the CLI adapter). Publishing `infer` under `pkg/` is a
-follow-up decision, deliberately deferred so the genai-isolation guarantee lands
-first.
+Five of the six now live under `pkg/` (relocated in Phase 6). **`infer` is
+DEFERRED from this first published slice: nothing infer-related is exported from
+`pkg/` at all** — not `infer.Report`, not an `InferResult`/`InferRequest` facade,
+not the `GeminiClient` interface or its `Options`. The infer capability stays
+fully functional through an internal seam (`internal/infersvc` drives it for the
+`binder infer` CLI command; `internal/infer` computes it, unchanged), but it is
+withheld from the committed public surface until an example or real consumer
+demonstrates the need for it. This is the narrow-now, examples-as-discovery
+philosophy applied to the one capability whose SDK shape we are least sure of:
+publish the surface consumers prove they need, not the surface we guess they might.
+
+This deferral is **not** a genai-isolation measure. The earlier draft justified
+keeping `infer` internal as the thing that holds `google.golang.org/genai` out of
+`pkg/`; that justification is measured-false and has been removed. `internal/infer`
+is itself already genai-free (`go list -deps ./internal/infer` has no genai), so
+publishing it would not have reintroduced the cloud SDK. genai isolation is
+achieved solely by keeping the concrete client package `internal/gemini` internal
+— `go list -deps ./pkg/...` is genai-free regardless of where the genai-free infer
+types live. Infer's shape is still CI-guarded (the `internal/plugindocs` drift gate
+still pins `infer.Report`'s serialized key set against the live binary); it simply
+is not part of the *published Go surface* yet.
 
 "First committed slice" means: these are the shapes we are most confident in and
 that the drift gate already de-risks — **not** that the rest of the Go surface is

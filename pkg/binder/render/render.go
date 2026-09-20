@@ -23,15 +23,6 @@ func Lint(res binder.LintResult) string {
 	return res.Report.String()
 }
 
-// Infer returns the canonical human-readable infer prose for an InferResult,
-// byte-identical to what the CLI printed before the collapse. The text is owned by
-// infer.Report.String(); this is the core seam adapters call so the prose has a
-// single home. Which STREAM it goes to (stdout when mappings exist, stderr when
-// empty) is the adapter's call, driven by InferResult.Empty().
-func Infer(res binder.InferResult) string {
-	return res.Report.String()
-}
-
 // Convert returns the deterministic human-readable convert report for a
 // ConvertResult, byte-identical to what the CLI printed before the collapse. The
 // canonical prose (including the trust-disclosure block) is owned by

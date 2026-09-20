@@ -1,4 +1,17 @@
-package binder
+// Package infersvc is the internal infer orchestration + policy + render seam for
+// the binder CLI adapter (cmd/infer.go). It mirrors the shape of the pkg/binder
+// service facades for the other capabilities — Request → Result → orchestration →
+// gate/render/encode — but is kept INTERNAL on purpose.
+//
+// The infer capability is DEFERRED from the first published pkg/ slice (owner
+// ruling 2026-09-20): nothing infer-related is exported from pkg/ until an
+// example/consumer demonstrates the need (narrow-now, examples-as-discovery). The
+// feature itself is unchanged and fully functional through this internal seam; the
+// concrete Gemini client (which imports google.golang.org/genai) stays behind the
+// genai-free infer.GeminiClient interface, injected at the adapter edge, so the
+// cloud SDK never reaches this package's dependency graph. See
+// docs/api-stability.md.
+package infersvc
 
 import (
 	"context"
@@ -7,10 +20,25 @@ import (
 
 	"github.com/ghchinoy/binder/internal/infer"
 	"github.com/ghchinoy/binder/pkg/clijson"
+	"github.com/ghchinoy/binder/pkg/okf"
 )
 
 // inferCommand is the envelope `command` token for the infer capability.
 const inferCommand = "infer"
+
+// Service is the infer orchestration + policy layer. It is constructed once with
+// the composition root's codec choice (cmd/root.go stays the one place a concrete
+// codec is selected) and is safe for concurrent use — it holds only the injected
+// codec and no mutable state.
+type Service struct {
+	codec okf.Codec
+}
+
+// New builds a Service over the given codec, injected by the adapter's composition
+// root (native.New() for the CLI today), preserving the okf.Codec pluggability seam.
+func New(codec okf.Codec) *Service {
+	return &Service{codec: codec}
+}
 
 // InferRequest carries the RESOLVED inputs an infer run needs. The adapter reads
 // flags/config/env and passes values in — no flag-framework types cross the seam.
@@ -20,8 +48,7 @@ const inferCommand = "infer"
 // GeminiClient (tests inject a fake) or a GeminiClientFactory the adapter supplies
 // (cmd/infer.go injects internal/gemini.New). The concrete client and its
 // GEMINI_API_KEY / GOOGLE_CLOUD_PROJECT env reads stay in that adapter package, so
-// google.golang.org/genai never enters this package's (the future committed
-// pkg/binder) API or dependency graph (design §6 Phase 4 / Residual Risk 7).
+// google.golang.org/genai never enters this package's dependency graph.
 type InferRequest struct {
 	// Src is the source markdown corpus directory (read-only; infer writes nothing).
 	Src string
@@ -46,8 +73,7 @@ type InferRequest struct {
 	// edge. It references only genai-free infer types, so naming it here does not
 	// pull the cloud SDK onto the seam.
 	GeminiClientFactory func(ctx context.Context, opts infer.Options) (infer.GeminiClient, string, string, error)
-	// Version is the binder version stamped into the JSON envelope's `binder`
-	// field. Threaded until Version is relocated to the core (design Decision 3.6).
+	// Version is the binder version stamped into the JSON envelope's `binder` field.
 	Version string
 }
 
@@ -66,8 +92,7 @@ type InferResult struct {
 // today), assembling infer.Options from the resolved request. The returned
 // InferResult is complete; the caller renders and gates it without patching.
 //
-// ctx is threaded to infer.Infer, which already takes a context (design Non-Goal:
-// context stays where it already exists).
+// ctx is threaded to infer.Infer, which already takes a context.
 func (s *Service) Infer(ctx context.Context, req InferRequest) (InferResult, error) {
 	rep, err := infer.Infer(ctx, req.Src, s.codec, infer.Options{
 		DefaultType:     req.DefaultType,
@@ -116,4 +141,13 @@ func (r InferResult) Gate(strict bool) error {
 // clijson encoder so adapters never hand-build it.
 func (r InferResult) EncodeJSON(w io.Writer) error {
 	return clijson.Encode(w, r.version, inferCommand, r.Report)
+}
+
+// Render returns the canonical human-readable infer prose for an InferResult,
+// byte-identical to what the CLI printed before the collapse. The text is owned by
+// infer.Report.String(); this is the seam the adapter calls so the prose has a
+// single home. Which STREAM it goes to (stdout when mappings exist, stderr when
+// empty) is the adapter's call, driven by InferResult.Empty().
+func Render(res InferResult) string {
+	return res.Report.String()
 }

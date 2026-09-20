@@ -1,4 +1,4 @@
-package binder_test
+package infersvc_test
 
 import (
 	"bytes"
@@ -11,8 +11,7 @@ import (
 	"testing"
 
 	"github.com/ghchinoy/binder/internal/infer"
-	"github.com/ghchinoy/binder/pkg/binder"
-	"github.com/ghchinoy/binder/pkg/binder/render"
+	"github.com/ghchinoy/binder/internal/infersvc"
 	"github.com/ghchinoy/binder/pkg/clijson"
 	"github.com/ghchinoy/binder/pkg/okf/native"
 )
@@ -38,8 +37,8 @@ func (f *fakeGemini) InferDirectoryTypes(ctx context.Context, dirs, sampleTitles
 // TestInferResultComplete proves the service returns a complete report and that
 // Empty()/Warnings() are the single definitions the adapter reads.
 func TestInferResultComplete(t *testing.T) {
-	svc := binder.New(native.New())
-	res, err := svc.Infer(context.Background(), binder.InferRequest{
+	svc := infersvc.New(native.New())
+	res, err := svc.Infer(context.Background(), infersvc.InferRequest{
 		Src:         inferCorpus,
 		DefaultType: "Note",
 		Version:     "test",
@@ -56,9 +55,9 @@ func TestInferResultComplete(t *testing.T) {
 	if res.Report.Src != inferCorpus {
 		t.Errorf("Src = %q, want %q", res.Report.Src, inferCorpus)
 	}
-	// render.Infer is the canonical prose seam.
-	if got := render.Infer(res); got != res.Report.String() {
-		t.Errorf("render.Infer mismatch:\n%q\n%q", got, res.Report.String())
+	// infersvc.Render is the canonical prose seam.
+	if got := infersvc.Render(res); got != res.Report.String() {
+		t.Errorf("infersvc.Render mismatch:\n%q\n%q", got, res.Report.String())
 	}
 }
 
@@ -69,8 +68,8 @@ func TestInferEmpty(t *testing.T) {
 	if err := writeFile(dir+"/README.md", "# Readme\n"); err != nil {
 		t.Fatal(err)
 	}
-	svc := binder.New(native.New())
-	res, err := svc.Infer(context.Background(), binder.InferRequest{Src: dir, DefaultType: "Note", Version: "test"})
+	svc := infersvc.New(native.New())
+	res, err := svc.Infer(context.Background(), infersvc.InferRequest{Src: dir, DefaultType: "Note", Version: "test"})
 	if err != nil {
 		t.Fatalf("Infer: %v", err)
 	}
@@ -85,13 +84,13 @@ func TestInferEmpty(t *testing.T) {
 // TestInferGate proves --strict gates only when warnings are present, and bare
 // infer never gates.
 func TestInferGate(t *testing.T) {
-	svc := binder.New(native.New())
+	svc := infersvc.New(native.New())
 	// An unparseable-frontmatter file yields a disclosure warning.
 	dir := t.TempDir()
 	if err := writeFile(dir+"/guides/a.md", "---\ntype: Guide\ntitle: A: colon breaks this\n---\n\n# A\n"); err != nil {
 		t.Fatal(err)
 	}
-	res, err := svc.Infer(context.Background(), binder.InferRequest{Src: dir, DefaultType: "Note", Version: "test"})
+	res, err := svc.Infer(context.Background(), infersvc.InferRequest{Src: dir, DefaultType: "Note", Version: "test"})
 	if err != nil {
 		t.Fatalf("Infer: %v", err)
 	}
@@ -111,8 +110,8 @@ func TestInferGate(t *testing.T) {
 // TestInferGeminiViaInterface proves the service offers the Gemini tier through
 // the genai-free interface (fake injected on the request), with no SDK on the seam.
 func TestInferGeminiViaInterface(t *testing.T) {
-	svc := binder.New(native.New())
-	res, err := svc.Infer(context.Background(), binder.InferRequest{
+	svc := infersvc.New(native.New())
+	res, err := svc.Infer(context.Background(), infersvc.InferRequest{
 		Src:          inferCorpus,
 		DefaultType:  "Note",
 		UseGemini:    true,
@@ -137,8 +136,8 @@ func TestInferGeminiViaInterface(t *testing.T) {
 // TestInferEncodeJSON proves the envelope is the binder.report/v1 shape and is
 // produced by the Result, not hand-built by an adapter.
 func TestInferEncodeJSON(t *testing.T) {
-	svc := binder.New(native.New())
-	res, err := svc.Infer(context.Background(), binder.InferRequest{Src: inferCorpus, DefaultType: "Note", Version: "test"})
+	svc := infersvc.New(native.New())
+	res, err := svc.Infer(context.Background(), infersvc.InferRequest{Src: inferCorpus, DefaultType: "Note", Version: "test"})
 	if err != nil {
 		t.Fatalf("Infer: %v", err)
 	}

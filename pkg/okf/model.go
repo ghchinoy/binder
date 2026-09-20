@@ -1,11 +1,12 @@
 // Package okf is the binder-OWNED OKF domain model and boundary.
 //
-// It defines the typed domain (Bundle, Concept, Link, TrustSignals), the two
-// interfaces the rest of binder depends on (Codec, LinkGraph), the trust
-// vocabulary logic (ValidateTrust/TrustTier/IsStale), and the spec-version
-// registry. Nothing above this package (internal/convert, cmd) may import a
-// concrete codec (factileadapter) or factile directly; they depend only on the
-// interfaces declared here. See design-v2 §2.2/§2.3.
+// It defines the typed domain (Bundle, Concept, Link, TrustSignals), the Codec
+// interface the rest of binder depends on, and the spec-version registry. The
+// trust-vocabulary logic and the LinkGraph interface live in the internal
+// okfrules package, not here — this package is the published domain surface, so
+// it carries only the MUST set. Nothing above this package (internal/convert,
+// cmd) may import a concrete codec (factileadapter) or factile directly; they
+// depend only on the interfaces declared here. See design-v2 §2.2/§2.3.
 package okf
 
 // OrderedMap is an insertion-order-preserving string-keyed map. It is the
@@ -15,11 +16,6 @@ package okf
 type OrderedMap struct {
 	keys []string
 	vals map[string]any
-}
-
-// NewOrderedMap returns an empty OrderedMap.
-func NewOrderedMap() *OrderedMap {
-	return &OrderedMap{vals: map[string]any{}}
 }
 
 // Get returns the value for key and whether it was present.
