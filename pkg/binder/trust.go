@@ -52,7 +52,7 @@ const (
 // (convert/enrich) under the never-fabricate-trust ruling. It is the single home for
 // the disclosure Source vocabulary and the refused-verifier Note text — the two used
 // to be split across cmd/verifiedby.go (Source via origin.String(), the Note
-// literals) and internal/mcp/convert.go (mcpVerifiedBySource). Both adapters now
+// literals) and pkg/mcp/convert.go (mcpVerifiedBySource). Both adapters now
 // route through ResolveTrust so the wording cannot drift between the CLI and MCP.
 type TrustDecision struct {
 	// Actor is the verifier to stamp (empty ⇒ write no stamp).

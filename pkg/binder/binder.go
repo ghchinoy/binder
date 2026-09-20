@@ -63,7 +63,7 @@ type LintRequest struct {
 	Now time.Time
 	// Today is the RESOLVED YYYY-MM-DD date used for staleness. When empty the
 	// service defaults it to Now's date — the one place that rule lives (it used to
-	// be duplicated in cmd.resolveNow's caller and internal/mcp.todayOrNow).
+	// be duplicated in cmd.resolveNow's caller and pkg/mcp.todayOrNow).
 	Today string
 	// Version is the binder version stamped into the analyze step and the JSON
 	// envelope's `binder` field. Threaded through the request until Version is
@@ -83,7 +83,7 @@ type LintResult struct {
 	version string
 }
 
-// Lint runs the orchestration cmd/ and internal/mcp/ each implemented independently
+// Lint runs the orchestration cmd/ and pkg/mcp/ each implemented independently
 // today (convert.Analyze → lint.Lint) exactly once, and owns the rep.Src fill. The
 // returned LintResult is complete; the caller renders and gates it without patching.
 //
@@ -140,7 +140,7 @@ func (r LintResult) EncodeJSON(w io.Writer) error {
 }
 
 // ResolveNow is the pure SOURCE_DATE_EPOCH determinism RULE (design §3.3): the one
-// definition replacing cmd.resolveNow and its mirror in internal/mcp/server.go for
+// definition replacing cmd.resolveNow and its mirror in pkg/mcp/server.go for
 // the lint path. It reads no environment — the adapter passes the resolved epoch
 // string and a fallback (typically time.Now()). An empty epoch yields the fallback;
 // a valid epoch yields that instant in UTC; a malformed epoch yields the fallback

@@ -508,7 +508,7 @@ func TestListGraphsReadOnly(t *testing.T) {
 // assertion. I convinced myself of this by construction (the same helper already
 // guards list_graphs) and by confirming the query path only ever reads: the verbs
 // operate on the in-memory *Model from graph.Build and return copies of its
-// Node/Edge values; no code path in internal/graph/query.go or querygraph.go
+// Node/Edge values; no code path in pkg/graph/query.go or querygraph.go
 // opens the bundle for writing. The id_key subcase specifically drives the
 // never-mint invariant: "concept-id" is absent from the fixture's frontmatter, so
 // if the tool ever tried to persist a minted key the digest would change.

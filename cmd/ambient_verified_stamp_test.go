@@ -13,7 +13,7 @@ import (
 // ambient GLOBAL user config (XDG_CONFIG_HOME) and write that verified stamp —
 // convert into the output bundle, enrich in place into git-trackable source —
 // when no --verified-by flag is passed. convert and enrich do NOT share a code
-// path (separate commands over internal/convert and internal/enrich), so each
+// path (separate commands over pkg/convert and pkg/enrich), so each
 // verb is covered separately here, as is the widened coverage the finding asked
 // for: the original report was about enrich, and this pins convert too.
 //

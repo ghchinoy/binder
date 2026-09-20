@@ -262,7 +262,7 @@ func TestGateFlagsStaleLiterals(t *testing.T) {
 				"var _ = \"actor to append as a verified stamp, e.g. \\\"binder/0.3.0\\\"\"\n",
 		},
 		{
-			// internal/mcp/convert.go's inlined copy of the forms hint — the
+			// pkg/mcp/convert.go's inlined copy of the forms hint — the
 			// error path, which is why #60 is not cosmetic.
 			name: "inlined error-path hint",
 			src: "package x\n" +

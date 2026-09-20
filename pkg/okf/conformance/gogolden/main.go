@@ -7,10 +7,10 @@
 //
 //   - frontmatter cases run through native.Codec.ParseConcept, so the recorded
 //     error text is the exact string fmt.Errorf emits in
-//     internal/okf/native/native.go — not a copy of it;
+//     pkg/okf/native/native.go — not a copy of it;
 //   - actor cases run through okfrules.IsHumanActor / okf.IsValidActor, so the
 //     recorded booleans are whatever the real predicates in
-//     internal/okf/trust.go return.
+//     internal/okfrules/trust.go and pkg/okf/trust.go return.
 //
 // The output JSON is the golden the other implementations (astro-okf TS, the
 // validate-plugin.sh Python copy, the two testdata prose fixtures) are diffed

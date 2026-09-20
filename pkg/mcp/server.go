@@ -6,7 +6,7 @@
 //
 // The server adds NO business logic and NO second serialization path: each tool
 // handler decodes typed params, calls the existing internal/* entry point, and
-// encodes the returned struct with the existing internal/clijson encoder. The
+// encodes the returned struct with the existing pkg/clijson encoder. The
 // bytes are identical to `binder <cmd> --json`.
 //
 // The official MCP Go SDK (github.com/modelcontextprotocol/go-sdk) is confined

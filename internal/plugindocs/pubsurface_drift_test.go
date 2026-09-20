@@ -18,7 +18,7 @@ import (
 // KEY SETS of the six report structs against live plugin transcripts, THIS gate
 // locks the exported GO SURFACE that Phase 6 will move internal/ -> pkg/:
 //
-//  1. the WHOLE exported surface of internal/binder — every service Request,
+//  1. the WHOLE exported surface of pkg/binder — every service Request,
 //     Result, Service method, helper func, exported var/const/type — because that
 //     package becomes pkg/binder verbatim at publish (design §3.6); and
 //  2. the confirmed-MUST okf vocabulary from the Phase-2 export trace
@@ -141,7 +141,7 @@ var okfMustVocabulary = map[string]bool{
 
 // packageSurface parses every non-test .go file in dir and renders a normalized,
 // sorted list of exported-declaration surface entries. When want is nil the whole
-// exported surface is rendered (used for internal/binder, published verbatim);
+// exported surface is rendered (used for pkg/binder, published verbatim);
 // when want is non-nil only declarations whose owning name is a key of want are
 // rendered (used for the okf MUST subset), and the second return value reports
 // which of those names were actually found. Comments are dropped (parse mode 0)

@@ -1,7 +1,7 @@
 // Package cmd wires binder's Cobra command tree. cmd/root.go is the composition
 // root: the ONE place a concrete codec is selected and injected as an
-// okf.Codec/okfrules.LinkGraph. Every other command (and all of internal/convert and
-// internal/validate) depends only on the binder-owned okf interfaces, never on
+// okf.Codec/okfrules.LinkGraph. Every other command (and all of pkg/convert and
+// pkg/validate) depends only on the binder-owned okf interfaces, never on
 // factile or a concrete codec (dependency rule, design-v2 §2.2).
 package cmd
 
@@ -21,7 +21,7 @@ import (
 )
 
 // The canonical version var lives in the core: binder.Version (see
-// internal/binder/version.go), so a library consumer can read binder's version
+// pkg/binder/version.go), so a library consumer can read binder's version
 // without importing the CLI and goreleaser injects it there via
 // -ldflags "-X github.com/ghchinoy/binder/pkg/binder.Version=<version>".
 // The cmd/ adapter keeps only the binary-specific RESOLUTION of that var: the
@@ -48,7 +48,7 @@ import (
 // The final step publishes the resolved value to internal/version, which is the
 // single source of the `<producer>/<version>` exemplar shown in help and error
 // text (issue #60). The push is required rather than stylistic: the exemplar is
-// consumed by internal/config and internal/mcp, and `cmd` imports both, so they
+// consumed by internal/config and pkg/mcp, and `cmd` imports both, so they
 // cannot import `cmd` back to read the version. It is deliberately the LAST
 // statement here, after normalizeVersion, so internal/version can never observe
 // a v-prefixed or unnormalized value. Every consumer reads the exemplar at run

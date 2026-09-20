@@ -11,7 +11,7 @@ import (
 // file:// URI, to a doc under a SIBLING directory outside the corpus root. It
 // returns the corpus root and the absolute sibling directory an author would
 // declare with external_root. Mirrors the CLI-side fixture in
-// internal/convert/external_root_convert_test.go.
+// pkg/convert/external_root_convert_test.go.
 func writeMCPExternalRootCorpus(t *testing.T) (root, sibling string) {
 	t.Helper()
 	base := t.TempDir()

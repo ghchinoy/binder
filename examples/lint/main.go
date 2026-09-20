@@ -1,11 +1,10 @@
 // Command lint-example is an in-repo external-consumer example (design §6 Phase 1
-// point 4). It imports the shared service the way an external Go caller will and
+// point 4). It imports the shared service the way an external Go caller does and
 // drives Service.Lint over a corpus, producing the same lint result as `binder lint`.
 //
-// It validates the service ergonomics WHILE STILL REVERSIBLE: it imports the internal
-// path (internal/binder), so nothing here is a public commitment yet. When the core is
-// promoted to pkg/ at the final phase, only the import paths change — the calling
-// shape does not.
+// It imports the published pkg/binder surface (relocated out of internal/ in
+// Phase 6); the multi-capability companion examples/library showcases validate,
+// index, and project against the same surface.
 //
 // Usage:
 //
