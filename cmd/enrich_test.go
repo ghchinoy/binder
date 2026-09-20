@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ghchinoy/binder/internal/binder"
-	"github.com/ghchinoy/binder/internal/clijson"
+	"github.com/ghchinoy/binder/pkg/binder"
+	"github.com/ghchinoy/binder/pkg/clijson"
 )
 
 // enrichCorpus writes a small corpus under a temp dir and returns its path.

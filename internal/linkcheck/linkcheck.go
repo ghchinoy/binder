@@ -12,7 +12,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/ghchinoy/binder/internal/okf"
+	"github.com/ghchinoy/binder/internal/okfrules"
 )
 
 // wikilinkRE matches a residual wiki-style link left in a body: [[Target]] or
@@ -96,10 +96,10 @@ func ResidualWikilinks(body string) []string {
 	if !strings.Contains(body, "[[") {
 		return nil
 	}
-	code := okf.CodeRegions(body)
+	code := okfrules.CodeRegions(body)
 	var out []string
 	for _, idx := range wikilinkRE.FindAllStringSubmatchIndex(body, -1) {
-		if okf.InCodeRegion(idx[0], code) {
+		if okfrules.InCodeRegion(idx[0], code) {
 			continue
 		}
 		inner := body[idx[2]:idx[3]]

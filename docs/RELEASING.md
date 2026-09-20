@@ -146,12 +146,12 @@ Homebrew's shorthand for the `ghchinoy/homebrew-tap` repo, and the formula's own
 
 ## How the version reaches the binary (single-source: the tag)
 
-`internal/binder/version.go` declares the canonical `var Version = "dev"` (the
+`pkg/binder/version.go` declares the canonical `var Version = "dev"` (the
 CLI reads it as `binder.Version`; it becomes `pkg/binder.Version` at publish),
 and two different sources can fill it in:
 
 - **goreleaser** injects the tag at build time:
-  `-ldflags "-X github.com/ghchinoy/binder/internal/binder.Version={{ .Version }}"`.
+  `-ldflags "-X github.com/ghchinoy/binder/pkg/binder.Version={{ .Version }}"`.
   Note that goreleaser's `.Version` is the tag with its `v` **stripped**.
 - **`go install github.com/ghchinoy/binder@vX.Y.Z`** gets no ldflags, so an
   `init()` fallback recovers the module version from `debug.ReadBuildInfo()`.
@@ -183,7 +183,7 @@ through `-ldflags`. That is why the release path must inject it.
 To rehearse the stamp locally, build the way the release builds:
 
 ```sh
-go build -ldflags "-X github.com/ghchinoy/binder/internal/binder.Version=0.3.0" -o /tmp/binder .
+go build -ldflags "-X github.com/ghchinoy/binder/pkg/binder.Version=0.3.0" -o /tmp/binder .
 /tmp/binder --version     # binder/0.3.0
 ```
 

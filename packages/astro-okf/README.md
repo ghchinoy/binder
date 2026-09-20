@@ -94,7 +94,7 @@ what this package concluded from it. Render them from their own fields and
 label the second one derived, and a page cannot quietly upgrade a claim.
 
 The tier and staleness rules are a direct port of binder's
-`internal/okf/trust.go`, so a bundle renders the tier its producer computes for
+`pkg/okf/trust.go`, so a bundle renders the tier its producer computes for
 it.
 
 ### Normalization

@@ -18,7 +18,7 @@ import (
 // KEY SETS of the six report structs against live plugin transcripts, THIS gate
 // locks the exported GO SURFACE that Phase 6 will move internal/ -> pkg/:
 //
-//  1. the WHOLE exported surface of internal/binder — every service Request,
+//  1. the WHOLE exported surface of pkg/binder — every service Request,
 //     Result, Service method, helper func, exported var/const/type — because that
 //     package becomes pkg/binder verbatim at publish (design §3.6); and
 //  2. the confirmed-MUST okf vocabulary from the Phase-2 export trace
@@ -39,14 +39,20 @@ func TestPublicSurface_NoDrift(t *testing.T) {
 	root := repoRoot(t)
 
 	var b strings.Builder
-	b.WriteString("# ==== binder service surface (internal/binder -> pkg/binder at Phase 6) ====\n")
-	binderEntries, _ := packageSurface(t, filepath.Join(root, "internal", "binder"), nil)
+	b.WriteString("# ==== binder service surface (pkg/binder, published Phase 6) ====\n")
+	binderEntries, _ := packageSurface(t, filepath.Join(root, "pkg", "binder"), nil)
 	for _, e := range binderEntries {
 		b.WriteString(e)
 		b.WriteString("\n")
 	}
-	b.WriteString("\n# ==== okf MUST vocabulary (packaging/phase2/okf-export-trace.md) ====\n")
-	okfEntries, foundOKF := packageSurface(t, filepath.Join(root, "internal", "okf"), okfMustVocabulary)
+	// Render the FULL exported pkg/okf surface (want=nil), exactly as pkg/binder is
+	// rendered above — NOT an allowlist-filtered subset. The whole point of this
+	// phase is "okf == MUST and nothing more", so the gate must see over-exports,
+	// which an allowlist filter is structurally blind to (R1). okfNames is the set
+	// of ALL exported top-level okf identifiers; the equality check below fails on
+	// any name outside the MUST set (over-export) AND any MUST name missing.
+	b.WriteString("\n# ==== okf published surface (== MUST set; packaging/phase2/okf-export-trace.md) ====\n")
+	okfEntries, okfNames := packageSurface(t, filepath.Join(root, "pkg", "okf"), nil)
 	for _, e := range okfEntries {
 		b.WriteString(e)
 		b.WriteString("\n")
@@ -67,21 +73,38 @@ func TestPublicSurface_NoDrift(t *testing.T) {
 				"green result would be vacuous. Fix the parse before trusting this gate.", sentinel)
 		}
 	}
-	// Every MUST okf identifier must have been found in the source. A miss means
-	// the seam identifier was renamed or removed — which is exactly the drift this
-	// gate exists to catch — reported as its own diagnostic.
-	var missing []string
+	// okf SET-EQUALITY (not allowlist-subset): the published pkg/okf surface must be
+	// EXACTLY the MUST set. Fail on (a) any exported okf identifier NOT in the MUST
+	// set — the over-export direction an allowlist filter could never see (this is
+	// the C1-class hole; a stray exported constructor/func/type now turns the gate
+	// RED); and (b) any MUST identifier missing — a seam id renamed or removed. Both
+	// directions are checked here so "okf == MUST and nothing more" is enforced on
+	// the one-way publish door, not merely asserted.
+	var missing, extra []string
 	for name := range okfMustVocabulary {
-		if !foundOKF[name] {
+		if !okfNames[name] {
 			missing = append(missing, name)
+		}
+	}
+	for name := range okfNames {
+		if !okfMustVocabulary[name] {
+			extra = append(extra, name)
 		}
 	}
 	if len(missing) > 0 {
 		sort.Strings(missing)
-		t.Fatalf("confirmed-MUST okf identifiers not found in internal/okf: %v. Either the "+
+		t.Errorf("confirmed-MUST okf identifiers not exported from pkg/okf: %v. Either the "+
 			"Phase-2 trace's public seam changed (update okfMustVocabulary AND the design trace) "+
 			"or an identifier was renamed/removed (restore it or make the change deliberate).",
 			missing)
+	}
+	if len(extra) > 0 {
+		sort.Strings(extra)
+		t.Errorf("pkg/okf exports identifiers OUTSIDE the MUST set (over-export; AC6 "+
+			"\"okf == MUST and nothing more\" violation on the irreversible publish): %v. Unexport "+
+			"them (move to internal/okfrules or lowercase), or — only if genuinely part of the "+
+			"public seam — add them to okfMustVocabulary AND the Phase-2 trace deliberately.",
+			extra)
 	}
 
 	goldenPath := filepath.Join(root, "internal", "plugindocs", "testdata", "public-surface.golden")
@@ -111,10 +134,12 @@ func TestPublicSurface_NoDrift(t *testing.T) {
 
 // okfMustVocabulary is the confirmed-MUST okf export set from the Phase-2 trace
 // (packaging/phase2/okf-export-trace.md §"MUST"): the direct SC/AD seam plus the
-// transitive set forced public by okf.Bundle's exported fields. These are the
-// only okf identifiers this gate guards — the DEFER and KEEP-INTERNAL sets are
-// deliberately excluded, because they are NOT part of the surface Phase 6 intends
-// to publish.
+// transitive set forced public by okf.Bundle's exported fields. This is the EXACT
+// expected published pkg/okf surface: the gate asserts the full exported okf
+// top-level identifier set equals this map — no more (over-export ⇒ RED) and no
+// less (missing MUST ⇒ RED). The DEFER and KEEP-INTERNAL sets are excluded because
+// they are NOT part of the surface Phase 6 publishes; anything okf exports beyond
+// this map fails the gate on the one-way publish door.
 var okfMustVocabulary = map[string]bool{
 	// direct seam (referenced by the service core and/or the adapters)
 	"Codec":              true,
@@ -130,20 +155,25 @@ var okfMustVocabulary = map[string]bool{
 	"TrustSignals":    true,
 	"UnparsedConcept": true,
 	"OrderedMap":      true,
-	"NewOrderedMap":   true,
-	"Source":          true,
-	"Actorstamp":      true,
-	"DateRange":       true,
-	"Span":            true,
+	// NewOrderedMap is DEFERRED, not exported (OQ2 owner ruling): OrderedMap is
+	// public, its constructor is not. Callers use &okf.OrderedMap{} or the
+	// internal okfrules helper. Dropped from the guarded MUST set accordingly.
+	"Source":     true,
+	"Actorstamp": true,
+	"DateRange":  true,
+	"Span":       true,
 }
 
 // packageSurface parses every non-test .go file in dir and renders a normalized,
 // sorted list of exported-declaration surface entries. When want is nil the whole
-// exported surface is rendered (used for internal/binder, published verbatim);
-// when want is non-nil only declarations whose owning name is a key of want are
-// rendered (used for the okf MUST subset), and the second return value reports
-// which of those names were actually found. Comments are dropped (parse mode 0)
-// so the rendering is a pure function of the API shape, not its prose.
+// exported surface is rendered (used for pkg/binder, published verbatim, and for
+// pkg/okf, whose full surface must equal the MUST set); when want is non-nil only
+// declarations whose owning name is a key of want are rendered. Regardless of want,
+// the second return value is the set of ALL exported TOP-LEVEL identifier names
+// (types, funcs, vars, consts — not methods) present in the package, so a caller
+// can assert set-equality against an expected surface (the okf over-export guard).
+// Comments are dropped (parse mode 0) so the rendering is a pure function of the
+// API shape, not its prose.
 func packageSurface(t *testing.T, dir string, want map[string]bool) ([]string, map[string]bool) {
 	t.Helper()
 	fset := token.NewFileSet()
@@ -151,7 +181,7 @@ func packageSurface(t *testing.T, dir string, want map[string]bool) ([]string, m
 	if err != nil {
 		t.Fatalf("read package dir %s: %v", dir, err)
 	}
-	found := map[string]bool{}
+	names := map[string]bool{}
 	var out []string
 	// Group methods by receiver base type so a type's method set renders with it.
 	type typeSpec struct {
@@ -182,6 +212,7 @@ func packageSurface(t *testing.T, dir string, want map[string]bool) ([]string, m
 						methodsByRecv[recvBaseName(d.Recv.List[0].Type)], d)
 				} else {
 					funcs = append(funcs, d)
+					names[d.Name.Name] = true // exported top-level func
 				}
 			case *ast.GenDecl:
 				switch d.Tok {
@@ -190,24 +221,26 @@ func packageSurface(t *testing.T, dir string, want map[string]bool) ([]string, m
 						ts := s.(*ast.TypeSpec)
 						if ts.Name.IsExported() {
 							typeSpecs = append(typeSpecs, typeSpec{ts.Name.Name, ts})
+							names[ts.Name.Name] = true // exported top-level type
 						}
 					}
 				case token.VAR, token.CONST:
 					valueDecls = append(valueDecls, d)
+					for _, s := range d.Specs {
+						vs := s.(*ast.ValueSpec)
+						for _, n := range vs.Names {
+							if n.IsExported() {
+								names[n.Name] = true // exported top-level var/const
+							}
+						}
+					}
 				}
 			}
 		}
 	}
 
 	include := func(name string) bool {
-		if want == nil {
-			return true
-		}
-		if want[name] {
-			found[name] = true
-			return true
-		}
-		return false
+		return want == nil || want[name]
 	}
 
 	// Types (with their method sets rendered inline, sorted).
@@ -215,7 +248,7 @@ func packageSurface(t *testing.T, dir string, want map[string]bool) ([]string, m
 		if !include(ts.name) {
 			continue
 		}
-		out = append(out, renderType(fset, ts.spec, methodsByRecv[ts.name], want, found))
+		out = append(out, renderType(fset, ts.spec, methodsByRecv[ts.name], want, names))
 	}
 	// Top-level funcs.
 	for _, fn := range funcs {
@@ -246,7 +279,7 @@ func packageSurface(t *testing.T, dir string, want map[string]bool) ([]string, m
 	}
 
 	sort.Strings(out)
-	return out, found
+	return out, names
 }
 
 // renderType renders a type declaration's exported surface: struct fields

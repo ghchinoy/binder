@@ -362,7 +362,7 @@ def main() -> int:
         sys.stderr.write(
             f"FATAL: `{binder} --version` did not certify — {reason}.\n"
             f"This gate is not a stamped release build. Build one with\n"
-            f'  go build -ldflags "-X github.com/ghchinoy/binder/internal/binder.Version='
+            f'  go build -ldflags "-X github.com/ghchinoy/binder/pkg/binder.Version='
             f'$(git describe --tags --abbrev=0)" -o <bin> .\n'
             f"or just use scripts/lib/stamped-binder.sh, which builds AND "
             f"certifies in one step.\n"
@@ -399,7 +399,7 @@ def main() -> int:
     #
     # The MCP convert tool's invalid-actor error is the fourth #60 site and is
     # NOT reachable here — driving it needs a JSON-RPC session over stdio. It is
-    # covered instead by internal/mcp's TestInvalidActorExemplarTracksLiveVersion
+    # covered instead by pkg/mcp's TestInvalidActorExemplarTracksLiveVersion
     # and by the Go source gate. Recorded rather than silently omitted.
     # The trailing int is the MINIMUM number of version literals the surface must
     # emit. The two help surfaces are 2 because the --verified-by usage string

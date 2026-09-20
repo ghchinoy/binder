@@ -76,7 +76,7 @@ docs:
 
 # Regenerate the byte-stable golden fixture after an intentional change.
 golden-update:
-	$(GO) test ./internal/convert -run TestConvertGolden -update
+	$(GO) test ./pkg/convert -run TestConvertGolden -update
 
 # Install the external, vendor-neutral OKF validator used by the interop gate.
 okf-install:

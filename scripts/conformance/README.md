@@ -2,7 +2,7 @@
 
 The two structural frontmatter error strings — the unterminated-fence error and
 the non-mapping-top-level error, whose exact text lives at
-`internal/okf/native/native.go:959` and `:1021` — and the actor-derivation rules
+`pkg/okf/native/native.go:959` and `:1021` — and the actor-derivation rules
 (`IsHumanActor` / `IsValidActor`) exist as hand-copies across three
 implementations plus two prose fixtures, with nothing binding them:
 
@@ -14,7 +14,7 @@ implementations plus two prose fixtures, with nothing binding them:
 
 | copy | site |
 |---|---|
-| **Go — source of truth** | `internal/okf/native/native.go`, `internal/okf/trust.go` |
+| **Go — source of truth** | `pkg/okf/native/native.go`, `pkg/okf/trust.go` |
 | TypeScript | `packages/astro-okf/src/parse.ts`, `packages/astro-okf/src/trust.ts` |
 | Python — the validation gate | `scripts/frontmatter_parse.py` (run by `scripts/validate-plugin.sh`) |
 | prose | `scripts/testdata/plugin-validate/{unterminated,nonmapping}/SKILL.md` |
@@ -29,7 +29,7 @@ copies stayed green while diverging from Go.
 at run time — never hand-copied here.`
 
 1. `corpus.json` holds **inputs only** (frontmatter documents, actor strings).
-2. `internal/okf/conformance/gogolden` runs the **real** Go code over those
+2. `pkg/okf/conformance/gogolden` runs the **real** Go code over those
    inputs (`native.Codec.ParseConcept`, `okf.IsHumanActor`, `okf.IsValidActor`)
    and prints the golden — the actual error text and actor booleans Go produces.
 3. Each other copy is diffed against that golden:
@@ -88,4 +88,4 @@ named in `#171`. The parser-dependent wrapped-YAML error path
 (`invalid frontmatter: <parser message>`) is intentionally **not** cross-checked
 — PyYAML, `yaml` (JS), and `gopkg.in/yaml.v3` word those differently — and
 `deriveTier` / `isStale` are covered only transitively. Tracked as the residual
-in **#175** (breadcrumbed from `internal/okf/conformance/gogolden/main.go`).
+in **#175** (breadcrumbed from `pkg/okf/conformance/gogolden/main.go`).

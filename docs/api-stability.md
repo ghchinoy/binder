@@ -23,15 +23,16 @@ guarantees.** While the module is `0.x` the exported surface **may change in any
 minor release** — types may be renamed, moved, re-typed, or removed. Pin an exact
 version if you depend on it.
 
-This is the honest state today: the surface is still being curated (packages are
-migrating out of `internal/`), so committing to it now would freeze it before it
-has settled. Declaring it provisional is the reversible choice — we can always
-commit to *more* stability later; we cannot walk a premature guarantee back.
+This is the honest state today: the curated surface now lives under `pkg/`
+(relocated out of `internal/` in Phase 6), but committing to SemVer on it now
+would freeze it before it has settled through real downstream use. Declaring it
+provisional is the reversible choice — we can always commit to *more* stability
+later; we cannot walk a premature guarantee back.
 
 ### What "Go-SDK stable" will mean, later
 
 A future release will make a distinct, explicit commitment: **semantic versioning
-on the published Go surface** — the surface that lives under `pkg/`. That
+on the published Go surface** — the surface that now lives under `pkg/`. That
 commitment will be announced separately from the output-format `v1.0.0` (axis a)
 and may arrive at a different time. Until it is announced, treat the Go surface as
 provisional regardless of the module's version number.
@@ -47,15 +48,34 @@ structs as the first committed slice of the Go-SDK contract**:
 
 | Command | Go report struct | Package |
 |---------|------------------|---------|
-| `convert` | `Report` | `internal/convert` |
-| `enrich`  | `Report` | `internal/enrich`  |
-| `graph`   | `Model`  | `internal/graph`   |
-| `infer`   | `Report` | `internal/infer`   |
-| `lint`    | `Report` | `internal/lint`    |
-| `review`  | `Report` | `internal/review`  |
+| `convert` | `Report` | `pkg/convert` |
+| `enrich`  | `Report` | `pkg/enrich`  |
+| `graph`   | `Model`  | `pkg/graph`   |
+| `infer`   | `Report` | `internal/infer` (see note) |
+| `lint`    | `Report` | `pkg/lint`    |
+| `review`  | `Report` | `pkg/review`  |
 
-(The paths above are the pre-publication `internal/` homes; they move to `pkg/`
-when the surface is published, with no shape change.)
+Five of the six now live under `pkg/` (relocated in Phase 6). **`infer` is
+DEFERRED from this first published slice: nothing infer-related is exported from
+`pkg/` at all** — not `infer.Report`, not an `InferResult`/`InferRequest` facade,
+not the `GeminiClient` interface or its `Options`. The infer capability stays
+fully functional through an internal seam (`internal/infersvc` drives it for the
+`binder infer` CLI command; `internal/infer` computes it, unchanged), but it is
+withheld from the committed public surface until an example or real consumer
+demonstrates the need for it. This is the narrow-now, examples-as-discovery
+philosophy applied to the one capability whose SDK shape we are least sure of:
+publish the surface consumers prove they need, not the surface we guess they might.
+
+This deferral is **not** a genai-isolation measure. The earlier draft justified
+keeping `infer` internal as the thing that holds `google.golang.org/genai` out of
+`pkg/`; that justification is measured-false and has been removed. `internal/infer`
+is itself already genai-free (`go list -deps ./internal/infer` has no genai), so
+publishing it would not have reintroduced the cloud SDK. genai isolation is
+achieved solely by keeping the concrete client package `internal/gemini` internal
+— `go list -deps ./pkg/...` is genai-free regardless of where the genai-free infer
+types live. Infer's shape is still CI-guarded (the `internal/plugindocs` drift gate
+still pins `infer.Report`'s serialized key set against the live binary); it simply
+is not part of the *published Go surface* yet.
 
 "First committed slice" means: these are the shapes we are most confident in and
 that the drift gate already de-risks — **not** that the rest of the Go surface is
@@ -80,13 +100,12 @@ Two complementary gates, both in `internal/plugindocs`, both run by
   mandatory field. This locks the **serialized shape** of the six reports above
   (plus `validate` and the shared element structs). The authoritative field-level
   enumeration is `packaging/phase2/plugindocs-locked-fields.md`.
-- **Go surface** — `pubsurface_drift_test.go` locks the **exported Go surface**
-  intended for publication in Phase 6: the whole `internal/binder` service surface
-  (every `Request`/`Result`, `Service` method, helper) plus the confirmed-MUST
-  `okf` vocabulary, compared to a committed golden. It guards additions,
-  removals, renames, re-typings, and tag changes across that surface. This gate
-  references `internal/` paths today and is repointed to `pkg/` when the surface
-  is published, with no logic change.
+- **Go surface** — `pubsurface_drift_test.go` locks the **published Go surface**:
+  the whole `pkg/binder` service surface (every `Request`/`Result`, `Service`
+  method, helper) plus the confirmed-MUST `okf` vocabulary, compared to a
+  committed golden. It guards additions, removals, renames, re-typings, and tag
+  changes across that surface. The gate reads the `pkg/` packages directly (it was
+  repointed from `internal/` in Phase 6 with no logic change).
 
 Neither gate publishes anything or widens the committed API; they widen only what
 is *guarded*, so the eventual publication is a move of already-protected code.

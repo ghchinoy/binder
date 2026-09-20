@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ghchinoy/binder/internal/clijson"
+	"github.com/ghchinoy/binder/pkg/clijson"
 )
 
 // runCLISplit runs the root command with separate stdout/stderr buffers so a

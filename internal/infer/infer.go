@@ -9,7 +9,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/ghchinoy/binder/internal/okf"
+	"github.com/ghchinoy/binder/internal/okfrules"
+	"github.com/ghchinoy/binder/pkg/okf"
 )
 
 // Infer inspects a markdown corpus at src and proposes a type-map report.
@@ -302,7 +303,7 @@ func parseConceptSafe(codec okf.Codec, rel string, raw []byte) (*okf.Concept, er
 	return &okf.Concept{
 		ID:          id,
 		RelPath:     rel,
-		Frontmatter: okf.NewOrderedMap(),
+		Frontmatter: okfrules.NewOrderedMap(),
 		Body:        strings.ReplaceAll(string(raw), "\r\n", "\n"),
 	}, nil
 }

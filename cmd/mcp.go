@@ -3,9 +3,9 @@ package cmd
 import (
 	"github.com/spf13/cobra"
 
-	"github.com/ghchinoy/binder/internal/binder"
-	mcpserver "github.com/ghchinoy/binder/internal/mcp"
-	"github.com/ghchinoy/binder/internal/okf"
+	"github.com/ghchinoy/binder/pkg/binder"
+	mcpserver "github.com/ghchinoy/binder/pkg/mcp"
+	"github.com/ghchinoy/binder/pkg/okf"
 )
 
 // newMCPCmd builds `binder mcp`: a stdio MCP server exposing binder's additive

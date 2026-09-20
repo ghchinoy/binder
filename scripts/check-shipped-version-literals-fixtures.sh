@@ -274,7 +274,7 @@ fi
 #     the tree or the checkout happens to look.
 PSEUDO="$(scratch_dir)/binder"
 go build -ldflags \
-  "-X github.com/ghchinoy/binder/internal/binder.Version=0.5.4-0.20260914164646-656b05e16068" \
+  "-X github.com/ghchinoy/binder/pkg/binder.Version=0.5.4-0.20260914164646-656b05e16068" \
   -o "$PSEUDO" . 2>/dev/null
 PSEUDO_OUT="$(python3 "$CHECKER" "$PSEUDO" 2>&1)"
 PSEUDO_EXIT=$?

@@ -18,7 +18,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/ghchinoy/binder/internal/okf"
+	"github.com/ghchinoy/binder/internal/okfrules"
 )
 
 // Heading is the human-readable name of the section this gate enforces. Used in
@@ -152,7 +152,7 @@ func taskNamed(section string) bool {
 
 // Check reports whether the docs-impact question is answered in the given PR
 // body. Code regions — fenced blocks, indented blocks, and inline spans — are
-// masked first via the shared, CommonMark-aware okf.MaskCode, so a checkbox- or
+// masked first via the shared, CommonMark-aware okfrules.MaskCode, so a checkbox- or
 // heading-shaped line that is really quoted code is never read as structure (as
 // GitHub renders it literally). Delegating to the parser rather than enumerating
 // code constructs by hand is deliberate: a line scanner that lists "fences" would
@@ -166,7 +166,7 @@ func taskNamed(section string) bool {
 // never originates here — Check always runs to a definite verdict on whatever
 // string it is given).
 func Check(body string) error {
-	body = okf.MaskCode(body)
+	body = okfrules.MaskCode(body)
 
 	section, ok := sectionBound(body)
 	if !ok {

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ghchinoy/binder/internal/okf/native"
+	"github.com/ghchinoy/binder/pkg/okf/native"
 )
 
 type mockGemini struct {

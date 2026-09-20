@@ -3,7 +3,7 @@ package cmd
 import (
 	"testing"
 
-	"github.com/ghchinoy/binder/internal/clijson"
+	"github.com/ghchinoy/binder/pkg/clijson"
 )
 
 // TestExitCodeContract exercises the stable exit-code contract (#13 §5) across

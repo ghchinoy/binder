@@ -1,4 +1,4 @@
-# ==== binder service surface (internal/binder -> pkg/binder at Phase 6) ====
+# ==== binder service surface (pkg/binder, published Phase 6) ====
 const OpLookup GraphQueryOp
 const OpNeighborhood GraphQueryOp
 const OpNeighbors GraphQueryOp
@@ -44,12 +44,6 @@ type GraphQueryResult struct {}
 type IndexEntry struct {Action string; Rel string}
 type IndexRequest struct {DryRun bool; GroupByType bool; IncludeBacklinks bool; IncludeGraph bool; Root string}
 type IndexResult struct {DryRun bool; Entries []IndexEntry; Warnings []string}
-type InferRequest struct {DefaultType string; GeminiAPIKey string; GeminiBackend string; GeminiClient infer.GeminiClient; GeminiClientFactory func(ctx context.Context, opts infer.Options) (infer.GeminiClient, string, string, error); GeminiLocation string; GeminiModel string; GeminiProject string; GeminiRequired bool; Src string; UseGemini bool; Version string}
-type InferResult struct {Report *infer.Report}
-  func (InferResult) Empty() bool
-  func (InferResult) EncodeJSON(w io.Writer) error
-  func (InferResult) Gate(strict bool) error
-  func (InferResult) Warnings() int
 type LintRequest struct {Entrypoints []string; Now time.Time; Src string; Today string; Version string}
 type LintResult struct {Report *lint.Report}
   func (LintResult) EncodeJSON(w io.Writer) error
@@ -75,7 +69,6 @@ type Service struct {}
   func (*Service) GraphExport(ctx context.Context, req GraphExportRequest) (GraphExportResult, error)
   func (*Service) GraphQuery(ctx context.Context, req GraphQueryRequest) (GraphQueryResult, error)
   func (*Service) Index(ctx context.Context, req IndexRequest) (IndexResult, error)
-  func (*Service) Infer(ctx context.Context, req InferRequest) (InferResult, error)
   func (*Service) Lint(ctx context.Context, req LintRequest) (LintResult, error)
   func (*Service) Project(ctx context.Context, req ProjectRequest) (ProjectResult, error)
   func (*Service) Review(ctx context.Context, req ReviewRequest) (ReviewResult, error)
@@ -89,11 +82,10 @@ type ValidateResult struct {Result *validate.Result; Spec okf.SpecVersion}
   func (ValidateResult) GatingFindings() int
 var Version
 
-# ==== okf MUST vocabulary (packaging/phase2/okf-export-trace.md) ====
+# ==== okf published surface (== MUST set; packaging/phase2/okf-export-trace.md) ====
 const DefaultSpecVersion
 func IsValidActor(actor string) bool
 func IsValidISODate(s string) bool
-func NewOrderedMap() *OrderedMap
 func ProtectedTrustKeys() []string
 type Actorstamp struct {At string; By string}
 type Bundle struct {Concepts []*Concept; OKFVersion SpecVersion; Root string; RootVersionUnparsed *UnparsedConcept; Unparsed []UnparsedConcept}

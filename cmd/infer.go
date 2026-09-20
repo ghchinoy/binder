@@ -6,12 +6,12 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/ghchinoy/binder/internal/binder"
-	"github.com/ghchinoy/binder/internal/binder/render"
-	"github.com/ghchinoy/binder/internal/clijson"
 	"github.com/ghchinoy/binder/internal/config"
 	"github.com/ghchinoy/binder/internal/gemini"
-	"github.com/ghchinoy/binder/internal/okf"
+	"github.com/ghchinoy/binder/internal/infersvc"
+	"github.com/ghchinoy/binder/pkg/binder"
+	"github.com/ghchinoy/binder/pkg/clijson"
+	"github.com/ghchinoy/binder/pkg/okf"
 )
 
 func newInferCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
@@ -27,9 +27,12 @@ func newInferCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 		strict         bool
 	)
 
-	// Construct the shared service ONCE with the composition root's codec (it is
-	// stateless and safe for concurrent use); the RunE closure reuses it.
-	svc := binder.New(codec)
+	// Construct the internal infer service ONCE with the composition root's codec
+	// (it is stateless and safe for concurrent use); the RunE closure reuses it.
+	// Infer is DEFERRED from the published pkg/ surface (owner ruling), so this
+	// orchestration lives in internal/infersvc, not pkg/binder — the feature is
+	// unchanged, only its published-surface exposure is withheld.
+	svc := infersvc.New(codec)
 	cmd := &cobra.Command{
 		Use:   "infer <corpus>",
 		Short: "Inspect a source markdown corpus and propose a --type-map",
@@ -69,7 +72,7 @@ func newInferCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 			// google.golang.org/genai and reads GEMINI_API_KEY / GOOGLE_CLOUD_PROJECT)
 			// is injected here, at the adapter edge, via gemini.New — so the SDK
 			// never reaches the service seam.
-			res, err := svc.Infer(cmd.Context(), binder.InferRequest{
+			res, err := svc.Infer(cmd.Context(), infersvc.InferRequest{
 				Src:                 src,
 				DefaultType:         defaultType,
 				UseGemini:           useGemini,
@@ -97,9 +100,9 @@ func newInferCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 				// --type-map that maps nothing (they still do the rest of their
 				// work). Exit stays 0: this is not a failure condition. The routing
 				// signal (Empty) is defined once in the service.
-				fmt.Fprint(cmd.ErrOrStderr(), render.Infer(res))
+				fmt.Fprint(cmd.ErrOrStderr(), infersvc.Render(res))
 			} else {
-				fmt.Fprint(cmd.OutOrStdout(), render.Infer(res))
+				fmt.Fprint(cmd.OutOrStdout(), infersvc.Render(res))
 			}
 
 			// The gate decision (bare infer never gates; --strict gates on any

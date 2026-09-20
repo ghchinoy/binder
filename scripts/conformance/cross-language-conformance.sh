@@ -5,7 +5,7 @@
 # exist as hand-copies in THREE implementations plus TWO prose fixtures, with
 # nothing binding them to the Go source of truth:
 #
-#   Go  (SOURCE OF TRUTH)  internal/okf/native/native.go, internal/okf/trust.go
+#   Go  (SOURCE OF TRUTH)  pkg/okf/native/native.go, pkg/okf/trust.go
 #   TS                     packages/astro-okf/src/parse.ts, trust.ts
 #   Python (the GATE)      scripts/frontmatter_parse.py (run by validate-plugin.sh)
 #   prose                  scripts/testdata/plugin-validate/{unterminated,nonmapping}/SKILL.md
@@ -38,8 +38,8 @@ section() { echo; echo "== $1 =="; }
 echo "#171 cross-language conformance — binding TS, Python, and prose fixtures to the Go source of truth"
 
 # 1. Derive the golden from the Go source of truth.
-section "Deriving conformance golden from Go (internal/okf/native + internal/okf/trust)"
-if ! go run ./internal/okf/conformance/gogolden "$CORPUS" >"$GOLDEN" 2>"$TMP/go.err"; then
+section "Deriving conformance golden from Go (pkg/okf/native + pkg/okf/trust)"
+if ! go run ./pkg/okf/conformance/gogolden "$CORPUS" >"$GOLDEN" 2>"$TMP/go.err"; then
   echo "FATAL: could not derive the Go golden:"
   cat "$TMP/go.err"
   exit 2
@@ -112,6 +112,6 @@ if [ "$FAILS" -eq 0 ]; then
   exit 0
 else
   echo "FAILED: $FAILS implementation group(s) diverged from the Go source of truth (see above)."
-  echo "        The Go strings/rules in internal/okf are authoritative; update the diverged copy to match."
+  echo "        The Go strings/rules in pkg/okf are authoritative; update the diverged copy to match."
   exit 1
 fi

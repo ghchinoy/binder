@@ -389,7 +389,7 @@ func TestChecklistNoLineDoesNotAnswerGate(t *testing.T) {
 // block — so a checkbox inside it is not a real answer. With both real boxes left
 // unchecked this body MUST be rejected. This is the control the fence-only
 // stripper could not have: it exercises the construct that a code-region
-// enumeration (fences only) misses, which the markdown-aware okf.MaskCode covers.
+// enumeration (fences only) misses, which the markdown-aware okfrules.MaskCode covers.
 func TestIndentedCodeControl(t *testing.T) {
 	tmpl := readTemplate(t)
 	body := insertIndentedCheckbox(tmpl)

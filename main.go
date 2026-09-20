@@ -7,7 +7,7 @@ import (
 	"os"
 
 	"github.com/ghchinoy/binder/cmd"
-	"github.com/ghchinoy/binder/internal/clijson"
+	"github.com/ghchinoy/binder/pkg/clijson"
 )
 
 func main() {

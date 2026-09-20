@@ -93,7 +93,7 @@ for skill_md in plugins/*/skills/*/SKILL.md; do
   #
   # The parsing logic lives in scripts/frontmatter_parse.py; its fence/mapping
   # semantics mirror the Go codec's splitFrontmatter + parseFrontmatterNode
-  # (internal/okf/native/native.go) so binder and this gate agree on what "valid
+  # (pkg/okf/native/native.go) so binder and this gate agree on what "valid
   # frontmatter" means and use the same wording. That agreement is enforced —
   # not merely intended — by the #171 conformance check
   # (scripts/conformance/cross-language-conformance.sh), which imports the very

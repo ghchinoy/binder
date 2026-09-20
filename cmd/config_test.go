@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ghchinoy/binder/internal/clijson"
 	"github.com/ghchinoy/binder/internal/config"
+	"github.com/ghchinoy/binder/pkg/clijson"
 )
 
 // isolateConfig points config discovery at a clean temp dir so `binder config`

@@ -9,7 +9,7 @@ directly. Neither re-copies the logic, so the gate and the conformance check
 exercise the exact same code — a divergence cannot hide in a second copy.
 
 The fence/mapping semantics and the error wording mirror the Go codec
-(internal/okf/native/native.go: splitFrontmatter + parseFrontmatterNode) so
+(pkg/okf/native/native.go: splitFrontmatter + parseFrontmatterNode) so
 binder and this gate agree on what "valid frontmatter" means and phrase the two
 structural errors identically. The Go codec is the source of truth for that
 wording; the #171 conformance check binds this copy to the Go strings, so

@@ -9,11 +9,11 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/ghchinoy/binder/internal/binder"
-	"github.com/ghchinoy/binder/internal/binder/render"
-	"github.com/ghchinoy/binder/internal/clijson"
 	"github.com/ghchinoy/binder/internal/config"
-	"github.com/ghchinoy/binder/internal/okf"
+	"github.com/ghchinoy/binder/pkg/binder"
+	"github.com/ghchinoy/binder/pkg/binder/render"
+	"github.com/ghchinoy/binder/pkg/clijson"
+	"github.com/ghchinoy/binder/pkg/okf"
 )
 
 func newConvertCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {

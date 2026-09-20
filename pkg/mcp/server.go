@@ -1,0 +1,120 @@
+// Package mcp is binder's stdio MCP server surface (issue #15). It exposes
+// binder's additive verbs as MCP tools that return the SAME binder.report/v1
+// payloads as `--json`. The tools registered are convert, validate, review,
+// lint, graph, list_graphs, and query_graph — newServer is the authoritative
+// set; list_graphs and query_graph are the read-only graph introspection tools.
+//
+// The server adds NO business logic and NO second serialization path: each tool
+// handler decodes typed params, calls the existing internal/* entry point, and
+// encodes the returned struct with the existing pkg/clijson encoder. The
+// bytes are identical to `binder <cmd> --json`.
+//
+// The official MCP Go SDK (github.com/modelcontextprotocol/go-sdk) is confined
+// to this package and cmd/mcp.go; it MUST NOT leak into the core codec or the
+// internal/* Report types (dependency-rule invariant, design §Decision 1/2).
+package mcp
+
+import (
+	"bytes"
+	"context"
+	"io"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/ghchinoy/binder/pkg/binder"
+	"github.com/ghchinoy/binder/pkg/clijson"
+	"github.com/ghchinoy/binder/pkg/okf"
+)
+
+// deps carries the shared dependencies every tool handler needs: the injected
+// codec (the composition root's choice, per the dependency rule), the binder
+// version stamped into the clijson envelope, and the shared service the
+// service-backed handlers drive. The service is constructed ONCE here (it is
+// stateless and safe for concurrent use) rather than per tool call.
+type deps struct {
+	codec   okf.Codec
+	version string
+	svc     *binder.Service
+}
+
+// Serve constructs the binder MCP server and serves it over stdio until the
+// client disconnects (ctx cancelled or transport closed). This is the single
+// entry point cmd/mcp.go calls, keeping the SDK's Transport out of cmd.
+func Serve(ctx context.Context, codec okf.Codec, version string) error {
+	return newServer(codec, version).Run(ctx, &mcp.StdioTransport{})
+}
+
+// ToolNames returns the names of every tool the MCP server registers, in
+// registration order. It is the single declared enumeration of the tool set,
+// consumed by help text and doc guards so prose (e.g. `binder mcp`'s Long) can
+// be checked against the registered set and cannot silently understate it — the
+// exact drift that shipped when the help named five tools while seven were
+// registered. It is pinned to the actual registration by TestListTools (which
+// asserts newServer advertises exactly these names), so it cannot fall out of
+// sync with newServer without turning a test RED.
+func ToolNames() []string {
+	return []string{
+		"convert", "validate", "review", "lint", "graph", "list_graphs", "query_graph",
+	}
+}
+
+// newServer builds the MCP server with all tools registered. It is unexported
+// and used by both Serve and the in-package tests (which drive it over the SDK's
+// in-memory transport).
+func newServer(codec okf.Codec, version string) *mcp.Server {
+	s := mcp.NewServer(&mcp.Implementation{
+		Name:    "binder",
+		Version: version,
+	}, nil)
+	d := &deps{codec: codec, version: version, svc: binder.New(codec)}
+
+	registerConvert(s, d)
+	registerValidate(s, d)
+	registerReview(s, d)
+	registerLint(s, d)
+	registerGraph(s, d)
+	registerListGraphs(s, d)
+	registerQueryGraph(s, d)
+
+	return s
+}
+
+// textResult frames text as a tool call's single text-content result. It is the
+// ONE place the *mcp.CallToolResult envelope is constructed, shared by every tool
+// handler so the framing boilerplate is never copied. Out is `any` and is nil, so
+// the SDK attaches no structured-output payload and uses this Content verbatim.
+func textResult(text string) (*mcp.CallToolResult, any, error) {
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{&mcp.TextContent{Text: text}},
+	}, nil, nil
+}
+
+// encode renders result as the deterministic clijson envelope — byte-identical
+// to `binder <command> --json` — and frames it via textResult. There is
+// deliberately no second serialization path: the same clijson.Encode the CLI uses
+// produces the tool payload. Used by handlers not yet migrated onto the service.
+func (d *deps) encode(command string, result any) (*mcp.CallToolResult, any, error) {
+	var buf bytes.Buffer
+	if err := clijson.Encode(&buf, d.version, command, result); err != nil {
+		return nil, nil, err
+	}
+	return textResult(buf.String())
+}
+
+// jsonResult is any core service Result that can render its own binder.report/v1
+// envelope. LintResult (and, in later phases, every Result) satisfies it.
+type jsonResult interface {
+	EncodeJSON(w io.Writer) error
+}
+
+// encodeResult frames a service Result's envelope as the tool's text content — the
+// single framing path for service-backed handlers, so Phases 2+ copy one line, not
+// the encode+frame boilerplate. The envelope is produced by the Result itself
+// (routing through the core), byte-identical to `binder <cmd> --json`.
+func encodeResult(r jsonResult) (*mcp.CallToolResult, any, error) {
+	var buf bytes.Buffer
+	if err := r.EncodeJSON(&buf); err != nil {
+		return nil, nil, err
+	}
+	return textResult(buf.String())
+}

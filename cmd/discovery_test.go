@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ghchinoy/binder/internal/binder"
+	"github.com/ghchinoy/binder/pkg/binder"
 )
 
 // TestVersionMatchesEnvelope asserts --version prints "binder/<version>", the

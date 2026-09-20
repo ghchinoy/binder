@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ghchinoy/binder/internal/clijson"
+	"github.com/ghchinoy/binder/pkg/clijson"
 )
 
 // badFM is a frontmatter block no YAML parser accepts (an unquoted plain scalar
