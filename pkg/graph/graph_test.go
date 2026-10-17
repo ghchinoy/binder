@@ -76,7 +76,7 @@ func TestExportAllFormatsRenderAndParse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := xml.Unmarshal(gml, new(interface{})); err != nil {
+	if err := xml.Unmarshal(gml, new(any)); err != nil {
 		t.Fatalf("graphml is not well-formed XML: %v", err)
 	}
 	if !bytes.Contains(gml, []byte("graphml")) {

@@ -393,7 +393,8 @@ func TestRowsNodesSortedByKey(t *testing.T) {
 	lines := strings.Split(strings.TrimRight(string(p.NodesCSV()), "\n"), "\n")[1:]
 	var keys []string
 	for _, ln := range lines {
-		keys = append(keys, strings.SplitN(ln, ",", 2)[0])
+		key, _, _ := strings.Cut(ln, ",")
+		keys = append(keys, key)
 	}
 	for i := 1; i < len(keys); i++ {
 		if keys[i-1] > keys[i] {

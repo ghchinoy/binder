@@ -38,7 +38,7 @@ func (f *fakeGemini) InferDirectoryTypes(ctx context.Context, dirs, sampleTitles
 // Empty()/Warnings() are the single definitions the adapter reads.
 func TestInferResultComplete(t *testing.T) {
 	svc := infersvc.New(native.New())
-	res, err := svc.Infer(context.Background(), infersvc.InferRequest{
+	res, err := svc.Infer(t.Context(), infersvc.InferRequest{
 		Src:         inferCorpus,
 		DefaultType: "Note",
 		Version:     "test",
@@ -69,7 +69,7 @@ func TestInferEmpty(t *testing.T) {
 		t.Fatal(err)
 	}
 	svc := infersvc.New(native.New())
-	res, err := svc.Infer(context.Background(), infersvc.InferRequest{Src: dir, DefaultType: "Note", Version: "test"})
+	res, err := svc.Infer(t.Context(), infersvc.InferRequest{Src: dir, DefaultType: "Note", Version: "test"})
 	if err != nil {
 		t.Fatalf("Infer: %v", err)
 	}
@@ -90,7 +90,7 @@ func TestInferGate(t *testing.T) {
 	if err := writeFile(dir+"/guides/a.md", "---\ntype: Guide\ntitle: A: colon breaks this\n---\n\n# A\n"); err != nil {
 		t.Fatal(err)
 	}
-	res, err := svc.Infer(context.Background(), infersvc.InferRequest{Src: dir, DefaultType: "Note", Version: "test"})
+	res, err := svc.Infer(t.Context(), infersvc.InferRequest{Src: dir, DefaultType: "Note", Version: "test"})
 	if err != nil {
 		t.Fatalf("Infer: %v", err)
 	}
@@ -111,7 +111,7 @@ func TestInferGate(t *testing.T) {
 // the genai-free interface (fake injected on the request), with no SDK on the seam.
 func TestInferGeminiViaInterface(t *testing.T) {
 	svc := infersvc.New(native.New())
-	res, err := svc.Infer(context.Background(), infersvc.InferRequest{
+	res, err := svc.Infer(t.Context(), infersvc.InferRequest{
 		Src:          inferCorpus,
 		DefaultType:  "Note",
 		UseGemini:    true,
@@ -137,7 +137,7 @@ func TestInferGeminiViaInterface(t *testing.T) {
 // produced by the Result, not hand-built by an adapter.
 func TestInferEncodeJSON(t *testing.T) {
 	svc := infersvc.New(native.New())
-	res, err := svc.Infer(context.Background(), infersvc.InferRequest{Src: inferCorpus, DefaultType: "Note", Version: "test"})
+	res, err := svc.Infer(t.Context(), infersvc.InferRequest{Src: inferCorpus, DefaultType: "Note", Version: "test"})
 	if err != nil {
 		t.Fatalf("Infer: %v", err)
 	}

@@ -14,68 +14,79 @@ func testIndex() *corpusIndex {
 func TestRewriteWikilinks(t *testing.T) {
 	ix := testIndex()
 
-	t.Run("by rel-path", func(t *testing.T) {
-		out, links := rewriteWikilinks("See [[tables/orders]].", "", ix)
-		if out != "See [tables/orders](/tables/orders.md)." {
-			t.Fatalf("got %q", out)
+	t.Run("by_rel_path", func(t *testing.T) {
+		in := "See [[tables/orders]]."
+		want := "See [tables/orders](/tables/orders.md)."
+		out, links := rewriteWikilinks(in, "", ix)
+		if out != want {
+			t.Fatalf("rewriteWikilinks(%q) = %q, want %q", in, out, want)
 		}
 		if len(links) != 1 || !links[0].Resolved || links[0].TargetID != "tables/orders" {
-			t.Fatalf("link: %+v", links)
+			t.Fatalf("rewriteWikilinks(%q) links = %+v, want resolved tables/orders", in, links)
 		}
 	})
 
-	t.Run("by filename", func(t *testing.T) {
-		out, links := rewriteWikilinks("[[orders]]", "guides", ix)
-		if out != "[orders](/tables/orders.md)" {
-			t.Fatalf("got %q", out)
+	t.Run("by_filename", func(t *testing.T) {
+		in := "[[orders]]"
+		want := "[orders](/tables/orders.md)"
+		out, links := rewriteWikilinks(in, "guides", ix)
+		if out != want {
+			t.Fatalf("rewriteWikilinks(%q) = %q, want %q", in, out, want)
 		}
 		if !links[0].Resolved {
-			t.Fatalf("should resolve by filename: %+v", links[0])
+			t.Fatalf("rewriteWikilinks(%q) should resolve by filename: %+v", in, links[0])
 		}
 	})
 
-	t.Run("by title-slug", func(t *testing.T) {
-		out, links := rewriteWikilinks("[[Customer Orders]]", "", ix)
-		if out != "[Customer Orders](/tables/orders.md)" {
-			t.Fatalf("got %q", out)
+	t.Run("by_title_slug", func(t *testing.T) {
+		in := "[[Customer Orders]]"
+		want := "[Customer Orders](/tables/orders.md)"
+		out, links := rewriteWikilinks(in, "", ix)
+		if out != want {
+			t.Fatalf("rewriteWikilinks(%q) = %q, want %q", in, out, want)
 		}
 		if !links[0].Resolved {
-			t.Fatalf("should resolve by title: %+v", links[0])
+			t.Fatalf("rewriteWikilinks(%q) should resolve by title: %+v", in, links[0])
 		}
 	})
 
-	t.Run("alias display", func(t *testing.T) {
-		out, _ := rewriteWikilinks("[[tables/orders|the orders table]]", "", ix)
-		if out != "[the orders table](/tables/orders.md)" {
-			t.Fatalf("got %q", out)
+	t.Run("alias_display", func(t *testing.T) {
+		in := "[[tables/orders|the orders table]]"
+		want := "[the orders table](/tables/orders.md)"
+		out, _ := rewriteWikilinks(in, "", ix)
+		if out != want {
+			t.Fatalf("rewriteWikilinks(%q) = %q, want %q", in, out, want)
 		}
 	})
 
-	t.Run("unresolved left in place and reported", func(t *testing.T) {
-		out, links := rewriteWikilinks("[[Nonexistent Page]]", "", ix)
-		if out != "[[Nonexistent Page]]" {
-			t.Fatalf("unresolved must be left untouched, got %q", out)
+	t.Run("unresolved_left_in_place_and_reported", func(t *testing.T) {
+		in := "[[Nonexistent Page]]"
+		out, links := rewriteWikilinks(in, "", ix)
+		if out != in {
+			t.Fatalf("rewriteWikilinks(%q) = %q, want untouched %q", in, out, in)
 		}
 		if len(links) != 1 || links[0].Resolved {
-			t.Fatalf("unresolved should be reported: %+v", links)
+			t.Fatalf("rewriteWikilinks(%q) links = %+v, want 1 unresolved link", in, links)
 		}
 	})
 
-	t.Run("renamed reserved target resolves to output name", func(t *testing.T) {
-		out, _ := rewriteWikilinks("[[guides/index]]", "", ix)
-		if out != "[guides/index](/guides/index-note.md)" {
-			t.Fatalf("got %q", out)
+	t.Run("renamed_reserved_target_resolves_to_output_name", func(t *testing.T) {
+		in := "[[guides/index]]"
+		want := "[guides/index](/guides/index-note.md)"
+		out, _ := rewriteWikilinks(in, "", ix)
+		if out != want {
+			t.Fatalf("rewriteWikilinks(%q) = %q, want %q", in, out, want)
 		}
 	})
 
-	t.Run("wikilink inside code left untouched", func(t *testing.T) {
+	t.Run("wikilink_inside_code_left_untouched", func(t *testing.T) {
 		body := "`[[tables/orders]]`"
 		out, links := rewriteWikilinks(body, "", ix)
 		if out != body {
-			t.Fatalf("code wikilink must be untouched, got %q", out)
+			t.Fatalf("rewriteWikilinks(%q) = %q, want untouched %q", body, out, body)
 		}
 		if len(links) != 0 {
-			t.Fatalf("no edge inside code: %+v", links)
+			t.Fatalf("rewriteWikilinks(%q) links = %+v, want empty", body, links)
 		}
 	})
 }

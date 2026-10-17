@@ -534,21 +534,5 @@ func conceptReport(c *okf.Concept) ConceptReport {
 
 // ParseTypeMap parses a --type-map value of the form "dir=Type,dir2=Type2".
 func ParseTypeMap(s string) (map[string]string, error) {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return nil, nil
-	}
-	out := map[string]string{}
-	for _, pair := range strings.Split(s, ",") {
-		pair = strings.TrimSpace(pair)
-		if pair == "" {
-			continue
-		}
-		kv := strings.SplitN(pair, "=", 2)
-		if len(kv) != 2 || strings.TrimSpace(kv[0]) == "" || strings.TrimSpace(kv[1]) == "" {
-			return nil, fmt.Errorf("invalid --type-map entry %q (want dir=Type)", pair)
-		}
-		out[strings.TrimSpace(kv[0])] = strings.TrimSpace(kv[1])
-	}
-	return out, nil
+	return parseKVPairs(s, "--type-map", "dir=Type")
 }

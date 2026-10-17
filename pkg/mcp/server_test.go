@@ -1,7 +1,6 @@
 package mcp
 
 import (
-	"context"
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -69,7 +68,7 @@ func TestMain(m *testing.M) {
 // client, calls the named tool with args, and returns the result.
 func callTool(t *testing.T, name string, args map[string]any) *mcp.CallToolResult {
 	t.Helper()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	server := newServer(native.New(), testVersion)
 	client := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "v0"}, nil)
@@ -122,7 +121,7 @@ func cliJSON(t *testing.T, args ...string) string {
 // each with a non-empty input schema — and NOT the deferred Non-Goals
 // (enrich/emit_concept/read/search).
 func TestListTools(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	server := newServer(native.New(), testVersion)
 	client := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "v0"}, nil)
 	st, ct := mcp.NewInMemoryTransports()

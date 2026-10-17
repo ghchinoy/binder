@@ -2,7 +2,6 @@ package binder_test
 
 import (
 	"bytes"
-	"context"
 	"sync"
 	"testing"
 	"time"
@@ -33,7 +32,7 @@ func newReq() binder.LintRequest {
 // inside the service (no adapter patch) and the gating definition lives on the Result.
 func TestLintResultComplete(t *testing.T) {
 	svc := binder.New(native.New())
-	res, err := svc.Lint(context.Background(), newReq())
+	res, err := svc.Lint(t.Context(), newReq())
 	if err != nil {
 		t.Fatalf("Lint: %v", err)
 	}
@@ -62,14 +61,14 @@ func TestTodayDefaultsToNow(t *testing.T) {
 	svc := binder.New(native.New())
 	req := newReq()
 	req.Today = ""
-	res, err := svc.Lint(context.Background(), req)
+	res, err := svc.Lint(t.Context(), req)
 	if err != nil {
 		t.Fatalf("Lint: %v", err)
 	}
 
 	reqExplicit := newReq()
 	reqExplicit.Today = fixedNow.Format("2006-01-02")
-	resExplicit, err := svc.Lint(context.Background(), reqExplicit)
+	resExplicit, err := svc.Lint(t.Context(), reqExplicit)
 	if err != nil {
 		t.Fatalf("Lint: %v", err)
 	}
@@ -116,7 +115,7 @@ func TestLintConcurrent(t *testing.T) {
 	svc := binder.New(native.New())
 
 	// Reference output from a single-threaded run.
-	ref, err := svc.Lint(context.Background(), newReq())
+	ref, err := svc.Lint(t.Context(), newReq())
 	if err != nil {
 		t.Fatalf("reference Lint: %v", err)
 	}
@@ -136,7 +135,7 @@ func TestLintConcurrent(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for i := 0; i < iterations; i++ {
-				res, err := svc.Lint(context.Background(), newReq())
+				res, err := svc.Lint(t.Context(), newReq())
 				if err != nil {
 					errs <- err
 					return

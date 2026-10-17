@@ -69,7 +69,7 @@ func TestInferDeterministic(t *testing.T) {
 	dir := setupTestCorpus(t)
 	codec := native.New()
 
-	rep, err := Infer(context.Background(), dir, codec, Options{DefaultType: "Note"})
+	rep, err := Infer(t.Context(), dir, codec, Options{DefaultType: "Note"})
 	if err != nil {
 		t.Fatalf("Infer failed: %v", err)
 	}
@@ -127,7 +127,7 @@ func TestInferDoesNotCiteUnparsedFrontmatter(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	rep, err := Infer(context.Background(), dir, native.New(), Options{DefaultType: "Note"})
+	rep, err := Infer(t.Context(), dir, native.New(), Options{DefaultType: "Note"})
 	if err != nil {
 		t.Fatalf("Infer failed: %v", err)
 	}
@@ -184,7 +184,7 @@ func TestInferAllUnparseableDirectory(t *testing.T) {
 
 	// Deterministic path: no file parsed, so no frontmatter/pattern/folder
 	// mapping is anchored — mappings is empty — but both files are disclosed.
-	det, err := Infer(context.Background(), dir, native.New(), Options{DefaultType: "Note"})
+	det, err := Infer(t.Context(), dir, native.New(), Options{DefaultType: "Note"})
 	if err != nil {
 		t.Fatalf("deterministic Infer failed: %v", err)
 	}
@@ -201,7 +201,7 @@ func TestInferAllUnparseableDirectory(t *testing.T) {
 	// (dirFileNames includes unparseable files), so Gemini may propose a type
 	// from the directory name alone. That produces a mapping with source
 	// "gemini" and EMPTY sample_files, while the disclosure warnings persist.
-	gem, err := Infer(context.Background(), dir, native.New(), Options{
+	gem, err := Infer(t.Context(), dir, native.New(), Options{
 		DefaultType:  "Note",
 		UseGemini:    true,
 		GeminiModel:  "mock",
@@ -245,7 +245,7 @@ func TestInferWithMockGemini(t *testing.T) {
 		},
 	}
 
-	rep, err := Infer(context.Background(), dir, codec, Options{
+	rep, err := Infer(t.Context(), dir, codec, Options{
 		DefaultType:  "Note",
 		UseGemini:    true,
 		GeminiClient: mock,

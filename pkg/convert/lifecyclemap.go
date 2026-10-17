@@ -20,10 +20,10 @@ const statusDefaultKey = "default"
 var staleAfterRE = regexp.MustCompile(`^\+(\d+)([dmy])$`)
 
 // parseKVPairs parses a "k1=v1,k2=v2" flag value into a map. Empty input yields
-// a nil map (the flag is off). A malformed entry is an error carrying label so
-// the caller can surface it as a usage error (exit 2). Keys and values are
-// trimmed; both must be non-empty.
-func parseKVPairs(s, label string) (map[string]string, error) {
+// a nil map (the flag is off). A malformed entry is an error carrying label and
+// wantShape so the caller can surface it as a usage error (exit 2). Keys and
+// values are trimmed; both must be non-empty.
+func parseKVPairs(s, label, wantShape string) (map[string]string, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
 		return nil, nil
@@ -34,11 +34,12 @@ func parseKVPairs(s, label string) (map[string]string, error) {
 		if pair == "" {
 			continue
 		}
-		kv := strings.SplitN(pair, "=", 2)
-		if len(kv) != 2 || strings.TrimSpace(kv[0]) == "" || strings.TrimSpace(kv[1]) == "" {
-			return nil, fmt.Errorf("invalid %s entry %q (want dir=value)", label, pair)
+		rawK, rawV, ok := strings.Cut(pair, "=")
+		k, v := strings.TrimSpace(rawK), strings.TrimSpace(rawV)
+		if !ok || k == "" || v == "" {
+			return nil, fmt.Errorf("invalid %s entry %q (want %s)", label, pair, wantShape)
 		}
-		out[strings.TrimSpace(kv[0])] = strings.TrimSpace(kv[1])
+		out[k] = v
 	}
 	return out, nil
 }
@@ -50,7 +51,7 @@ func parseKVPairs(s, label string) (map[string]string, error) {
 // user-chosen and NOT validated here (unknown values remain a downstream
 // advisory, never-reject); only the map SHAPE is validated → usage error (exit 2).
 func ParseStatusMap(s string) (prefixes map[string]string, def string, err error) {
-	m, err := parseKVPairs(s, "--status-map")
+	m, err := parseKVPairs(s, "--status-map", "dir=value")
 	if err != nil {
 		return nil, "", err
 	}
@@ -68,7 +69,7 @@ func ParseStatusMap(s string) (prefixes map[string]string, def string, err error
 // error (exit 2). The returned map holds validated specs, resolved to absolute
 // dates at convert time against opts.Now (SOURCE_DATE_EPOCH-aware, deterministic).
 func ParseStaleAfterMap(s string) (map[string]string, error) {
-	m, err := parseKVPairs(s, "--stale-after-map")
+	m, err := parseKVPairs(s, "--stale-after-map", "dir=value")
 	if err != nil {
 		return nil, err
 	}

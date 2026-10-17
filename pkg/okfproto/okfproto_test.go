@@ -1,11 +1,11 @@
 package okfproto_test
 
 import (
-	"reflect"
 	"testing"
 	"time"
 
 	protobundle "github.com/ghchinoy/okf-proto/pkg/bundle"
+	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/descriptorpb"
 
@@ -21,43 +21,46 @@ func TestToProtoAndFromProtoRoundTrip(t *testing.T) {
 	codec := native.New()
 	orig, err := bundle.Load("../../testdata/okf-bundles/acme_retail", codec)
 	if err != nil {
-		t.Fatalf("bundle.Load: %v", err)
+		t.Fatalf("bundle.Load() returned unexpected error: %v", err)
 	}
 
 	pb, err := okfproto.ToProto(orig, "2026-08-15")
 	if err != nil {
-		t.Fatalf("ToProto: %v", err)
+		t.Fatalf("okfproto.ToProto() returned unexpected error: %v", err)
 	}
 	if len(pb.GetConcepts()) != len(orig.Concepts) {
-		t.Fatalf("pb concepts = %d, want %d", len(pb.GetConcepts()), len(orig.Concepts))
+		t.Fatalf("okfproto.ToProto() len(Concepts) = %d, want %d", len(pb.GetConcepts()), len(orig.Concepts))
 	}
 
-	// Verify binary wire round-trip.
+	// Verify binary wire round-trip and proto.Equal equality.
 	wire, err := protobundle.MarshalBinary(pb)
 	if err != nil {
-		t.Fatalf("MarshalBinary: %v", err)
+		t.Fatalf("protobundle.MarshalBinary() returned unexpected error: %v", err)
 	}
 	pbFromWire, err := protobundle.UnmarshalBinary(wire)
 	if err != nil {
-		t.Fatalf("UnmarshalBinary: %v", err)
+		t.Fatalf("protobundle.UnmarshalBinary() returned unexpected error: %v", err)
+	}
+	if !proto.Equal(pb, pbFromWire) {
+		t.Errorf("protobundle.UnmarshalBinary() did not produce proto.Equal bundle")
 	}
 
 	roundTripped, err := okfproto.FromProto(pbFromWire, orig.Root)
 	if err != nil {
-		t.Fatalf("FromProto: %v", err)
+		t.Fatalf("okfproto.FromProto() returned unexpected error: %v", err)
 	}
 	if len(roundTripped.Concepts) != len(orig.Concepts) {
-		t.Fatalf("roundTripped concepts = %d, want %d", len(roundTripped.Concepts), len(orig.Concepts))
+		t.Fatalf("okfproto.FromProto() len(Concepts) = %d, want %d", len(roundTripped.Concepts), len(orig.Concepts))
 	}
 
 	// Graph projection over the round-tripped bundle must equal the original.
 	gOrig := graph.Build(orig, "2026-08-15")
 	gRT := graph.Build(roundTripped, "2026-08-15")
-	if !reflect.DeepEqual(gOrig.Nodes, gRT.Nodes) {
-		t.Errorf("Nodes mismatch after Protobuf round-trip:\n got: %+v\nwant: %+v", gRT.Nodes, gOrig.Nodes)
+	if diff := cmp.Diff(gOrig.Nodes, gRT.Nodes); diff != "" {
+		t.Errorf("graph.Build() Nodes after Protobuf round-trip returned unexpected diff (-want +got):\n%s", diff)
 	}
-	if !reflect.DeepEqual(gOrig.Edges, gRT.Edges) {
-		t.Errorf("Edges mismatch after Protobuf round-trip:\n got: %+v\nwant: %+v", gRT.Edges, gOrig.Edges)
+	if diff := cmp.Diff(gOrig.Edges, gRT.Edges); diff != "" {
+		t.Errorf("graph.Build() Edges after Protobuf round-trip returned unexpected diff (-want +got):\n%s", diff)
 	}
 }
 
@@ -110,31 +113,31 @@ func TestFromDescriptorSetProducesConformantGraphAndSpannerProjection(t *testing
 	now := time.Date(2026, 8, 15, 0, 0, 0, 0, time.UTC)
 	b, pb, err := okfproto.FromDescriptorSet(fds, outDir, now, "binder/0.6.0")
 	if err != nil {
-		t.Fatalf("FromDescriptorSet: %v", err)
+		t.Fatalf("okfproto.FromDescriptorSet() returned unexpected error: %v", err)
 	}
 
 	// Write bundle to disk and run binder's §11 validator over it.
 	if err := okfproto.WriteBundle(pb, outDir); err != nil {
-		t.Fatalf("WriteBundle: %v", err)
+		t.Fatalf("okfproto.WriteBundle() returned unexpected error: %v", err)
 	}
 	res, err := validate.Bundle(outDir, native.New(), okf.DefaultSpecVersion)
 	if err != nil {
-		t.Fatalf("validate.Bundle: %v", err)
+		t.Fatalf("validate.Bundle() returned unexpected error: %v", err)
 	}
 	if !res.Conformant() || len(res.Findings) != 0 {
-		t.Errorf("expected 0 findings on descriptor-generated bundle, got: %+v", res.Findings)
+		t.Errorf("validate.Bundle(%q) findings = %+v, want empty", outDir, res.Findings)
 	}
 
-	// Verify that --id-key resource achieves 100% re-rooting stability in Spanner projection!
+	// Verify that --id-key resource achieves 100% re-rooting stability in Spanner projection.
 	proj := graph.Project(b, graph.ProjectOptions{
 		Target: graph.TargetSpanner,
 		IDKey:  "resource",
 		Today:  "2026-08-15",
 	})
 	if !proj.Identity.ReRootingStable || proj.Identity.PathFallbackCount != 0 {
-		t.Errorf("Identity = %+v, want ReRootingStable=true and PathFallbackCount=0", proj.Identity)
+		t.Errorf("graph.Project() Identity = %+v, want ReRootingStable=true and PathFallbackCount=0", proj.Identity)
 	}
 	if proj.Counts.Nodes != 3 || proj.Counts.Edges != 2 {
-		t.Errorf("Counts = %+v, want 3 nodes and 2 edges", proj.Counts)
+		t.Errorf("graph.Project() Counts = %+v, want 3 nodes and 2 edges", proj.Counts)
 	}
 }

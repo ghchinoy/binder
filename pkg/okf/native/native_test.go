@@ -127,17 +127,15 @@ func TestParseConceptCyclicAliasDoesNotStackOverflow(t *testing.T) {
 	// Issue #198: a self-referential YAML anchor must be rejected cleanly as a
 	// frontmatter parse error rather than recursing infinitely in nodeToValue.
 	cyclicCases := map[string]string{
-		"cyclic-mapping":  "---\na: &x\n  b: *x\n---\n\n# Doc\n",
-		"cyclic-sequence": "---\na: &x\n  - *x\n---\n\n# Doc\n",
+		"cyclic_mapping":  "---\na: &x\n  b: *x\n---\n\n# Doc\n",
+		"cyclic_sequence": "---\na: &x\n  - *x\n---\n\n# Doc\n",
 	}
 	for name, raw := range cyclicCases {
 		t.Run(name, func(t *testing.T) {
-			_, err := c.ParseConcept("x.md", []byte(raw))
-			if err == nil {
-				t.Fatalf("expected parse error for %s, got nil", name)
-			}
-			if !strings.Contains(err.Error(), "contains itself") {
-				t.Errorf("error = %q, want substring 'contains itself'", err.Error())
+			if _, err := c.ParseConcept("x.md", []byte(raw)); err == nil {
+				t.Fatalf("ParseConcept(%q) = nil, want cyclic alias error", name)
+			} else if !strings.Contains(err.Error(), "contains itself") {
+				t.Errorf("ParseConcept(%q) error = %q, want substring 'contains itself'", name, err.Error())
 			}
 		})
 	}
