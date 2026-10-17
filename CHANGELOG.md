@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.7.0](https://github.com/ghchinoy/binder/compare/v0.6.0...v0.7.0) (2026-10-17)
+
+
+### Features
+
+* **okfproto:** add pkg/okfproto bridge to ghchinoy/okf-proto and infer folder rules ([95192fa](https://github.com/ghchinoy/binder/commit/95192fa915d5161a8fe568e41cbe098d1bd5b53d))
+
+
+### Code Refactoring
+
+* apply Go readability improvements (strings.Cut, deduplicate parseKVPairs, t.Context, cmp.Diff) ([f6ff3ae](https://github.com/ghchinoy/binder/commit/f6ff3ae3c0c6c1b5844b7d30b0f6764936748817))
+
+
+### Documentation
+
+* **examples:** add examples/proto hybrid Protobuf + OKF knowledge graph showcase ([0884c00](https://github.com/ghchinoy/binder/commit/0884c00fee6b05f805dce1818ed8d26559525b55))
+* refresh version transcripts for v0.6.0 ([e198276](https://github.com/ghchinoy/binder/commit/e198276e1598c0cc667e864dd80348a58a589dc9))
+
 ## [0.6.0](https://github.com/ghchinoy/binder/compare/v0.5.3...v0.6.0) (2026-10-17)
 
 
