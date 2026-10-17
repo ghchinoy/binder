@@ -58,6 +58,12 @@ var wellKnownDirs = map[string]string{
 	"architecture":   "Architecture",
 	"api":            "APIReference",
 	"apis":           "APIReference",
+	"service":        "Protobuf Service",
+	"services":       "Protobuf Service",
+	"message":        "Protobuf Message",
+	"messages":       "Protobuf Message",
+	"enum":           "Protobuf Enum",
+	"enums":          "Protobuf Enum",
 }
 
 // InferFromFolder suggests a type name based on a directory path.
