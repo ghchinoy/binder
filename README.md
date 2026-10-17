@@ -482,6 +482,9 @@ schemas and examples.
 
 ## How it works
 
+- `pkg/binder` — the shared service / orchestration + policy layer driven by the
+  CLI, the MCP server, and external Go callers (`examples/library`,
+  `examples/lint`, `examples/proto`).
 - `pkg/okf` — the published OKF domain model plus the `Codec` interface
   (parse/serialize concepts). Trust tiers, staleness, and the Attested flag are
   *derived* from frontmatter, never stored. The `LinkGraph` interface
@@ -494,6 +497,10 @@ schemas and examples.
   lossless over the trust and Attested-Computation families it does not model
   well enough to re-encode; nested-map key order survives with it. Losslessness
   is the bar; byte-identity is an internal property of this codec.
+- `pkg/okfproto` — bidirectional bridge between `okf.Bundle` / `okf.Concept` and
+  [`ghchinoy/okf-proto`](https://github.com/ghchinoy/okf-proto) (`okf.v1.Bundle`
+  wire/ProtoJSON payloads and compiled `.proto` / [Buf](https://buf.build)
+  `FileDescriptorSet` ingestion; see `examples/proto`).
 - `pkg/convert` — the converter: concept discovery, link/wikilink rewriting,
   frontmatter-ref edges, hashtag/tag merge, per-directory index generation, and
   corpus-native trust mapping.
@@ -501,7 +508,8 @@ schemas and examples.
   shared by `index`, `review`, and `graph`).
 - `pkg/review` — bundle summary (types, tiers, stale, attested, orphans,
   broken links).
-- `pkg/graph` — concept-graph export in dot/json/graphml/html.
+- `pkg/graph` — concept-graph export in dot/json/graphml/html, plus the
+  offline Spanner SQL/PGQ property-graph projection (`binder project`).
 - `pkg/validate` — the §11 conformance checker.
 - `pkg/mcp` — the stdio MCP server (`binder mcp`): tool handlers that reuse
   the internal functions above + `pkg/clijson`, returning the same

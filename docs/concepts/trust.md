@@ -28,10 +28,10 @@ provenance (spec §5.1).
 |---|---|---|
 | `generated` | `{ by, at }` | Provenance of the producing run. `by` follows the actor convention; `at` is an ISO 8601 datetime. binder stamps `{ by: "binder/<ver>", at }` only when absent. |
 | `verified` | `{ by, at }` or a list of them | Verification events. A bare mapping is treated as a one-element list. Drives the trust tier. |
-| `sources` | list of `{ id, resource, title, author, usage_count, last_modified }` | `resource` is required within an entry; `author` follows the actor convention; `last_modified` is a `YYYY-MM-DD` date. |
+| `sources` | list of `{ id, resource, title, author, usage_count, last_modified }` | `resource` is required within an entry; `author` follows the actor convention; `last_modified` is an ISO 8601 datetime or `YYYY-MM-DD` date. |
 | `status` | `draft` \| `stable` \| `deprecated` | Absent ⇒ `stable` (spec §5.4). |
-| `stale_after` | `YYYY-MM-DD` | Absolute date; drives staleness. |
-| `usage_window` | `{ from, to }` | A date range; both bounds are `YYYY-MM-DD`. |
+| `stale_after` | ISO 8601 datetime or `YYYY-MM-DD` | Absolute expiration timestamp or date; drives staleness. |
+| `usage_window` | `{ from, to }` | A datetime or date range; both bounds accept ISO 8601 datetimes or `YYYY-MM-DD` dates. |
 | Attested-Computation family | `runtime`, `parameters`, `computation`, `executor`, `attester` | Preserved and shape-checked. A concept of type `Attested Computation` requires `runtime` (advisory). binder does **not** execute attestations (no runtime). |
 
 The **actor convention** (spec §7): `"<producer>/<version>"` for tools/agents
@@ -52,7 +52,9 @@ Tiers are computed from `verified`, never stored:
 ## Derived staleness
 
 A concept is **stale** when `today >= stale_after` (using `--today`, else now;
-`SOURCE_DATE_EPOCH` honoured). A concept without `stale_after` is never stale.
+`SOURCE_DATE_EPOCH` honoured). When `stale_after` is an ISO 8601 datetime
+(e.g. `2026-09-23T00:00:00Z`), its leading `YYYY-MM-DD` date prefix is compared
+against `today`. A concept without `stale_after` is never stale.
 
 ## Opt-in trust mapping (`convert`)
 
