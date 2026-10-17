@@ -37,7 +37,7 @@ func newLintCmd(codec okf.Codec) *cobra.Command {
 			"type: is masked once convert defaults it.\n\n" +
 			"It also reports unquoted colon-space scalars: any frontmatter key whose\n" +
 			"unquoted plain-scalar value contains \": \" (e.g. title: Multi-View: Tabs),\n" +
-			"which YAML reads as a nested mapping rather than the intended string.\n" +
+			"which YAML tries and rejects as a nested mapping rather than the intended string.\n" +
 			"A colon-tab counts the same, and a flow mapping is scanned too (one level\n" +
 			"in when written on a single line). Quoting the value is the fix. This one is advisory-only and\n" +
 			"never gates, even under --strict: it is derived only for a file whose\n" +

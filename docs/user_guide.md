@@ -380,7 +380,7 @@ A plain-markdown file (no frontmatter fence) gets a fresh, valid block prepended
    opens with `---` and a newline, LF or CRLF, at the very start; a leading
    UTF-8 BOM or lone-CR fence is recognised but normalized — disclosed rather
    than silent, see [#124](https://github.com/ghchinoy/binder/issues/124)
-   and residual bound 6).** enrich reuses the codec's serializer, which
+   and residual bounds 2 and 6).** enrich reuses the codec's serializer, which
    re-emits the source verbatim as its internal mechanism for staying lossless.
    That serializer's frontmatter guarantee has **two kinds of preservation that
    are not the same kind of true.** The first holds *by construction* and is
@@ -454,7 +454,7 @@ A plain-markdown file (no frontmatter fence) gets a fresh, valid block prepended
    normalization: the fence opens with `---` and a newline, LF or CRLF, at the
    very start. A leading UTF-8 BOM or a lone-CR fence is recognised too, but is
    normalized before recognition ([#124](https://github.com/ghchinoy/binder/issues/124),
-   residual bound 6 below) — disclosed, and the original encoding is not
+   residual bounds 2 and 6 below) — disclosed, and the original encoding is not
    preserved. See *Residual bounds* below for the byte-level cases it does
    **not** cover even within that scope.
 

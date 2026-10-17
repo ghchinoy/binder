@@ -17,3 +17,6 @@ packages/*/example/.astro/
 # scripts/conformance/ checks, issue #171). Never a committable artifact.
 __pycache__/
 *.pyc
+
+# Local agent / tool state
+.serena/

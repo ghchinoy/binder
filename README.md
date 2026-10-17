@@ -75,7 +75,7 @@ under [`enrich`](docs/user_guide.md#enrich).
 - **`lint`** reports source-corpus health *before* conversion (writes nothing):
   broken links (incl. `#anchors`), missing titles, orphans, stale concepts,
   schema violations, and unquoted colon-space scalars (a frontmatter value like
-  `title: Multi-View: Tabs` that YAML reads as a nested mapping). `--strict`
+  `title: Multi-View: Tabs` that YAML tries and rejects as a nested mapping). `--strict`
   gives a non-zero CI gate; entrypoints and the colon-space advisory are the two
   buckets it never gates on.
 - **`graph`** exports the concept graph (edges = resolved links) as
