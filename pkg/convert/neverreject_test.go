@@ -33,6 +33,12 @@ func TestConvertNeverRejectsUnparseableFrontmatter(t *testing.T) {
 			content: "---\ntitle: never closed\ntags: [a, b]\n\n# Heading After\n\nStill body.\n",
 			marker:  "title: never closed",
 		},
+		// CYCLIC YAML alias (issue #198): self-referential anchor must recover
+		// as body-only concept rather than crashing with a stack overflow.
+		"cyclic-alias": {
+			content: "---\na: &x\n  b: *x\n---\n\n# Cyclic Heading\n\nBody survives.\n",
+			marker:  "b: *x",
+		},
 	}
 
 	codec := native.New()

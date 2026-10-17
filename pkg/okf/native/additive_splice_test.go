@@ -140,6 +140,18 @@ func TestVerifiedAppendIsStrictlyAdditive(t *testing.T) {
 			"trailing_key_after_sequence",
 			"type: Metric\nverified:\n  - by: human:x\n    at: 2024-02-01T09:30:00Z\n\n  - by: human:y\n    at: 2024-03-01T09:30:00Z\nstatus: draft\n",
 		},
+		{
+			// Issue #191: a comment line between the `verified:` key line and the
+			// FIRST entry must be carried verbatim too, completing strict additivity.
+			"comment_before_first_entry",
+			"type: Metric\nverified:\n  # leading comment\n  - { by: human:x, at: 2024-02-01T09:30:00Z }\n",
+		},
+		{
+			// Issue #191: a blank line and comment between `verified:` and the first
+			// entry, plus a blank separator between the first and second entries.
+			"blank_and_comment_before_first_entry",
+			"type: Metric\nverified:\n\n  # leading comment\n  - by: human:x\n    at: 2024-02-01T09:30:00Z\n\n  - by: human:y\n    at: 2024-03-01T09:30:00Z\n",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

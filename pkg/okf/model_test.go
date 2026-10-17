@@ -55,3 +55,54 @@ func TestOrderedMapHasAndNilSafety(t *testing.T) {
 		t.Fatal("Has should be true even for nil value")
 	}
 }
+
+func TestOrderedMapDelete(t *testing.T) {
+	var nilMap *OrderedMap
+	if nilMap.Delete("a") {
+		t.Fatal("Delete on nil OrderedMap must return false")
+	}
+
+	m := &OrderedMap{}
+	if m.Delete("missing") {
+		t.Fatal("Delete on empty OrderedMap must return false")
+	}
+
+	m.Set("a", 1)
+	m.Set("b", 2)
+	m.Set("c", 3)
+	m.Set("d", 4)
+
+	if m.Delete("missing") {
+		t.Fatal("Delete of absent key must return false")
+	}
+	// Delete a middle key: relative order of remaining keys is preserved.
+	if !m.Delete("b") {
+		t.Fatal("Delete of existing key 'b' must return true")
+	}
+	if m.Has("b") {
+		t.Fatal("'b' must no longer be present after Delete")
+	}
+	if _, ok := m.Get("b"); ok {
+		t.Fatal("Get('b') must report false after Delete")
+	}
+	if got := m.Keys(); !reflect.DeepEqual(got, []string{"a", "c", "d"}) {
+		t.Fatalf("Keys() after Delete('b') = %v, want [a c d]", got)
+	}
+	if m.Len() != 3 {
+		t.Fatalf("Len() = %d, want 3", m.Len())
+	}
+
+	// Re-inserting a deleted key appends it at the end as a fresh insertion.
+	m.Set("b", 20)
+	if got := m.Keys(); !reflect.DeepEqual(got, []string{"a", "c", "d", "b"}) {
+		t.Fatalf("Keys() after re-Set('b') = %v, want [a c d b]", got)
+	}
+
+	// Delete first and last keys.
+	if !m.Delete("a") || !m.Delete("b") {
+		t.Fatal("Delete of first/last keys must return true")
+	}
+	if got := m.Keys(); !reflect.DeepEqual(got, []string{"c", "d"}) {
+		t.Fatalf("Keys() = %v, want [c d]", got)
+	}
+}

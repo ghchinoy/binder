@@ -122,6 +122,42 @@ func TestParseConceptErrors(t *testing.T) {
 	}
 }
 
+func TestParseConceptCyclicAliasDoesNotStackOverflow(t *testing.T) {
+	c := New()
+	// Issue #198: a self-referential YAML anchor must be rejected cleanly as a
+	// frontmatter parse error rather than recursing infinitely in nodeToValue.
+	cyclicCases := map[string]string{
+		"cyclic-mapping":  "---\na: &x\n  b: *x\n---\n\n# Doc\n",
+		"cyclic-sequence": "---\na: &x\n  - *x\n---\n\n# Doc\n",
+	}
+	for name, raw := range cyclicCases {
+		t.Run(name, func(t *testing.T) {
+			_, err := c.ParseConcept("x.md", []byte(raw))
+			if err == nil {
+				t.Fatalf("expected parse error for %s, got nil", name)
+			}
+			if !strings.Contains(err.Error(), "contains itself") {
+				t.Errorf("error = %q, want substring 'contains itself'", err.Error())
+			}
+		})
+	}
+
+	// Non-cyclic (diamond/repeated) alias must still succeed.
+	diamond := "---\ntype: Note\nbase: &b\n  k: v\nfirst: *b\nsecond: *b\n---\n\n# Doc\n"
+	con, err := c.ParseConcept("ok.md", []byte(diamond))
+	if err != nil {
+		t.Fatalf("non-cyclic shared alias should parse cleanly, got: %v", err)
+	}
+	first, _ := con.Frontmatter.Get("first")
+	second, _ := con.Frontmatter.Get("second")
+	if m1, ok := first.(map[string]any); !ok || m1["k"] != "v" {
+		t.Errorf("first alias = %#v, want map[k:v]", first)
+	}
+	if m2, ok := second.(map[string]any); !ok || m2["k"] != "v" {
+		t.Errorf("second alias = %#v, want map[k:v]", second)
+	}
+}
+
 func TestSerializeSynthesisedFrontmatter(t *testing.T) {
 	// A concept the converter built from plain markdown: no OriginalFrontmatter,
 	// so Serialize canonically encodes, top-level order preserved.

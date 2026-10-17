@@ -1,5 +1,11 @@
 package binder
 
+import (
+	"runtime/debug"
+
+	"github.com/ghchinoy/binder/internal/version"
+)
+
 // Version is the canonical binder version. It is stamped into generated.by
 // ("binder/<version>") and printed by `binder --version`. It is single-sourced
 // from the git tag: at release time goreleaser injects the tag via
@@ -17,10 +23,34 @@ package binder
 // concept records generated.by = "binder/<Version>", so a release binary must
 // carry the real tag or it corrupts trust metadata forever.
 //
-// Resolution and normalization stay in the cmd/ adapter (cmd/root.go's init):
-// the build-info fallback for `go install ...@vX.Y.Z` and the single
-// normalizeVersion funnel that strips a leading "v" are inherently about the
-// running binary, so they remain adapter concerns that WRITE this canonical var.
-// The canonical form carried here after normalization is NO leading "v":
-// "binder/<X.Y.Z>".
+// init() resolves the build-info fallback for `go install ...@vX.Y.Z`, applies
+// the single NormalizeVersion funnel that strips a leading "v", and publishes
+// the canonical value to internal/version so both CLI and Go SDK consumers
+// observe the same resolved version without needing to import cmd/.
 var Version = "dev"
+
+func init() {
+	if Version == "dev" {
+		if bi, ok := debug.ReadBuildInfo(); ok {
+			if v := bi.Main.Version; v != "" && v != "(devel)" {
+				Version = v
+			}
+		}
+	}
+	Version = normalizeVersion(Version)
+	version.Set(Version)
+}
+
+// normalizeVersion canonicalizes a binder version string to the no-leading-v
+// form. It strips exactly one leading "v" when the remainder looks like a
+// version (i.e. "v" immediately followed by a digit, which is the shape of every
+// v-prefixed semver: v0.3.0, v1.2.3-rc1, …) and leaves everything else exactly
+// as it is: the "dev" default, "(devel)", the empty string, and any value that
+// merely starts with "v" but is not a semver (e.g. "version-x"). It never
+// fabricates a version — it only removes a prefix from a value already present.
+func normalizeVersion(v string) string {
+	if len(v) >= 2 && v[0] == 'v' && v[1] >= '0' && v[1] <= '9' {
+		return v[1:]
+	}
+	return v
+}

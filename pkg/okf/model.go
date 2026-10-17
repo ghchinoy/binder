@@ -63,6 +63,26 @@ func (m *OrderedMap) Len() int {
 	return len(m.keys)
 }
 
+// Delete removes key from the map and from the insertion-order key list,
+// preserving the relative order of all remaining keys (issue #230). It returns
+// whether key was present.
+func (m *OrderedMap) Delete(key string) bool {
+	if m == nil || m.vals == nil {
+		return false
+	}
+	if _, exists := m.vals[key]; !exists {
+		return false
+	}
+	delete(m.vals, key)
+	for i, k := range m.keys {
+		if k == key {
+			m.keys = append(m.keys[:i], m.keys[i+1:]...)
+			break
+		}
+	}
+	return true
+}
+
 // SpecVersion identifies an OKF spec revision (e.g. "0.2"). Registry-driven; see spec.go.
 type SpecVersion string
 

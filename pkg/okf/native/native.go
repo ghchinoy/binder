@@ -280,7 +280,7 @@ func spliceFrontmatter(fmText string, origRoot *yaml.Node, origOM, fm *okf.Order
 		// entries from their ORIGINAL bytes and encode only the added/changed
 		// entries freshly. The pre-existing entries — which can be human
 		// attestations — must not be reshaped just because a neighbour arrived.
-		if items, ok := spliceSequenceItems(p.valNode, v, lines); ok {
+		if items, ok := spliceSequenceItems(p.keyLine, p.valNode, v, lines); ok {
 			out.WriteString(joinLines(p.keyLine, p.keyLine+1)) // the "key:" line verbatim
 			out.Write(items)
 			continue
@@ -349,15 +349,16 @@ func spliceFrontmatter(fmText string, origRoot *yaml.Node, origOM, fm *okf.Order
 // simple line model cannot bound). This is the sibling-preservation guarantee
 // for the append path, and it is general: no key is singled out.
 //
-// The source lines BETWEEN two entries (a blank separator, a comment) are carried
-// verbatim along with the entry that follows them, so an append leaves every
-// pre-existing byte of the sequence unchanged — the strictly-additive invariant
-// the verified-sequence trust guarantee rests on (issue #142). See
+// The source lines BEFORE the first entry (after keyLine) and BETWEEN two
+// entries (a blank separator, a comment) are carried verbatim along with the
+// entry that follows them, so an append leaves every pre-existing byte of the
+// sequence unchanged — the strictly-additive invariant the verified-sequence
+// trust guarantee rests on (issues #142, #191). See
 // TestVerifiedAppendIsStrictlyAdditive. Because those lines attach to the
 // FOLLOWING entry, a desired list SHORTER than the source (a removal) also
 // returns ok=false: see the guard below and
 // TestSequenceRemovalDoesNotMisattributeTrivia.
-func spliceSequenceItems(valNode *yaml.Node, desired any, lines []string) ([]byte, bool) {
+func spliceSequenceItems(keyLine int, valNode *yaml.Node, desired any, lines []string) ([]byte, bool) {
 	if valNode == nil || valNode.Kind != yaml.SequenceNode {
 		return nil, false
 	}
@@ -397,16 +398,18 @@ func spliceSequenceItems(valNode *yaml.Node, desired any, lines []string) ([]byt
 	indent := lines[first][:dash]
 
 	var b bytes.Buffer
-	// cursor is the next source line this splice has not yet consumed. Copying an
-	// item from [cursor, end] rather than from [item.Line-1, end] carries the lines
-	// BETWEEN two entries — a blank separator, a comment — with the entry that
-	// follows them, instead of dropping them on the floor. Those lines are
-	// pre-existing bytes of a trust-bearing sequence, and an append has to be
-	// strictly additive: every prior byte survives, only the stamp is new. Dropping
-	// the blank line was issue #142; with a keep-chomping (`|+`) block scalar ending
-	// an entry it also silently rewrote the scalar's VALUE, since the trailing blank
-	// line that the chomping indicator preserves is exactly such a gap line.
-	cursor := items[0].Line - 1
+	// cursor is the next source line this splice has not yet consumed. Starting at
+	// keyLine+1 (immediately after the "key:" line that spliceFrontmatter emits)
+	// and copying each item from [cursor, end] rather than from [item.Line-1, end]
+	// carries both the lines BEFORE the first entry (issue #191) and the lines
+	// BETWEEN two entries (issue #142) — a blank separator, a comment — with the
+	// entry that follows them, instead of dropping them on the floor. Those lines
+	// are pre-existing bytes of a trust-bearing sequence, and an append has to be
+	// strictly additive: every prior byte survives, only the stamp is new.
+	cursor := keyLine + 1
+	if cursor < 0 || cursor > first {
+		cursor = first
+	}
 	for i, dv := range want {
 		if i < len(items) {
 			start := items[i].Line - 1
@@ -1061,60 +1064,93 @@ func parseFrontmatterNode(fmText string) (*yaml.Node, *okf.OrderedMap, error) {
 		return nil, nil, fmt.Errorf("invalid frontmatter: expected a mapping at the top level")
 	}
 	for i := 0; i+1 < len(root.Content); i += 2 {
-		m.Set(root.Content[i].Value, nodeToValue(root.Content[i+1]))
+		val, err := nodeToValueChecked(root.Content[i+1], nil)
+		if err != nil {
+			return nil, nil, fmt.Errorf("invalid frontmatter: %w", err)
+		}
+		m.Set(root.Content[i].Value, val)
 	}
 	return root, m, nil
 }
 
 // nodeToValue converts a yaml.Node to a plain Go value (map[string]any, []any,
 // or scalar). Timestamps are kept as their literal string so trust datetimes
-// round-trip textually and never become time.Time.
+// round-trip textually and never become time.Time. A cyclic YAML alias (issue
+// #198) returns nil rather than recursing infinitely; parseFrontmatterNode uses
+// nodeToValueChecked to reject cyclic aliases at parse time.
 func nodeToValue(n *yaml.Node) any {
+	v, _ := nodeToValueChecked(n, nil)
+	return v
+}
+
+// nodeToValueChecked converts a yaml.Node to a plain Go value while tracking
+// active ancestor alias targets in seen so a self-referential YAML anchor
+// (e.g. `a: &x { b: *x }`, issue #198) is rejected cleanly as a parse error
+// instead of overflowing the goroutine stack. Non-cyclic shared aliases
+// (`[*a, *a]`) remain valid because seen tracks only the active recursion stack.
+func nodeToValueChecked(n *yaml.Node, seen map[*yaml.Node]bool) (any, error) {
 	switch n.Kind {
 	case yaml.DocumentNode:
 		if len(n.Content) == 0 {
-			return nil
+			return nil, nil
 		}
-		return nodeToValue(n.Content[0])
+		return nodeToValueChecked(n.Content[0], seen)
 	case yaml.MappingNode:
 		out := make(map[string]any, len(n.Content)/2)
 		for i := 0; i+1 < len(n.Content); i += 2 {
-			out[n.Content[i].Value] = nodeToValue(n.Content[i+1])
+			v, err := nodeToValueChecked(n.Content[i+1], seen)
+			if err != nil {
+				return nil, err
+			}
+			out[n.Content[i].Value] = v
 		}
-		return out
+		return out, nil
 	case yaml.SequenceNode:
 		out := make([]any, 0, len(n.Content))
 		for _, c := range n.Content {
-			out = append(out, nodeToValue(c))
+			v, err := nodeToValueChecked(c, seen)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, v)
 		}
-		return out
+		return out, nil
 	case yaml.AliasNode:
 		if n.Alias != nil {
-			return nodeToValue(n.Alias)
+			if seen[n.Alias] {
+				return nil, fmt.Errorf("yaml: anchor %q value contains itself", n.Value)
+			}
+			if seen == nil {
+				seen = make(map[*yaml.Node]bool)
+			}
+			seen[n.Alias] = true
+			v, err := nodeToValueChecked(n.Alias, seen)
+			delete(seen, n.Alias)
+			return v, err
 		}
-		return nil
+		return nil, nil
 	default: // ScalarNode
 		switch n.Tag {
 		case "!!null":
-			return nil
+			return nil, nil
 		case "!!bool":
 			var b bool
 			if n.Decode(&b) == nil {
-				return b
+				return b, nil
 			}
 		case "!!int":
 			var i int64
 			if n.Decode(&i) == nil {
-				return i
+				return i, nil
 			}
 		case "!!float":
 			var f float64
 			if n.Decode(&f) == nil {
-				return f
+				return f, nil
 			}
 		}
 		// Strings, timestamps, and anything else: keep the literal text.
-		return n.Value
+		return n.Value, nil
 	}
 }
 

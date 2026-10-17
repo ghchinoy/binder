@@ -40,7 +40,7 @@ vet:
 
 # gofmt over binder's own sources.
 fmt-check:
-	@unformatted=$$(gofmt -l cmd internal . 2>/dev/null || true); \
+	@unformatted=$$(gofmt -l cmd pkg internal . 2>/dev/null || true); \
 	if [ -n "$$unformatted" ]; then \
 		echo "gofmt needed on:"; echo "$$unformatted"; exit 1; \
 	else echo "gofmt: clean"; fi

@@ -5,13 +5,7 @@
 // determinism rule, the gating-finding definition), and the complete wire-contract
 // result — so no adapter patches a report after the call.
 //
-// Phase 1 delivers the vertical slice for one capability: lint. It exercises the
-// full Request → Result → orchestration → gate → render pattern (design §6 Phase
-// 1) so the seam is proven by two real consumers before any fan-out.
-//
-// This package lives under internal/ during phases 1–4 and is promoted to pkg/ at
-// the final phase (design §3.6, Decision 1); everything here is reversible until
-// then. No cobra/pflag/viper type appears in any signature, and there is no
+// No cobra/pflag/viper type appears in any signature, and there is no
 // os.Exit / log.Fatal / fmt.Print on the service path (design AC5) — os.Exit stays
 // at main.go, driven by clijson.ExitCode.
 package binder

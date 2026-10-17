@@ -94,6 +94,7 @@ type Concept struct {Body string; Frontmatter *OrderedMap; ID string; Links []Li
 type DateRange struct {From string; To string}
 type Link struct {RawTarget string; Resolved bool; TargetID string; Text string}
 type OrderedMap struct {}
+  func (*OrderedMap) Delete(key string) bool
   func (*OrderedMap) Get(key string) (any, bool)
   func (*OrderedMap) Has(key string) bool
   func (*OrderedMap) Keys() []string

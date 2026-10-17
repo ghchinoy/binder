@@ -440,11 +440,11 @@ func applyOverwrites(c *okf.Concept, f convert.SourceFile, cOpts convert.Options
 func cloneFMExcluding(fm *okf.OrderedMap, exclude map[string]bool) *okf.OrderedMap {
 	out := okfrules.NewOrderedMap()
 	for _, k := range fm.Keys() {
-		if exclude[k] {
-			continue
-		}
 		v, _ := fm.Get(k)
 		out.Set(k, deepCopyValue(v))
+	}
+	for k := range exclude {
+		out.Delete(k)
 	}
 	return out
 }
