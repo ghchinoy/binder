@@ -1,5 +1,49 @@
 # Changelog
 
+## [0.6.0](https://github.com/ghchinoy/binder/compare/v0.5.3...v0.6.0) (2026-10-17)
+
+
+### Features
+
+* **binder:** Phase 1 vertical slice — lint on the shared service core ([#223](https://github.com/ghchinoy/binder/issues/223)) ([27c772a](https://github.com/ghchinoy/binder/commit/27c772a22be52eb91db45c41bc6a43a00025b301))
+* **binder:** Phase 2 read-side capabilities on service core ([#225](https://github.com/ghchinoy/binder/issues/225)) ([7ebd020](https://github.com/ghchinoy/binder/commit/7ebd0209bda94a2eff6bbb3e5ad673ef1084d9ed))
+* **binder:** Phase 3 — convert/enrich/index on the shared service core ([#226](https://github.com/ghchinoy/binder/issues/226)) ([6e14237](https://github.com/ghchinoy/binder/commit/6e14237f51b3c1568f76a6993c5db7c07774f28a))
+* **binder:** Phase 4 — infer + config on the shared service ([#224](https://github.com/ghchinoy/binder/issues/224)) ([3a94eef](https://github.com/ghchinoy/binder/commit/3a94eef7e6d5b04700f51f1f1c3a2861da64e98b))
+* **lint:** advise on unquoted colon-space frontmatter scalars ([#93](https://github.com/ghchinoy/binder/issues/93)) ([#190](https://github.com/ghchinoy/binder/issues/190)) ([e2eb7b2](https://github.com/ghchinoy/binder/commit/e2eb7b276043996fa362168a2cb36f991d4e73ab))
+* **okf:** support ISO 8601 datetime timestamps and bump okf interop to v0.5.0 ([8590e09](https://github.com/ghchinoy/binder/commit/8590e09a4edbef29441f8a0de4df0c4f35799d8f))
+* **pkg:** publish curated surface under pkg/ and narrow okf ([#228](https://github.com/ghchinoy/binder/issues/228)) ([47adefd](https://github.com/ghchinoy/binder/commit/47adefdb4798d06b46bb11ea139dd3bf97f7c0c3))
+
+
+### Bug Fixes
+
+* **ci:** exempt release PRs from the docs-impact gate ([#188](https://github.com/ghchinoy/binder/issues/188)) ([b8e7316](https://github.com/ghchinoy/binder/commit/b8e73160831f90353243d2ceb898527216e15bed))
+* **cli:** derive the actor exemplar from the live version ([#60](https://github.com/ghchinoy/binder/issues/60)) ([#196](https://github.com/ghchinoy/binder/issues/196)) ([203fd9f](https://github.com/ghchinoy/binder/commit/203fd9fae721434c599f090a06402c818388a296))
+* **okf:** keep inter-entry lines when appending a verified stamp ([#189](https://github.com/ghchinoy/binder/issues/189)) ([1e82072](https://github.com/ghchinoy/binder/commit/1e8207288836c5345955df31c9892821ae0ee195))
+* **okf:** reject cyclic YAML aliases, preserve leading sequence trivia, and add OrderedMap.Delete ([#191](https://github.com/ghchinoy/binder/issues/191), [#198](https://github.com/ghchinoy/binder/issues/198), [#230](https://github.com/ghchinoy/binder/issues/230)) ([3f4780d](https://github.com/ghchinoy/binder/commit/3f4780dd8f3d5c8a336c78e3bc52663d922f0f14))
+* **plugins:** regenerate transcript version literals for v0.5.3 ([#183](https://github.com/ghchinoy/binder/issues/183)) ([8a0a83e](https://github.com/ghchinoy/binder/commit/8a0a83ec854cb60a8df95fb8f272f2b89557bc58))
+
+
+### Continuous Integration
+
+* add Dependabot github-actions ecosystem for SHA pin bumps ([#187](https://github.com/ghchinoy/binder/issues/187)) ([2b1436b](https://github.com/ghchinoy/binder/commit/2b1436be1fbb4dfd0715af5bef321c7cec33e83b))
+* bump actions/checkout from 4.4.0 to 7.0.1 ([64d6968](https://github.com/ghchinoy/binder/commit/64d69680ac278c3f48ec3e8e6dc7c762d6e95044))
+* bump actions/configure-pages from 5.0.0 to 6.0.0 ([440f47b](https://github.com/ghchinoy/binder/commit/440f47b5253dde0887506f2d098cc7473ad05cef))
+* bump actions/setup-python from 5.6.0 to 7.0.0 ([da78bd6](https://github.com/ghchinoy/binder/commit/da78bd6bfcde6349c7b9b52e0600140f0d6104f3))
+* bump actions/upload-pages-artifact from 3.0.1 to 5.0.0 ([af5f909](https://github.com/ghchinoy/binder/commit/af5f909f8ea7b879becfc2ef2c96f1e8d4dda99c))
+* bump goreleaser/goreleaser-action from 6.4.0 to 7.2.3 ([ce82ad4](https://github.com/ghchinoy/binder/commit/ce82ad4968f64bc81a5cc2dc607b7c3591e0ab13))
+* extend transcript version gate to docs/ and README ([#193](https://github.com/ghchinoy/binder/issues/193)) ([d9a6191](https://github.com/ghchinoy/binder/commit/d9a6191d764f9120bafff22232f3bf7e8fc17188))
+* pin GitHub Actions by commit SHA ([#180](https://github.com/ghchinoy/binder/issues/180)) ([0066e2a](https://github.com/ghchinoy/binder/commit/0066e2ad403a9d693061bd955b3ed393a2ea000d))
+
+
+### Documentation
+
+* correct the YAML gloss on the colon-space contract comment ([#205](https://github.com/ghchinoy/binder/issues/205)) ([6ac4de0](https://github.com/ghchinoy/binder/commit/6ac4de00a65eb755fd1da28934940edacf9f1d7c))
+* delete the false multi-line flow mechanism claim ([#214](https://github.com/ghchinoy/binder/issues/214)) ([537f79f](https://github.com/ghchinoy/binder/commit/537f79f57956dbb8b22e88241365fcfb8414c815)), closes [#212](https://github.com/ghchinoy/binder/issues/212)
+* fix lone-CR bound pointers, colon-space YAML gloss, and ci.yml check label ([#195](https://github.com/ghchinoy/binder/issues/195), [#210](https://github.com/ghchinoy/binder/issues/210), [#222](https://github.com/ghchinoy/binder/issues/222)) ([e278cc1](https://github.com/ghchinoy/binder/commit/e278cc11245cfc0f07605848e0db9df79a047323))
+* re-point OKF spec references to open-knowledge-format ([#186](https://github.com/ghchinoy/binder/issues/186)) ([80a9999](https://github.com/ghchinoy/binder/commit/80a99996b2704373f098aab49693f61b744b9c43))
+* restore the differential-validation claim to the README ([#192](https://github.com/ghchinoy/binder/issues/192)) ([5467b48](https://github.com/ghchinoy/binder/commit/5467b4888336d344d4fc240058a8f15693dc9b5d)), closes [#100](https://github.com/ghchinoy/binder/issues/100)
+* state the detector's trigger, not a false YAML rule ([#208](https://github.com/ghchinoy/binder/issues/208)) ([b8d0430](https://github.com/ghchinoy/binder/commit/b8d043088f199ae30287da78b90d31bb5c2831b5))
+
 ## [0.5.3](https://github.com/ghchinoy/binder/compare/v0.5.2...v0.5.3) (2026-08-31)
 
 
