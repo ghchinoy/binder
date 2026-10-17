@@ -84,6 +84,10 @@ test("spec 5.5: staleness is today >= stale_after, boundary included", () => {
   // Ordering across year/month boundaries, the case a naive comparison breaks.
   assert.equal(isStale("2020-01-01", "2026-08-21"), true);
   assert.equal(isStale("2027-01-01", "2026-12-31"), false);
+  // Upstream OKF PR #6 ISO 8601 datetime form (YYYY-MM-DDTHH:MM:SSZ).
+  assert.equal(isStale("2026-08-22T00:00:00Z", "2026-08-21"), false, "datetime before the date");
+  assert.equal(isStale("2026-08-21T00:00:00Z", "2026-08-21"), true, "datetime ON the date is stale");
+  assert.equal(isStale("2026-08-20T00:00:00Z", "2026-08-21"), true, "datetime after the date");
 });
 
 test("toISODay reads the UTC day, not the local one", () => {

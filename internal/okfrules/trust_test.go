@@ -87,10 +87,14 @@ func TestIsStale(t *testing.T) {
 		today      string
 		want       bool
 	}{
-		{"", "2026-12-31", false},           // no stale_after ⇒ never stale
-		{"2026-09-23", "2026-09-22", false}, // before
-		{"2026-09-23", "2026-09-23", true},  // on the day (today >= stale_after)
-		{"2026-09-23", "2026-09-24", true},  // after
+		{"", "2026-12-31", false},                         // no stale_after ⇒ never stale
+		{"2026-09-23", "2026-09-22", false},               // before (bare date)
+		{"2026-09-23", "2026-09-23", true},                // on the day (today >= stale_after)
+		{"2026-09-23", "2026-09-24", true},                // after
+		{"2026-09-23T00:00:00Z", "2026-09-22", false},     // before (ISO 8601 datetime)
+		{"2026-09-23T00:00:00Z", "2026-09-23", true},      // on the day (ISO 8601 datetime must be stale on that day)
+		{"2026-09-23T14:30:00+00:00", "2026-09-23", true}, // on the day with offset
+		{"2026-09-23T00:00:00Z", "2026-09-24", true},      // after (ISO 8601 datetime)
 	}
 	for _, tc := range cases {
 		c := &okf.Concept{Trust: okf.TrustSignals{StaleAfter: tc.staleAfter}}
@@ -134,6 +138,25 @@ func TestValidateTrustCleanConcept(t *testing.T) {
 	c := &okf.Concept{ID: "c", Type: "Note", Frontmatter: fm, Trust: ProjectTrust(fm, "Note")}
 	if findings := ValidateTrust(c, okf.DefaultSpecVersion); len(findings) != 0 {
 		t.Fatalf("expected no findings on a well-formed concept, got %v", findings)
+	}
+
+	// Upstream OKF PR #6 unified timestamp-valued keys to ISO 8601 datetimes with
+	// explicit UTC offsets (e.g. 2026-09-23T00:00:00Z). Both forms must validate
+	// cleanly with zero advisories.
+	fmDT := fmFrom(
+		"type", "Note",
+		"generated", map[string]any{"by": "binder/0.1.0", "at": "2026-01-01T00:00:00Z"},
+		"verified", []any{map[string]any{"by": "human:alice", "at": "2026-02-01T09:00:00Z"}},
+		"status", "stable",
+		"stale_after", "2027-01-01T00:00:00Z",
+		"sources", []any{map[string]any{
+			"id": "s1", "resource": "https://x", "author": "team:finance", "last_modified": "2026-06-15T00:00:00Z",
+		}},
+		"usage_window", map[string]any{"from": "2026-06-01T00:00:00Z", "to": "2026-06-30T00:00:00Z"},
+	)
+	cDT := &okf.Concept{ID: "c-dt", Type: "Note", Frontmatter: fmDT, Trust: ProjectTrust(fmDT, "Note")}
+	if findings := ValidateTrust(cDT, okf.DefaultSpecVersion); len(findings) != 0 {
+		t.Fatalf("expected no findings on an ISO 8601 datetime concept, got %v", findings)
 	}
 }
 

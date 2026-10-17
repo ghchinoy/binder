@@ -144,6 +144,16 @@ func TestDerivationRecompute(t *testing.T) {
 			}
 		}
 	}
+
+	// And ISO 8601 datetime stale_after (upstream OKF PR #6) also round-trips and
+	// reconstructs identically across RecomputeStale and okfrules.IsStale.
+	dtConcept := projConcept("dt", "Note", "DatetimeStale", nil,
+		okf.TrustSignals{StaleAfter: "2026-08-18T00:00:00Z"}, nil)
+	for _, d := range []string{"2026-08-17", "2026-08-18", "2026-08-19"} {
+		if got, want := RecomputeStale(dtConcept.Trust.StaleAfter, d), okfrules.IsStale(dtConcept, d); got != want {
+			t.Errorf("datetime stale_after as-of %s: RecomputeStale=%v, IsStale=%v", d, got, want)
+		}
+	}
 }
 
 // TestDerivationRecomputeControl is the C11 control for the recompute: a

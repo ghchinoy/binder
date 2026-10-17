@@ -5,7 +5,7 @@
 
 GO      ?= go
 BIN     := bin/binder
-OKF_VER := v0.3.0
+OKF_VER := v0.5.0
 OKF_PKG := github.com/okfcli/okf/cmd/okf@$(OKF_VER)
 # Pinned like the actions themselves: the workflow linter must not change under
 # the gate it feeds.

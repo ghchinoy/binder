@@ -85,14 +85,21 @@ export function deriveTier(verified: readonly Actorstamp[] | undefined): Tier {
  * Reports whether a concept is stale as of `today` (a `YYYY-MM-DD` string),
  * i.e. `today >= stale_after` (spec §5.5).
  *
- * Port of `okf.IsStale`, including its lexicographic string comparison — for
- * zero-padded ISO dates that ordering is the same as chronological ordering,
- * and matching it exactly is what keeps binder and this loader in agreement.
+ * Port of `okfrules.IsStale`, including its lexicographic string comparison —
+ * for zero-padded ISO dates that ordering is the same as chronological ordering,
+ * and an ISO 8601 datetime (`2026-09-23T00:00:00Z`, per upstream OKF PR #6) is
+ * compared by its leading `YYYY-MM-DD` prefix when `today` is a bare date, so
+ * a datetime stamp on the target day evaluates as stale on that day.
  * A concept without `stale_after` is never stale.
  */
 export function isStale(staleAfter: string | undefined, today: string): boolean {
   if (!staleAfter) return false;
-  return today >= staleAfter;
+  let sa = staleAfter.trim();
+  if (sa === "") return false;
+  if (today.length === 10 && sa.length > 10 && sa[10] === "T") {
+    sa = sa.slice(0, 10);
+  }
+  return today >= sa;
 }
 
 /**

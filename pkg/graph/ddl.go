@@ -526,10 +526,15 @@ func sqlBool(v bool) string {
 
 // sqlNullableDate renders "" as NULL and any other value as a DATE literal from
 // the raw authored input (validity is the author's concern and is reported
-// separately by `binder validate`; the projection emits what was authored).
+// separately by `binder validate`; the projection emits what was authored). When
+// the authored value is an ISO 8601 datetime (e.g. 2026-09-23T00:00:00Z, per
+// upstream OKF PR #6), its YYYY-MM-DD date prefix is used for the DATE literal.
 func sqlNullableDate(s string) string {
 	if s == "" {
 		return "NULL"
+	}
+	if len(s) > 10 && s[10] == 'T' {
+		s = s[:10]
 	}
 	return "DATE " + sqlString(s)
 }

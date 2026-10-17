@@ -211,10 +211,10 @@ goreleaser release --snapshot --clean   # build all targets, no publish
 `make check` (gofmt + `go vet` + `go test ./...`) is the toolchain-only gate. The
 project's **full** exit gate additionally cross-checks binder's own verdicts
 against the vendor-neutral [`okfcli/okf`](https://github.com/okfcli/okf)
-validator (v0.3.0) in both directions:
+validator (v0.5.0) in both directions:
 
 ```sh
-make okf-install  # go install github.com/okfcli/okf/cmd/okf@v0.3.0
+make okf-install  # go install github.com/okfcli/okf/cmd/okf@v0.5.0
 make gate         # local checks + external differential validation
 ```
 

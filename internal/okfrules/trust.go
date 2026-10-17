@@ -103,12 +103,20 @@ func TrustTier(c *okf.Concept) Tier {
 }
 
 // IsStale reports whether the concept is stale as of today (YYYY-MM-DD), i.e.
-// today >= stale_after (spec §5.5). A concept without stale_after is never stale.
+// today >= stale_after (spec §5.5). Both bare YYYY-MM-DD dates and ISO 8601
+// datetimes (e.g. 2026-09-23T00:00:00Z, per upstream OKF PR #6) are compared by
+// their leading YYYY-MM-DD date prefix when today is a bare date, so a datetime
+// stamp on the target day evaluates as stale on that day rather than sorting
+// after it lexicographically. A concept without stale_after is never stale.
 func IsStale(c *okf.Concept, today string) bool {
-	if c.Trust.StaleAfter == "" {
+	sa := strings.TrimSpace(c.Trust.StaleAfter)
+	if sa == "" {
 		return false
 	}
-	return today >= c.Trust.StaleAfter
+	if len(today) == 10 && len(sa) > 10 && sa[10] == 'T' {
+		sa = sa[:10]
+	}
+	return today >= sa
 }
 
 // ValidateTrust returns advisory findings about trust-signal well-formedness. It
@@ -151,13 +159,13 @@ func ValidateTrust(c *okf.Concept, v okf.SpecVersion) []Finding {
 		add(fmt.Sprintf("status %q is not one of draft|stable|deprecated (spec §5.4)", s))
 	}
 
-	// stale_after: absolute date YYYY-MM-DD (§5.5).
-	if sa := c.Trust.StaleAfter; sa != "" && !okf.IsValidISODate(sa) {
-		add(fmt.Sprintf("stale_after %q is not an absolute YYYY-MM-DD date (spec §5.5)", sa))
+	// stale_after: ISO 8601 datetime or absolute date YYYY-MM-DD (§5.5).
+	if sa := c.Trust.StaleAfter; sa != "" && !isValidISODateTime(sa) {
+		add(fmt.Sprintf("stale_after %q is not an ISO 8601 datetime or YYYY-MM-DD date (spec §5.5)", sa))
 	}
 
 	// sources[]: resource REQUIRED within an entry (§5.1); author is an actor;
-	// last_modified is a date.
+	// last_modified is an ISO 8601 datetime or YYYY-MM-DD date.
 	for i, s := range c.Trust.Sources {
 		if s.Resource == "" {
 			add(fmt.Sprintf("sources[%d] is missing required 'resource' (spec §5.1)", i))
@@ -165,18 +173,18 @@ func ValidateTrust(c *okf.Concept, v okf.SpecVersion) []Finding {
 		if s.Author != "" && !okf.IsValidActor(s.Author) {
 			add(fmt.Sprintf("sources[%d].author %q does not follow the actor convention (spec §7)", i, s.Author))
 		}
-		if s.LastModified != "" && !okf.IsValidISODate(s.LastModified) {
-			add(fmt.Sprintf("sources[%d].last_modified %q is not an absolute YYYY-MM-DD date (spec §5.1)", i, s.LastModified))
+		if s.LastModified != "" && !isValidISODateTime(s.LastModified) {
+			add(fmt.Sprintf("sources[%d].last_modified %q is not an ISO 8601 datetime or YYYY-MM-DD date (spec §5.1)", i, s.LastModified))
 		}
 	}
 
-	// usage_window: a { from, to } date range (§5.1).
+	// usage_window: a { from, to } datetime or date range (§5.1).
 	if w := c.Trust.UsageWindow; w != nil {
-		if w.From != "" && !okf.IsValidISODate(w.From) {
-			add(fmt.Sprintf("usage_window.from %q is not an absolute YYYY-MM-DD date (spec §5.1)", w.From))
+		if w.From != "" && !isValidISODateTime(w.From) {
+			add(fmt.Sprintf("usage_window.from %q is not an ISO 8601 datetime or YYYY-MM-DD date (spec §5.1)", w.From))
 		}
-		if w.To != "" && !okf.IsValidISODate(w.To) {
-			add(fmt.Sprintf("usage_window.to %q is not an absolute YYYY-MM-DD date (spec §5.1)", w.To))
+		if w.To != "" && !isValidISODateTime(w.To) {
+			add(fmt.Sprintf("usage_window.to %q is not an ISO 8601 datetime or YYYY-MM-DD date (spec §5.1)", w.To))
 		}
 	}
 

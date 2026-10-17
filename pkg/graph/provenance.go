@@ -170,10 +170,15 @@ func RecomputeTier(rows []NodeVerifiedRow) okfrules.Tier {
 // staleness reconstructed from the stored stale_after column and a chosen as-of
 // date. Proven by test to equal okfrules.IsStale. A node without stale_after is never
 // stale; otherwise stale iff asOf >= staleAfter (ISO dates compare lexically =
-// chronologically).
+// chronologically; an ISO 8601 datetime is compared by its YYYY-MM-DD prefix
+// when asOf is a bare date, matching okfrules.IsStale).
 func RecomputeStale(staleAfter, asOf string) bool {
-	if staleAfter == "" {
+	sa := staleAfter
+	if sa == "" {
 		return false
 	}
-	return asOf >= staleAfter
+	if len(asOf) == 10 && len(sa) > 10 && sa[10] == 'T' {
+		sa = sa[:10]
+	}
+	return asOf >= sa
 }

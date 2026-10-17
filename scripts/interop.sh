@@ -7,11 +7,9 @@
 # Also produces the "opens with edges visible" evidence via `okf graph`.
 #
 # Requires: the `okf` binary on PATH (or in $GOBIN / $(go env GOPATH)/bin).
-#   go install github.com/okfcli/okf/cmd/okf@v0.3.0
+#   go install github.com/okfcli/okf/cmd/okf@v0.5.0
 #
-# Exit 0 only if every EXPECTED agreement holds. Documented, spec-grounded
-# disagreements (see FINDING below) are asserted to be exactly what we expect;
-# an unexpected change in them fails the gate too.
+# Exit 0 only if every EXPECTED agreement holds.
 
 set -euo pipefail
 
@@ -33,7 +31,7 @@ if [[ -z "$OKF" ]]; then
 fi
 if [[ -z "$OKF" ]]; then
   echo "FAIL: external validator 'okf' not found."
-  echo "      install with: go install github.com/okfcli/okf/cmd/okf@v0.3.0"
+  echo "      install with: go install github.com/okfcli/okf/cmd/okf@v0.5.0"
   exit 127
 fi
 
@@ -125,24 +123,22 @@ echo "== 3. hard error (missing type): both validators must flag =="
 expect_agree_invalid "malformed:notype" "testdata/malformed"
 echo
 
-echo "== 4. FINDING — broken cross-link: spec-grounded disagreement (captured, not papered over) =="
-# OKF v0.2 §11: consumers MUST NOT reject a bundle for broken cross-links.
-# binder honours this (conformant); okfcli/okf v0.3.0 rejects (okf/links/broken
-# = ERROR). binder is spec-correct. We ASSERT this exact disagreement so a change
-# in either tool's behaviour re-surfaces here.
+echo "== 4. broken cross-link (spec §6.1 / §11): both validators must accept and surface warning =="
+# OKF v0.2 §6.1 / §11: consumers MUST tolerate broken cross-links and MUST NOT
+# reject a bundle for them. As of okfcli/okf v0.5.0 (PR #33 / issue #26), okf
+# downgraded okf/links/broken from ERROR to WARNING, converging with binder's
+# verdict. Assert both tools accept the bundle AND okf still surfaces the
+# okf/links/broken warning.
 BASIC="$WORK/basic"
 SOURCE_DATE_EPOCH=1700000000 "$BINDER" convert testdata/corpus-basic -o "$BASIC" >/dev/null
 bv=0; binder_valid "$BASIC" || bv=1
 ov=0; "$OKF" validate "$BASIC" > "$WORK/basic.json" 2>/dev/null || ov=1
-# Which ERROR-severity rules did okf report? (grep may match nothing -> guard set -e)
-err_block="$(grep -B2 '"severity": *"ERROR"' "$WORK/basic.json" 2>/dev/null || true)"
-broken_present=0;  echo "$err_block" | grep -q 'okf/links/broken' && broken_present=1
-other_errs="$(echo "$err_block" | grep -oE 'okf/[a-z/-]+' | grep -vc 'okf/links/broken' || true)"
-if [[ $bv -eq 0 && $ov -ne 0 && $broken_present -eq 1 && "${other_errs:-0}" -eq 0 ]]; then
-  echo "PASS  [finding:broken-link] binder=conformant (§11: MUST NOT reject broken links); okf=invalid (okf/links/broken ERROR)"
-  note "DISAGREEMENT is expected and spec-grounded: binder follows OKF v0.2 §11, okfcli/okf v0.3.0 is stricter."
+warn_block="$(grep -B2 '"severity": *"WARN"' "$WORK/basic.json" 2>/dev/null || true)"
+broken_warn=0; echo "$warn_block" | grep -q 'okf/links/broken' && broken_warn=1
+if [[ $bv -eq 0 && $ov -eq 0 && $broken_warn -eq 1 ]]; then
+  echo "PASS  [broken-link:agree] binder=conformant  okf=valid (okf/links/broken surfaced as WARN per §11)"
 else
-  echo "FAIL  [finding:broken-link] unexpected: binder_valid=$([[ $bv -eq 0 ]] && echo yes || echo no) okf_valid=$([[ $ov -eq 0 ]] && echo yes || echo no) broken_rule_present=$broken_present other_error_rules=$other_errs"
+  echo "FAIL  [broken-link:agree] unexpected: binder_valid=$([[ $bv -eq 0 ]] && echo yes || echo no) okf_valid=$([[ $ov -eq 0 ]] && echo yes || echo no) broken_warn_present=$broken_warn"
   fail=1
 fi
 echo

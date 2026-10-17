@@ -441,6 +441,21 @@ func TestRowsCSVAndDMLEscaping(t *testing.T) {
 	}
 }
 
+// TestSQLNullableDateHandlesISODateTime verifies that sqlNullableDate renders a
+// valid GoogleSQL DATE literal when stale_after is an ISO 8601 datetime (per
+// upstream OKF PR #6).
+func TestSQLNullableDateHandlesISODateTime(t *testing.T) {
+	if got, want := sqlNullableDate("2026-09-23T00:00:00Z"), "DATE '2026-09-23'"; got != want {
+		t.Errorf("sqlNullableDate(datetime) = %q, want %q", got, want)
+	}
+	if got, want := sqlNullableDate("2026-09-23"), "DATE '2026-09-23'"; got != want {
+		t.Errorf("sqlNullableDate(date) = %q, want %q", got, want)
+	}
+	if got, want := sqlNullableDate(""), "NULL"; got != want {
+		t.Errorf("sqlNullableDate(empty) = %q, want %q", got, want)
+	}
+}
+
 // TestAggregateNodeKeyParity is the dedup regression guard folded in from the G1
 // [Consider]: the graph-level node-key aggregation now has a SINGLE definition
 // (aggregateNodeKey), and both callers — Describe (list_graphs) and Project
