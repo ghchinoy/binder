@@ -742,7 +742,7 @@ fi
 #      So: plant drift in a copy, drive the copy's own wrapper, and assert the
 #      full documented release sequence -- red, repair, clean.
 W17="$(copy_tree)"
-if patch_unique "$W17/docs/tutorial.md" "(e.g. binder/0.5.3)" "(e.g. binder/0.3.0)"; then
+if patch_unique "$W17/docs/tutorial.md" '(e.g. binder/'"${BINDER_STAMP_VERSION#v}"')' "(e.g. binder/0.3.0)"; then
   w_red="$(cd "$W17" && ./scripts/check-shipped-version-literals.sh 2>&1)"; w_rc=$?
   w_fix="$(cd "$W17" && ./scripts/check-shipped-version-literals.sh --fix 2>&1)"; w_fixrc=$?
   w_clean="$(cd "$W17" && ./scripts/check-shipped-version-literals.sh 2>&1)"; w_cleanrc=$?

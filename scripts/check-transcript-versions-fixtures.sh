@@ -134,8 +134,8 @@ A_GUIDE_CONFIG='^\*\*`binder config --json`'
 A_GUIDE_ENVELOPE='^### The envelope \(schema `binder\.report/v1`\)$'
 
 # A version literal as it appears in a transcript, and the drift to plant.
-LITERAL_RE='binder/0\.5\.[0-9]+'
-DRIFT_SED='s#binder/0\.5\.[0-9]\+#binder/9.9.9#'
+LITERAL_RE='binder/[0-9]+\.[0-9]+\.[0-9]+'
+DRIFT_SED='s#binder/[0-9]\+\.[0-9]\+\.[0-9]\+#binder/9.9.9#'
 
 # abort <line...> — a harness bug (stale anchor, no-op mutation), not a case
 # failure. Stop immediately rather than reporting a result for a case whose
