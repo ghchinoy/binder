@@ -18,11 +18,12 @@ binder review <bundle> [flags]
 ### Options
 
 ```
-      --entrypoint strings   concept id or path to treat as an entrypoint, not an orphan (repeatable); root README.md is recognized automatically
-  -h, --help                 help for review
-      --json                 emit the review report as deterministic JSON (schema binder.report/v1) instead of prose
-      --strict               gate (exit 1) when any review finding is present (orphans, stale, unresolved, unparsed)
-      --today string         date (YYYY-MM-DD) used for staleness; defaults to now
+      --entrypoint strings    concept id or path to treat as an entrypoint, not an orphan (repeatable); root README.md is recognized automatically
+  -h, --help                  help for review
+      --json                  emit the review report as deterministic JSON (schema binder.report/v1) instead of prose
+      --require-tier string   minimum trust tier required for every concept ("machine-confirmed" or "human-reviewed"); gates (exit 1) when any concept is below this tier
+      --strict                gate (exit 1) when any review finding is present (orphans, stale, unresolved, unparsed)
+      --today string          date (YYYY-MM-DD) used for staleness; defaults to now
 ```
 
 ### SEE ALSO

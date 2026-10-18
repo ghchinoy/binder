@@ -102,6 +102,38 @@ func TrustTier(c *okf.Concept) Tier {
 	return TierMachineConfirmed
 }
 
+// ParseRequiredTier validates a --require-tier value ("machine-confirmed" or
+// "human-reviewed", or "" for no tier floor; issue #243).
+func ParseRequiredTier(s string) (Tier, error) {
+	s = strings.TrimSpace(s)
+	switch Tier(s) {
+	case "":
+		return "", nil
+	case TierMachineConfirmed, TierHumanReviewed:
+		return Tier(s), nil
+	default:
+		return "", fmt.Errorf("invalid --require-tier %q (want %q or %q)", s, TierMachineConfirmed, TierHumanReviewed)
+	}
+}
+
+// BelowTier reports whether got is strictly below the required minimum tier req
+// (unverified < machine-confirmed < human-reviewed). When req is empty, no
+// concept is below it.
+func BelowTier(got, req Tier) bool {
+	return tierRank(got) < tierRank(req)
+}
+
+func tierRank(t Tier) int {
+	switch t {
+	case TierHumanReviewed:
+		return 2
+	case TierMachineConfirmed:
+		return 1
+	default:
+		return 0
+	}
+}
+
 // IsStale reports whether the concept is stale as of today (YYYY-MM-DD), i.e.
 // today >= stale_after (spec §5.5). Both bare YYYY-MM-DD dates and ISO 8601
 // datetimes (e.g. 2026-09-23T00:00:00Z, per upstream OKF PR #6) are compared by
@@ -141,7 +173,7 @@ func ValidateTrust(c *okf.Concept, v okf.SpecVersion) []Finding {
 		}
 	}
 
-	// verified[]: by REQUIRED and an actor; at an ISO datetime (§5.2/§5.3/§7).
+	// verified[]: by REQUIRED and an actor; at REQUIRED and an ISO datetime (§5.2/§5.3/§7).
 	for i, ver := range c.Trust.Verified {
 		switch {
 		case ver.By == "":
@@ -149,7 +181,10 @@ func ValidateTrust(c *okf.Concept, v okf.SpecVersion) []Finding {
 		case !okf.IsValidActor(ver.By):
 			add(fmt.Sprintf("verified[%d].by %q does not follow the actor convention (spec §7)", i, ver.By))
 		}
-		if ver.At != "" && !isValidISODateTime(ver.At) {
+		switch {
+		case ver.At == "":
+			add(fmt.Sprintf("verified[%d] is missing 'at' (spec §5.2)", i))
+		case !isValidISODateTime(ver.At):
 			add(fmt.Sprintf("verified[%d].at %q is not an ISO 8601 datetime (spec §5.2)", i, ver.At))
 		}
 	}
