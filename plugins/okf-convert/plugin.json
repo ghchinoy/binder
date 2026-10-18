@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "okf-convert",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Drive the binder CLI to ingest a plain-markdown corpus into a conformant OKF v0.2 bundle and curate concepts at scale, with ingestion-analysis judgment (flag choice, pre-convert triage, trust-extraction review, the post-convert acceptance loop over binder's --json output). Assumes binder is installed.",
   "author": {
     "name": "ghchinoy",

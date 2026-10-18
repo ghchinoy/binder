@@ -1,109 +1,103 @@
-# Trust discipline — never fabricate trust
+# Trust discipline: never fabricate trust
 
 This is the single overriding guardrail of the `okf-convert` skill. When you
 drive binder, **propose trust, never fabricate it; defer all stamping to the
-deterministic tool.** binder is built for that division of labour — it writes a
+deterministic tool.** binder is built for that division of labour: it writes a
 `verified` actor or `sources` only from signals you point it at, and a `verified`
 actor only from an attestation you supply (the `--verified-by` flag, a `verified_by:`
 default you set in your global config, or the `verified_by` input to the MCP
-`convert` tool) — so your job is to decide and its job is to stamp only what
-you decided. Then **verify what it wrote — two checks, both required, they are not
-interchangeable.** (1) Reparse binder's output with a YAML parser other than
-binder's: catches a **fabricated actor**, visible in the parse. (2) **Copy the
-file *before* you invoke binder** and diff the result against that copy: the
+`convert` tool). Your job is to decide, and its job is to stamp only what
+you decided. Then **verify what it wrote using two checks, both required and not
+interchangeable:** (1) Reparse binder's output with a YAML parser other than
+binder's to catch a **fabricated actor**, which is visible in the parse. (2) **Copy the
+file *before* you invoke binder** and diff the result against that copy: this is the
 **only** check that catches **destroyed content**, because with more than one
-block-scalar attestation every value but the last can be lost and the damaged file
-**reparses cleanly and shows nothing missing** — with no prior copy the loss is
-**undetectable**, because nothing left in the file reveals it, so reparse cannot
-find it and keeping the copy is not optional. A correct diff shows exactly
-**one** change — the attestation you asked for; every pre-existing entry
-byte-identical, and any altered entry or any block-scalar value that shrank or
-vanished **is** the defect. Closing the one corruption path we found does not
+block-scalar attestation every value but the last can be lost while the damaged file
+**reparses cleanly and shows nothing missing**. Without a prior copy the loss is
+**undetectable** because nothing left in the file reveals it, so reparse cannot
+find it and keeping the copy is required. A correct diff shows
+**one** change (the attestation you asked for), with every pre-existing entry
+byte-identical; any altered entry or any block-scalar value that shrank or
+vanished **is** the defect. Closing one corruption path does not
 prove none remains, and `binder validate`/`binder review` report this class as
-healthy — so binder cannot be its own check.
+healthy, so binder cannot be its own check.
 
 ## What binder does (and does not) stamp
 
-- binder stamps an **honest** `generated: binder/<version>` provenance mark on
+- binder stamps a `generated: binder/<version>` provenance mark on
   what it produces. That is a true statement about how the file was generated.
 - binder writes a `verified` actor or `sources` **only** from what you
   explicitly point it at: trust mapping is off by default and maps only the
   signals you name (`--source-keys`, `--map-citations`), from real corpus content;
-  a `verified` stamp is written only from an attestation you supply — the
+  a `verified` stamp is written only from an attestation you supply via the
   `--verified-by` flag, a `verified_by:` default you set in your global config, or
-  the `verified_by` input to the MCP `convert` tool. That is the
-  mechanism, not a proof binder can never invent — so **verify what it wrote, two
-  checks, both required and not interchangeable**: (1) reparse the output with a
-  non-binder YAML parser to catch a **fabricated actor** (visible in the parse);
-  (2) **copy the file *before* you invoke binder** and diff the result against that
-  copy — the **only** check that catches **destroyed content**, since with more
-  than one block-scalar attestation every value but the last can be lost and the
-  damaged file **reparses cleanly and shows nothing missing** — with no prior copy
-  the loss is **undetectable** (nothing left in the file reveals it), so reparse
-  cannot find it and keeping the copy is not optional. A correct diff shows
-  exactly **one** change — the attestation you asked for; every pre-existing entry
-  byte-identical, and any altered entry or shrunken/vanished block scalar **is**
-  the defect. `binder validate`/`binder review` pass this corruption class as
-  healthy, so they cannot be the check.
+  the `verified_by` input to the MCP `convert` tool. Verify what it wrote using the two
+  checks above: (1) reparse the output with a non-binder YAML parser to catch a
+  **fabricated actor**, and (2) **copy the file *before* you invoke binder** and diff
+  the result against that copy to catch **destroyed content**.
 - **binder is safe by default (`binder/0.3.1`+): no flag and no default *you*
   set means no `verified` stamp.** On the CLI a stamp is written without the flag
-  only from `verified_by:` in your **global** config (`~/.config/binder/config.yaml`)
-  — a machine-wide default counts as you having chosen one, and it makes `convert`
+  only from `verified_by:` in your **global** config (`~/.config/binder/config.yaml`):
+  a machine-wide default counts as you having chosen one, and it makes `convert`
   *and* `enrich` stamp without the flag (still a claim nobody typed *for this
   corpus*, so review it). A third route exists on the MCP surface: the `verified_by`
-  input to the MCP `convert` tool, the MCP analog of the flag — so a `verified`
+  input to the MCP `convert` tool, the MCP analog of the flag, so a `verified`
   stamp comes from one of three routes (the flag, a global-config default, or the
   MCP input) and from nothing else. **On the CLI, neither `BINDER_VERIFIED_BY`
-  (env) nor a repo-local `./.binder.yaml` authorizes a stamp** — an inherited
+  (env) nor a repo-local `./.binder.yaml` authorizes a stamp**: an inherited
   environment export is not a per-invocation decision to attest, and a repo-local
   file can ride inside someone else's clone. binder refuses both and discloses the
-  refused value in `.result.verified.note` rather than stamping or silently
-  dropping it; the MCP surface likewise reaches the writer only from its explicit
+  refused value in `.result.verified.note` rather than stamping or dropping it
+  without warning; the MCP surface likewise reaches the writer only from its explicit
   `verified_by` input, never from env or any config. Run the
   step 1 pre-flight (`binder config --json`) and pass `--verified-by ""` to
   suppress a global default you cannot vouch for.
-- **Every stamp — and every declined co-sign — is disclosed.** `--json` carries a
+- **Every stamp and every declined co-sign is disclosed.** `--json` carries a
   `.result.verified` object (`actor`, `source`, `stamped`, `skipped`, `note`) on
   every stamp-writing verb, and the prose emits a `Trust (verified stamps):`
   block. An opt-in you cannot observe taking effect would be indistinguishable
   from auto-stamping; this is how you observe it.
 - **binder declines to co-sign another identity.** When a concept already carries
   a `verified` attestation from a *different* identity, a non-explicit (global-config)
-  default does **not** add a second stamp — it **skips**, reports the skip under
+  default does **not** add a second stamp: it **skips**, reports the skip under
   `.result.verified.skipped` with the existing actor, and leaves the prior
-  attestation byte-for-byte. Only an **explicit** attestation co-signs — the
-  `--verified-by` flag or the MCP `convert` `verified_by` input — never a
+  attestation byte-for-byte. Only an **explicit** attestation co-signs (the
+  `--verified-by` flag or the MCP `convert` `verified_by` input), never a
   non-explicit global-config default.
 
-## The three invariants (from OKF v0.2 — do not violate)
+## The three invariants (from OKF v0.2)
 
 1. **Never store a credibility score or trust tier.** Record objective signals
    (`generated`, `verified` events, `sources`); the *tier* (`unverified` /
-   `machine-confirmed` / `human-reviewed`) is **derived on read** — `binder
-   review` computes it, it is never written to frontmatter. No
+   `machine-confirmed` / `human-reviewed`) is **derived on read** (`binder
+   review` computes it, and `binder review --require-tier` can enforce a tier
+   floor in CI; it is never written to frontmatter). No
    `score`/`credibility`/`tier` keys.
 2. **Never reject or drop unknown keys/types.** Preserve producer-defined keys
    verbatim; unknown `type` values are legal.
 3. **Broken links and missing optional fields are legal.** Never invent a target,
-   a source, or a verifier to make a report look cleaner.
+   a source, or a verifier to make a report look cleaner. (`validate` raises an
+   advisory when a `verified[]` entry omits `at`, and accepts both `YYYY-MM-DD`
+   dates and ISO 8601 datetimes on `stale_after`, `sources[].last_modified`, and
+   `usage_window`.)
 
 ## The binder-driving rules (the crux)
 
-- **Do NOT pass `--verified-by` unless a real, named actor actually attests.** The
+- **Do NOT pass `--verified-by` unless a real, named actor attests.** The
   flag appends a `verified` stamp; a stamp is a *claim of verification*. Only pass
-  it when a genuine actor (`human:<id>`, `process:<id>`, `team:<id>`, or
-  `<producer>/<version>`) has actually reviewed the content. Do not auto-pass it,
+  it when a real actor (`human:<id>`, `process:<id>`, `team:<id>`, or
+  `<producer>/<version>`) has reviewed the content. Do not auto-pass it,
   do not default it to yourself, do not stamp the agent as a verifier of content
   it merely generated.
 - **Do NOT let a default you set stamp on your behalf.** Check
   `binder config --json | jq -c '.result | {config_file, verified_by: .values.verified_by}'`
   first. Only a `source` of `file` where `config_file` is a machine-wide path
-  (`~/.config/binder/config.yaml`) **will** stamp — inherited state, not an
-  attestation, so pass `--verified-by ""` to suppress it. A `source` of `env`, or
+  (`~/.config/binder/config.yaml`) **will** stamp (inherited state, not an
+  attestation, so pass `--verified-by ""` to suppress it). A `source` of `env`, or
   of `file` where `config_file` is the corpus's own `.binder.yaml`, will **not**
   stamp (both are refused and disclosed in `.result.verified.note`). `source`
-  alone cannot distinguish a global from a repo-local `file` — both report
-  `file` — yet they behave oppositely; `config_file` is what tells you which file
+  alone cannot distinguish a global from a repo-local `file` because both report
+  `file`, yet they behave oppositely; `config_file` is what tells you which file
   is in effect and whether it can stamp.
 - **Suppress on `convert` as well as `enrich` when a global default is live.**
   On the CLI both resolve `--verified-by` through the same chain, so a global-config
@@ -112,28 +106,29 @@ healthy — so binder cannot be its own check.
   directly and does not go through that chain, and there is no MCP `enrich` tool.) Check
   the result with the `tiers` line from `binder review`: `{"unverified": N}` means
   nothing was claimed, `{"human-reviewed": N}` means something was. (With nothing
-  configured, the default is already `{"unverified": N}` — the flag is a defensive
+  configured, the default is already `{"unverified": N}`; the flag is a defensive
   suppressor, not mandatory boilerplate.)
 - **Run the pre-flight from the directory you will run everything else from.**
   binder resolves `./.binder.yaml` against the *current* directory. A repo-local
   file does not stamp, but running the check from the corpus directory still lets
-  you see the same `config_file` binder will — including a repo-local one shadowing
+  you see the same `config_file` binder will, including a repo-local one shadowing
   the global config that *would* have stamped from a parent directory.
-- **Stamps are not idempotent under a wall clock.** Dedup is on `(by, at)`, so
-  re-running `enrich` seconds apart appends a fresh stamp for the same actor each
-  time. Pin `SOURCE_DATE_EPOCH` when you need a repeatable run.
+- **Same-actor stamps are idempotent (`#134`).** `applyVerifiedBy` deduplicates
+  by actor (`by`), so re-running `enrich` with the same actor does not append
+  duplicate timestamps when the wall clock advances. Pin `SOURCE_DATE_EPOCH` when
+  you want reproducible initial timestamps.
 - **Do NOT enable `--source-keys` / `--map-citations` for noise.** Map only keys
   and citation lists that carry *real* provenance. Review which corpus-native
-  provenance is genuine before mapping it.
+  provenance is real before mapping it.
 - **Do NOT add `verified`/`sources` the agent cannot assert.** If provenance is
-  unknown, leave it absent — absent is legal and honest; invented is a lie.
+  unknown, leave it absent: absent is legal and honest; invented is a lie.
 - **Propose, then defer.** When trust *should* be added, surface it to the user
   and let them (or a real attester) decide; let deterministic binder do the
   stamping. You are the judgment, not the notary.
 
-## The vocabulary lives in Layer A — refer to it by name
+## The vocabulary lives in Layer A (refer to it by name)
 
-This reference deliberately does **not** re-teach the full provenance / trust /
+This reference does **not** re-teach the full provenance / trust /
 lifecycle vocabulary. For the complete §5 (`sources`, `generated`, `verified`),
 §7 (actor convention), and §10 (Attested Computation) definitions, see the
 tool-agnostic **`okf-authoring`** plugin's reference:
@@ -144,8 +139,8 @@ tool-agnostic **`okf-authoring`** plugin's reference:
 The OKF v0.2 spec those definitions derive from is
 [`GoogleCloudPlatform/open-knowledge-format` → `SPEC.md`](https://github.com/GoogleCloudPlatform/open-knowledge-format/blob/main/SPEC.md).
 
-That is a **documentation pointer, not a runtime dependency** — Agent Plugins are
+That is a **documentation pointer, not a runtime dependency**: Agent Plugins are
 self-contained and this skill resolves nothing across repos at run time. Note
 `okf-authoring` ships from a *different* plugin marketplace than this one. The
-short restatement above is sufficient to drive binder correctly; load the Layer A
+short restatement above is sufficient to drive binder; load the Layer A
 vocabulary when you need the full field-by-field definitions.

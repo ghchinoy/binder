@@ -60,7 +60,7 @@ binder projects a **labeled property graph**:
 
 The graph is a **read model**: derived from the bundle on every call, never
 stored, never written back. `binder graph`, `list_graphs`, and `query_graph`
-cannot change a bundle — not its frontmatter, not its links, not an identity. You
+cannot change a bundle (not its frontmatter, its links, or an identity). You
 can run any of them against a production bundle, in any order, as often as you
 like, and the bundle bytes are unchanged. If you need the graph again, ask again:
 it is always recomputed from the current bundle, so it never drifts from the
@@ -68,9 +68,9 @@ source.
 
 ## Disclosure of unparseable files
 
-A concept file whose frontmatter will not parse is never silently dropped
-(never-reject, spec §11): the loader recovers it as a body-only node — so it
-still appears in the graph and no edge dangles to a missing node — and discloses
+A concept file whose frontmatter will not parse is never dropped without disclosure
+(never-reject, spec §11): the loader recovers it as a body-only node (so it
+still appears in the graph and no edge dangles to a missing node) and discloses
 it. Alongside `review`'s `unparsed_frontmatter`, the graph surfaces the same
 disclosure: `binder graph --format json`, `list_graphs`, and `query_graph` emit
 an `unparsed` array of the recovered node ids (`binder graph`, `index`, and

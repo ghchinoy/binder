@@ -24,7 +24,7 @@ Key rules binder enforces on emit:
   ---
   ```
 
-- **Every concept has a non-empty `type`** — the one hard-required field
+- **Every concept has a non-empty `type`**, the one hard-required field
   (spec §11). All other frontmatter keys are optional and preserved as-is,
   including keys binder does not understand (spec §4).
 - **A `generated` stamp** records the conversion, added only when the concept

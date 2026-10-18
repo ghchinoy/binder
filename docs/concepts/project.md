@@ -44,20 +44,20 @@ The `Nodes` table carries `node_key`, `title`, `type`, `tier`, `stale`, and
 `Edges` table carries `from_key`, `to_key`, and the nullable `rel` (the link
 text; labels are **not** derived from it). The DDL is byte-deterministic: fixed
 column order and deterministic identifier sanitization. `binder project` never
-mints a key and never writes back to the source bundle — it only reads and emits.
+mints a key and never writes back to the source bundle; it only reads and emits.
 
 ## Provenance completeness: `NodeVerified` + the derivation view
 
-`tier` is a *derived* value, never stored on disk — the raw truth is each
-concept's `verified[]` list. So the projection also emits that list losslessly.
+`tier` is a *derived* value, never stored on disk; the raw truth is each
+concept's `verified[]` list. So the projection also emits that list intact.
 
 `node_verified.csv` (and the matching `CREATE TABLE NodeVerified`, keyed
 `(node_key, seq)`) carries one row per attestation: `node_key`, `seq` (the stable
 index within the concept's `verified[]`), `by`, `at`, and `is_human`. The rows are
-copied **losslessly**: authored order is preserved, `by`/`at` are verbatim as
-authored, and `is_human` is exactly the `human:` actor-prefix test that drives the
+copied **intact**: authored order is preserved, `by`/`at` are verbatim as
+authored, and `is_human` is the `human:` actor-prefix test that drives the
 trust tier (a node is `human-reviewed` when any attestation is human, else
-`machine-confirmed`, else `unverified` — see [Trust model & tiers](trust.md)).
+`machine-confirmed`, else `unverified`; see [Trust model & tiers](trust.md)).
 
 `derivation.sql` is a `CREATE VIEW NodeTrustDerived` that **recomputes** `tier`
 and `stale` from the stored facts (`Nodes.stale_after` and the `NodeVerified`

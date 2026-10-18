@@ -3,15 +3,15 @@
 Load this when you need the exact shape of what a binder command emits, so you
 **parse structured output with `jq`** and never scrape prose. Every shape below
 was captured from real `binder/0.8.0` output. The `internal/plugindocs` drift
-gate mechanically checks each block's **shape** — its key set at every nesting
-level — against the live binary. It routes each block's **root** to a live
+gate checks each block's **shape** (its key set at every nesting
+level) against the live binary. It routes each block's **root** to a live
 shape by key overlap (envelopes are keyed on their `command`/`schema`), then
-matches every **nested** object — including each element of an array — to its
-live shape by structural position, not key similarity, so a nested object stays
+matches every **nested** object, including each element of an array, to its
+live shape by structural position rather than key similarity, so a nested object stays
 checked however far it has drifted. A root it cannot route, or a nested object
-at a path no live shape describes, is reported UNANCHORED, never silently
-skipped. It does **not** check **values**: version literals like the `binder`
-field below are not verified and can go stale (tracked in #169). Free-form data
+at a path no live shape describes, is reported UNANCHORED, never skipped without warning.
+It does **not** check **values**: version literals like the `binder`
+field below are verified by `scripts/check-transcript-versions.py` (#169). Free-form data
 maps whose keys are data, not schema (`by_type`, `tiers`), are exempt.
 Regenerate a block by recapturing it rather than hand-editing (issue #106).
 
@@ -34,7 +34,7 @@ result in the same envelope:
 - `schema` — `binder.report/v1` for all six.
 - `result` — the per-command payload (below).
 
-**Two commands do NOT use this envelope — do not expect it:**
+**Two commands do NOT use this envelope (do not expect it):**
 
 - **`binder graph --json`** (alias for `--format json`) emits the **raw graph
   export** `{ "nodes": [...], "edges": [...] }`, *not* the report envelope.
@@ -50,8 +50,8 @@ Check `$?`, not the text:
 | Code | Meaning | When |
 |------|---------|------|
 | `0` | ok | conformant / no gating findings |
-| `1` | findings / gate tripped | `validate` non-conformance (spec §11); or, under `--strict`, a command's advisory set promoted to gating findings (`review`/`lint`/`convert`/`enrich`) — for `enrich` that set is skipped files, preserve-or-advise warnings, and a non-conformant `--status-map` OKF §5.4 value. The read-boundary normalization advisory is excluded from those sets and never gates: an advisory-only run exits `0` with or without `--strict` |
-| `2` | usage error | bad flags/args (e.g. `convert` with no `<src>`, conflicting `graph` flags) |
+| `1` | findings / gate tripped | `validate` non-conformance (spec §11); `review --require-tier` violations (#243); or, under `--strict`, a command's advisory set promoted to gating findings (`review`/`lint`/`convert`/`enrich`); for `enrich` that set is skipped files, preserve-or-advise warnings, and a non-conformant `--status-map` OKF §5.4 value. The read-boundary normalization advisory is excluded from those sets and never gates: an advisory-only run exits `0` with or without `--strict` |
+| `2` | usage error | bad flags/args (e.g. `convert` with no `<src>`, conflicting `graph` flags, invalid `--require-tier`) |
 | `3` | I/O error | path missing / unreadable / unwritable |
 
 Without `--strict`, `convert`/`enrich`/`lint`/`review` are **never-reject**: they
@@ -151,8 +151,8 @@ binder review <bundle> --json | jq '.result | {by_type, tiers, orphans, stale}'
 }
 ```
 
-`lint` sees the corpus *as authored* — a missing `title:`/`type:` that `convert`
-would silently default is visible here. Advisory (exit 0) unless `--strict`
+`lint` sees the corpus *as authored*: a missing `title:`/`type:` that `convert`
+would default is visible here. Advisory (exit 0) unless `--strict`
 (`colon_space_scalars` excepted: it never gates).
 
 ```bash
@@ -181,7 +181,8 @@ binder lint <corpus> --json | jq '.result | {broken_links, missing_titles, schem
 ```
 
 `status` ∈ `enriched | unchanged | would-enrich | skipped`. `added` is the sorted
-list of injected keys.
+list of keys written by the additive pass (whether newly injected or appended to
+as an authorized `verified` co-signature).
 
 **`.result.normalizations` is a disclosure, not a finding.** `enrich --strict`
 gates on skipped files, preserve-or-advise `warnings`, and a non-conformant
@@ -191,8 +192,8 @@ always reported (here and as a per-file `normalized` signal) and exits `0`
 
 **`.result.verified` is the run-level trust disclosure (0.3.1+).** It is `actor:
 "", source: "none"` when nothing was stamped. A stamp is written only from an
-explicit `--verified-by` or a default *you* set — `verified_by:` in your
-**global** config. Neither `BINDER_VERIFIED_BY` (env) nor a repo-local
+explicit `--verified-by` or a default *you* set (`verified_by:` in your
+**global** config). Neither `BINDER_VERIFIED_BY` (env) nor a repo-local
 `.binder.yaml` stamps; each is refused and reported in `.result.verified.note`
 instead. When a stamp is written, `actor`/`source` name it, `stamped` lists the
 paths, and the per-file `added` also gains `verified`. When a *different* identity
@@ -207,9 +208,9 @@ binder enrich <corpus> --dry-run --json | jq -c '.result.verified'
 binder enrich <corpus> --dry-run --json | jq -c '.result.files[] | select(.added|length>0)'
 ```
 
-Idempotent **only within one clock second** — `verified` stamps dedupe on
-`(by, at)`, so reruns seconds apart append another stamp for the same actor. Pin
-`SOURCE_DATE_EPOCH` for a repeatable run.
+Idempotent across repeat runs (`#134`): `verified` stamps deduplicate by actor
+(`by`), so reruns with the same actor write nothing even when the wall clock
+advances. Pin `SOURCE_DATE_EPOCH` when you want deterministic initial timestamps.
 
 ### `graph --json` (raw export, NOT the envelope)
 
@@ -245,14 +246,14 @@ binder graph <bundle> --json | jq '{n: (.nodes|length), e: (.edges|length)}'
 ```
 
 Every value is an object with `value` and `source`, where `source` is one of
-`default | env | file` (a `flag` source never appears — `config` takes no such
+`default | env | file` (a `flag` source never appears because `config` takes no such
 flags). Use this to confirm what `--default-type`/`--verified-by` will be
 **before** a run.
 
-`config_file` is the single file actually in effect. binder loads **exactly one**
+`config_file` is the single file in effect. binder loads **exactly one**
 config file: a repo-local `./.binder.yaml` suppresses the global
-`$XDG_CONFIG_HOME/binder/config.yaml` entirely rather than merging with it. This
-matters for trust — `source: "file"` alone cannot tell a deliberate per-corpus
+`$XDG_CONFIG_HOME/binder/config.yaml` in its entirety rather than merging with it. This
+matters for trust: `source: "file"` alone cannot tell a per-corpus
 `verified_by` from a machine-wide default, so read `config_file` alongside it:
 
 ```bash

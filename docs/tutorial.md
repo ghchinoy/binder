@@ -194,8 +194,8 @@ never gates on them.
 One edge of that rule is worth knowing: "root" means *root*, and `README.md` is
 the only name recognized this way. A nested `docs/README.md` is **not**
 recognized automatically and stays a true orphan until you pass
-`--entrypoint docs/README.md`, and a root `index.md` is not recognized in any
-spelling; it is classified on its edges like any other concept (`convert`
+`--entrypoint docs/README.md`, and a root `index.md` gets no special
+treatment: binder classifies it on its edges like any other concept (`convert`
 renames an authored lowercase `index.md` to `index-note.md` first).
 
 `binder review` applies the same rule to a bundle, but over a different graph:
@@ -262,10 +262,10 @@ SOURCE_DATE_EPOCH=1700000000 binder convert "$CORPUS" -o /tmp/tut-typed \
 ```
 
 On *this* corpus that produces a bundle byte-identical to the plain conversion in
-Step 3, because the proposal simply reproduces the types the files already
+Step 3, because the proposal reproduces the types the files already
 declare. `infer` earns its keep on a corpus where the types are implied by
-structure rather than written down — a `docs/` tree of guides, an `adr/` tree of
-decisions — where the alternative is hand-writing the map.
+structure rather than written down (a `docs/` tree of guides, an `adr/` tree of
+decisions), where the alternative is hand-writing the map.
 
 By default `infer` uses deterministic offline signals only, so it needs neither a
 network nor an API key. `--gemini` opts into an extra semantic tier that calls a
@@ -575,10 +575,10 @@ Trust (verified stamps):
   stamped: 0 file(s)
 ```
 
-The disclosure prints anyway, and `stamped: 0 file(s)` is exactly the point: you
+The disclosure prints anyway, and `stamped: 0 file(s)` is the point: you
 asked for a stamp and binder is telling you none was needed. Stamps de-duplicate
-by `(by, at)`, and the clock is pinned, so the stamp your first run wrote is the
-stamp this run would have written.
+by actor (`by`), so the stamp your first run wrote for `human:alice` satisfies
+every repeat run for that actor even if the wall clock advances.
 
 ### Step 5: stop retyping the actor — `binder config`
 
@@ -651,7 +651,7 @@ stamp. Slow down here, because this is the shape of the whole trust model: a
 `.binder.yaml` lives inside a repository, so it travels. Clone somebody's corpus
 and their config file comes with it. A file that arrived in a clone you did not
 write cannot evidence a decision *you* made, so binder will not attest documents
-in your name on its say-so. It does not ignore the value silently either: the
+in your name on its say-so. It does not ignore the value without warning either: the
 disclosure names it, and names what would honour it.
 
 The place that does count is your own home directory, because nothing but you
@@ -755,9 +755,9 @@ Your default said *attest my work*; it did not say *add my name beside Bob's*. S
 binder **skipped** the stamp and told you it did.
 
 A skip is not a rejection. The run exits `0`, the file was still enriched (it
-needed `generated`), and Bob's attestation is exactly as he left it. If
-co-signing is what you actually mean, say it explicitly — the flag is exempt from
-this rule, because typing it *is* the decision:
+needed `generated`), and Bob's attestation is as he left it. If
+co-signing is what you mean, pass the flag explicitly: typing `--verified-by`
+is the decision to co-sign:
 
 ```bash
 SOURCE_DATE_EPOCH=1700000000 binder enrich . --verified-by "human:alice"
@@ -797,9 +797,9 @@ cd /tmp/kb
 Two conventions keep a greenfield bundle honest.
 
 Keep `status` in the OKF §5.4 vocabulary: `draft`, `stable`, or `deprecated`.
-The `--status-map` you passed above is already conformant, so it ran silently.
+The `--status-map` you passed above is already conformant, so it emitted no note.
 Had you written `--status-map "drafts=wip,default=stable"`, `enrich` would have
-checked the value at **input** time — the check is always on — written it
+checked the value at **input** time (the check is always on), written it
 unchanged, and told you so:
 
 ```text
