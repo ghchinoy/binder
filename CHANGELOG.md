@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.8.0](https://github.com/ghchinoy/binder/compare/v0.7.0...v0.8.0) (2026-10-18)
+
+
+### Features
+
+* **trust:** advise on missing verified[].at and add --require-tier ([#243](https://github.com/ghchinoy/binder/issues/243)) ([#244](https://github.com/ghchinoy/binder/issues/244)) ([b54bdb9](https://github.com/ghchinoy/binder/commit/b54bdb97b12b59f4d3ec45d3dfb9d19fe75f8a2d))
+
+
+### Bug Fixes
+
+* dedup verified stamps by actor, warn when linting a bundle, and mask indented code in HeadingSlugs ([#68](https://github.com/ghchinoy/binder/issues/68), [#96](https://github.com/ghchinoy/binder/issues/96), [#134](https://github.com/ghchinoy/binder/issues/134)) ([e200b24](https://github.com/ghchinoy/binder/commit/e200b24c7090bf30dcb0894106a5df3c9237ddc4))
+* resolve backlog batch (Unicode slugs, multi-line flow colonspace, [#175](https://github.com/ghchinoy/binder/issues/175) conformance, wrapper fixture, config/envelope docs) ([#61](https://github.com/ghchinoy/binder/issues/61), [#63](https://github.com/ghchinoy/binder/issues/63), [#85](https://github.com/ghchinoy/binder/issues/85), [#86](https://github.com/ghchinoy/binder/issues/86), [#120](https://github.com/ghchinoy/binder/issues/120), [#175](https://github.com/ghchinoy/binder/issues/175), [#194](https://github.com/ghchinoy/binder/issues/194), [#206](https://github.com/ghchinoy/binder/issues/206), [#213](https://github.com/ghchinoy/binder/issues/213)) ([e91f703](https://github.com/ghchinoy/binder/commit/e91f7031e6ece456c38d9739c469429e5d572968))
+
+
+### Build System
+
+* bump the go-dependencies group with 5 updates ([#245](https://github.com/ghchinoy/binder/issues/245)) ([224cfa2](https://github.com/ghchinoy/binder/commit/224cfa2e836299cf8693ab29a857a7e77b3d3b7a))
+
+
+### Continuous Integration
+
+* bump actions/deploy-pages from 4.0.5 to 5.0.1 ([fbef987](https://github.com/ghchinoy/binder/commit/fbef987f2ff7cbfbf4ae5ba32a2ff0ee222fece3))
+* bump actions/setup-go from 5.6.0 to 7.0.0 ([793f9c4](https://github.com/ghchinoy/binder/commit/793f9c4096a8e71049fd86930a794982dabc7e7b))
+* bump actions/setup-node from 4.4.0 to 7.1.0 ([e016efe](https://github.com/ghchinoy/binder/commit/e016efec8d16a8afa5d4db3413bbbbeede70ae2d))
+* bump googleapis/release-please-action from 4.4.1 to 5.0.0 ([035f356](https://github.com/ghchinoy/binder/commit/035f3569893dd2bfde733ebde541aada1d09ba2c))
+* bump goreleaser/goreleaser-action ([a8b0c67](https://github.com/ghchinoy/binder/commit/a8b0c679ad3b17f54066469c873ea9aa3a75f9ea))
+
+
+### Documentation
+
+* document pkg/binder, pkg/okfproto, and ISO 8601 datetime support across README, guide, and Astro site ([7a59a3f](https://github.com/ghchinoy/binder/commit/7a59a3f63d034d40e5808491dbe836922d371613))
+* refresh version transcripts for v0.7.0 ([ee11df5](https://github.com/ghchinoy/binder/commit/ee11df5dc56fb854d7a1201cd4181c82652bf8f5))
+
 ## [0.7.0](https://github.com/ghchinoy/binder/compare/v0.6.0...v0.7.0) (2026-10-17)
 
 
