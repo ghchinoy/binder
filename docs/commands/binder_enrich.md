@@ -13,10 +13,9 @@ It operates on the YAML only, so its writes stay reviewable on a
 git-tracked tree: additive/never-clobber (it adds only ABSENT keys and
 never overwrites an existing value; the sole exception is an authorized
 `verified` stamp, which is APPENDED to any existing `verified` list, never
-replacing a prior attestation), idempotent unless a `verified` stamp advances
-(a rerun writes nothing when no verifier is set or the clock is pinned via
-SOURCE_DATE_EPOCH; with a live verifier under a moving clock a rerun appends a
-fresh stamp, since stamps dedup on (by, at)), and atomic (temp file + rename, so
+replacing a prior attestation), idempotent (a rerun writes nothing —
+`verified` stamps dedup by actor `by`, so a repeat run with the same
+verifier never appends duplicate timestamps), and atomic (temp file + rename, so
 an interrupted run leaves the source as it was rather than half-written).
 Files needing no key are not written at all. Files whose frontmatter will not
 parse, and reserved files (index.md/log.md), are skipped and never mutated.

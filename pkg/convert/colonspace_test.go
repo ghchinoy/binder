@@ -134,6 +134,32 @@ func TestColonSpaceKeys(t *testing.T) {
 			doc:  "---\nmeta: {\n  name: plain,\n}\nbad: oops: here\n---\n\n# X\n",
 			want: []string{"bad"},
 		},
+		// --- issue #213: multi-line flow state vs block plain scalars --------
+		{
+			name: "multiflow (#213 F2): multi-line flow with two entries on one line names the second key, not the first",
+			doc:  "---\ntype: Note\ntitle: T\nmeta: {\n  x: 1, name: Multi-View: Tabs\n}\n---\n\n# X\n",
+			want: []string{"name"},
+		},
+		{
+			name: "ragged (#213 F1): multi-line flow opening with an unquoted colon-space entry names that key",
+			doc:  "---\ntype: Note\ntitle: T\nmeta: {name: Multi-View: Tabs,\n  y: 2}\n---\n\n# X\n",
+			want: []string{"name"},
+		},
+		{
+			name: "ownline (#213): multi-line flow with each entry on its own line",
+			doc:  "---\ntype: Note\ntitle: T\nmeta: {\n  x: 1,\n  name: Multi-View: Tabs\n}\n---\n\n# X\n",
+			want: []string{"name"},
+		},
+		{
+			name: "blockplain (#213 boundary): top-level block plain scalar containing a comma still names the outer key",
+			doc:  "---\ntype: Note\ntitle: T\nx: 1, name: Multi-View: Tabs\n---\n\n# X\n",
+			want: []string{"x"},
+		},
+		{
+			name: "blocknested (#213 boundary): nested block plain scalar containing a comma still names the outer key",
+			doc:  "---\ntype: Note\ntitle: T\nmeta:\n  x: 1, name: Multi-View: Tabs\n---\n\n# X\n",
+			want: []string{"x"},
+		},
 		{
 			name: "the body is never scanned",
 			doc:  "---\ntitle: A\n---\n\n# X\n\nProse: with a colon-space, and a line like key: value: value.\n",

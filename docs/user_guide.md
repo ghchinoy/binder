@@ -544,7 +544,7 @@ A plain-markdown file (no frontmatter fence) gets a fresh, valid block prepended
 | `--type-map` | — | Per-directory type overrides, e.g. `"docs=Guide,adr=Decision"`. Longest matching directory key wins. |
 | `--status-map` | — | Per-directory `status`, e.g. `"archive=deprecated,default=active"`; `default=` is the fallback. Set **only when `status` is absent**. |
 | `--stale-after-map` | — | Per-directory `stale_after` relative to the run clock (grammar `+Nd`/`+Nm`/`+Ny`, UTC `YYYY-MM-DD`); set **only when absent**. Malformed → exit 2. |
-| `--verified-by` | — (see [Writing a `verified` stamp](#writing-a-verified-stamp)) | Actor appended as a `verified` stamp, e.g. `"human:ghchinoy"`. A stamp is written **only** for this flag, or for a `verified_by` default you set in your **global** user config (neither a repo-local `.binder.yaml` nor `BINDER_VERIFIED_BY` authorizes one). Invalid actor → exit 2. Appends only (dedup by `by,at`). |
+| `--verified-by` | — (see [Writing a `verified` stamp](#writing-a-verified-stamp)) | Actor appended as a `verified` stamp, e.g. `"human:ghchinoy"`. A stamp is written **only** for this flag, or for a `verified_by` default you set in your **global** user config (neither a repo-local `.binder.yaml` nor `BINDER_VERIFIED_BY` authorizes one). Invalid actor → exit 2. Appends only (dedup by actor `by`). |
 | `--canonicalize-status` | `false` | **Opt-in**: rewrite a known `--status-map` alias to the OKF §5.4 vocabulary (`active`→`stable`, `wip`/`in-progress`→`draft`, `archived`/`legacy`→`deprecated`). The vocabulary **check** is always on; this flag controls only the rewrite. Each rewrite is reported in `status_notes`. See [Status vocabulary and `--canonicalize-status`](#status-vocabulary-and---canonicalize-status). |
 | `--overwrite-keys` | — | **Opt-in** comma-separated keys to **refresh in place even when present**, e.g. `"status,stale_after"`. Default is additive/never-clobber. Scoped strictly to the named keys; trust keys are **refused** (exit 2). See [Opt-in refresh](#opt-in-refresh---overwrite-keys). |
 | `--strict` | `false` | Gate (exit 1) on `enrich`'s advisory/finding set, which [Strict mode](#strict-mode) lists. Without it none of that set gates (exit 0). The read-boundary normalization advisory of bound 6 is excluded from the set: it is reported either way and never gates. |
@@ -571,8 +571,10 @@ the same renderer. See [Writing a `verified` stamp](#writing-a-verified-stamp).
 
 The `--json` report carries `src`, `dry_run`, the `num_files`/`num_enriched`/
 `num_unchanged`/`num_skipped` counts, a per-file `files` array (`path`, `status`
-∈ `enriched|unchanged|would-enrich|skipped`, sorted `added` keys, the sorted
-`overwritten` keys when [`--overwrite-keys`](#opt-in-refresh---overwrite-keys)
+∈ `enriched|unchanged|would-enrich|skipped`, sorted `added` keys — covering keys
+written by the additive pass whether newly injected or appended to as a `verified`
+co-signature — the sorted `overwritten` keys when
+[`--overwrite-keys`](#opt-in-refresh---overwrite-keys)
 refreshed a pre-existing key, and a `reason` for skips), a `warnings` array
 (preserve-or-advise notes), and the `verified` trust disclosure. Empty arrays
 serialize as `[]`, and two runs on the same input are byte-identical.

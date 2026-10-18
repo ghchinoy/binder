@@ -64,7 +64,13 @@ export function splitFrontmatter(text: string): SplitFile {
     return { data: {}, body: stripBOM(text), hasFrontmatter: false };
   }
   const raw = match[1] ?? "";
-  const parsed = raw.trim() === "" ? {} : YAML.parse(raw);
+  let parsed: unknown;
+  try {
+    parsed = raw.trim() === "" ? {} : YAML.parse(raw);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    throw new Error(`invalid frontmatter: ${msg}`);
+  }
   // A comment-only or empty block is legitimately empty frontmatter: the Go
   // codec yields an empty map here, not an error.
   if (parsed === null || parsed === undefined) {

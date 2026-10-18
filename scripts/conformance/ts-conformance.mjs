@@ -40,13 +40,16 @@ try {
   );
   process.exit(2);
 }
-const { splitFrontmatter, isHumanActor, isValidActor } = mod;
+const { splitFrontmatter, isHumanActor, isValidActor, deriveTier, isStale } = mod;
 
 const corpus = JSON.parse(readFileSync(corpusPath, "utf8"));
 const golden = JSON.parse(readFileSync(goldenPath, "utf8"));
 
 const goError = new Map(golden.frontmatter.map((c) => [c.name, c.error]));
 const goActor = new Map(golden.actors.map((a) => [a.actor, a]));
+const goTier = new Map((golden.tiers ?? []).map((t) => [t.name, t.tier]));
+const goStaleness = new Map((golden.staleness ?? []).map((s) => [s.name, s.isStale]));
+const wrappedPrefix = golden.canonical?.wrappedPrefix ?? "";
 
 let fails = 0;
 
@@ -59,6 +62,24 @@ for (const c of corpus.frontmatter) {
     tsErr = e.message;
   }
   const want = goError.get(c.name) ?? "";
+  if (c.prefixOnly) {
+    if (
+      wrappedPrefix !== "" &&
+      want.startsWith(wrappedPrefix) &&
+      tsErr.startsWith(wrappedPrefix) &&
+      tsErr.length > wrappedPrefix.length
+    ) {
+      console.log(`  ok   parse.ts frontmatter[${c.name}] matches Go prefix (${JSON.stringify(wrappedPrefix)})`);
+    } else {
+      console.log(
+        `  FAIL TypeScript parse.ts DIVERGED from Go prefix on frontmatter[${c.name}]:\n` +
+          `         Go prefix: ${JSON.stringify(wrappedPrefix)} (Go: ${JSON.stringify(want)})\n` +
+          `         TS:        ${JSON.stringify(tsErr)}`,
+      );
+      fails++;
+    }
+    continue;
+  }
   if (tsErr === want) {
     console.log(`  ok   parse.ts frontmatter[${c.name}] matches Go`);
   } else {
@@ -88,6 +109,38 @@ for (const actor of corpus.actors) {
       `  FAIL TypeScript trust.ts DIVERGED from Go on actor ${JSON.stringify(actor)}:\n` +
         `         Go: isHuman=${want.isHuman} isValid=${want.isValid}\n` +
         `         TS: isHuman=${gotHuman} isValid=${gotValid}`,
+    );
+    fails++;
+  }
+}
+
+// TrustTier derivations (#175): deriveTier vs okf.TrustTier.
+for (const tc of corpus.tiers ?? []) {
+  const want = goTier.get(tc.name);
+  const got = deriveTier(tc.verified);
+  if (got === want) {
+    console.log(`  ok   trust.ts deriveTier[${tc.name}] (${got}) matches Go`);
+  } else {
+    console.log(
+      `  FAIL TypeScript trust.ts DIVERGED from Go on deriveTier[${tc.name}]:\n` +
+        `         Go: ${JSON.stringify(want)}\n` +
+        `         TS: ${JSON.stringify(got)}`,
+    );
+    fails++;
+  }
+}
+
+// Staleness derivations (#175): isStale vs okfrules.IsStale.
+for (const sc of corpus.staleness ?? []) {
+  const want = goStaleness.get(sc.name);
+  const got = isStale(sc.staleAfter, sc.today);
+  if (got === want) {
+    console.log(`  ok   trust.ts isStale[${sc.name}] (${got}) matches Go`);
+  } else {
+    console.log(
+      `  FAIL TypeScript trust.ts DIVERGED from Go on isStale[${sc.name}]:\n` +
+        `         Go: ${JSON.stringify(want)}\n` +
+        `         TS: ${JSON.stringify(got)}`,
     );
     fails++;
   }

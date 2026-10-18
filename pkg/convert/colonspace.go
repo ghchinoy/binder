@@ -99,12 +99,27 @@ func colonSpaceKeys(norm []byte) []string {
 	// looking for its terminator, or 0 when not inside one. Every line until that
 	// terminator is scalar CONTENT, however much it may look like a mapping.
 	var openQuote byte
+	// flowBuf accumulates a flow mapping ("{...}") that opened on a key: value
+	// line and has not yet closed its outer brace (issue #213). While non-empty,
+	// subsequent lines belong to the flow mapping and are routed to
+	// flowMappingKeys once the closing '}' arrives, rather than falling through to
+	// the block-context kvLine scan (which would misattribute "x: 1, name: A: B"
+	// on a continuation line to key "x").
+	var flowBuf string
 
 	for _, raw := range strings.Split(fmText, "\n") {
 		line := strings.TrimRight(raw, " \t")
 		if openQuote != 0 {
 			if closesQuote(line, openQuote) {
 				openQuote = 0
+			}
+			continue
+		}
+		if flowBuf != "" {
+			flowBuf += " " + strings.TrimSpace(line)
+			if _, closed := flowMappingInner(flowBuf); closed {
+				keys = append(keys, flowMappingKeys(flowBuf)...)
+				flowBuf = ""
 			}
 			continue
 		}
@@ -139,15 +154,15 @@ func colonSpaceKeys(norm []byte) []string {
 			}
 			continue
 		case '{':
-			// A single-line flow MAPPING is scanned for the same defect one level in
-			// (a MULTI-line one needs no help here: its entries sit on their own lines
-			// and the ordinary line scan above already sees them):
-			// issue #93's fourth measured instance is exactly this shape
-			// (`meta: {name: Multi-View: Tabs, x: 1}`), so treating every flow
-			// collection as a false-positive class would miss a case the issue cites
-			// as real. The entries are confirmed by the same parser probe as plain
-			// scalars, so nothing is named on a guess.
-			keys = append(keys, flowMappingKeys(value)...)
+			// A flow MAPPING (single-line or multi-line, issue #93 / #213) is
+			// scanned one level in by splitting on top-level commas, so an entry
+			// like `meta: {x: 1, name: Multi-View: Tabs}` (whether on one line or
+			// wrapped across several) names `name` rather than `x`.
+			if _, closed := flowMappingInner(value); closed {
+				keys = append(keys, flowMappingKeys(value)...)
+			} else {
+				flowBuf = value
+			}
 			continue
 		case '[':
 			continue // flow sequence: no key to name, so nothing to advise

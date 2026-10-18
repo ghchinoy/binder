@@ -43,10 +43,9 @@ func newEnrichCmd(codec okf.Codec, cfg *config.Config) *cobra.Command {
 			"git-tracked tree: additive/never-clobber (it adds only ABSENT keys and\n" +
 			"never overwrites an existing value; the sole exception is an authorized\n" +
 			"`verified` stamp, which is APPENDED to any existing `verified` list, never\n" +
-			"replacing a prior attestation), idempotent unless a `verified` stamp advances\n" +
-			"(a rerun writes nothing when no verifier is set or the clock is pinned via\n" +
-			"SOURCE_DATE_EPOCH; with a live verifier under a moving clock a rerun appends a\n" +
-			"fresh stamp, since stamps dedup on (by, at)), and atomic (temp file + rename, so\n" +
+			"replacing a prior attestation), idempotent (a rerun writes nothing —\n" +
+			"`verified` stamps dedup by actor `by`, so a repeat run with the same\n" +
+			"verifier never appends duplicate timestamps), and atomic (temp file + rename, so\n" +
 			"an interrupted run leaves the source as it was rather than half-written).\n" +
 			"Files needing no key are not written at all. Files whose frontmatter will not\n" +
 			"parse, and reserved files (index.md/log.md), are skipped and never mutated.\n\n" +

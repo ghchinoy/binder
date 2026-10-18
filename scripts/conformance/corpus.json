@@ -14,6 +14,11 @@
       "input": "---\njust a bare scalar, not a mapping\n---\n"
     },
     {
+      "name": "syntax-invalid",
+      "input": "---\ntitle: Multi-View: Tabs and Windows\n---\n",
+      "prefixOnly": true
+    },
+    {
       "name": "valid",
       "input": "---\nname: okf-fixture\ndescription: well-formed frontmatter a real YAML parser accepts\nlicense: Apache-2.0\n---\n\n# Body\n"
     }
@@ -37,5 +42,39 @@
     "binder 1/0.1.0",
     "",
     "   "
+  ],
+  "tiers": [
+    {
+      "name": "empty",
+      "verified": []
+    },
+    {
+      "name": "machine-only",
+      "verified": [
+        { "by": "binder/0.1.0", "at": "2026-01-01T00:00:00Z" },
+        { "by": "process:nightly", "at": "2026-01-01T00:00:00Z" }
+      ]
+    },
+    {
+      "name": "human-single",
+      "verified": [
+        { "by": "human:alice", "at": "2026-01-01T00:00:00Z" }
+      ]
+    },
+    {
+      "name": "human-mixed",
+      "verified": [
+        { "by": "binder/0.1.0", "at": "2026-01-01T00:00:00Z" },
+        { "by": "human:bob", "at": "2026-01-02T00:00:00Z" }
+      ]
+    }
+  ],
+  "staleness": [
+    { "name": "absent", "staleAfter": "", "today": "2026-09-23" },
+    { "name": "future-date", "staleAfter": "2026-09-24", "today": "2026-09-23" },
+    { "name": "same-date", "staleAfter": "2026-09-23", "today": "2026-09-23" },
+    { "name": "past-date", "staleAfter": "2026-09-22", "today": "2026-09-23" },
+    { "name": "same-day-datetime", "staleAfter": "2026-09-23T00:00:00Z", "today": "2026-09-23" },
+    { "name": "future-day-datetime", "staleAfter": "2026-09-24T00:00:00Z", "today": "2026-09-23" }
   ]
 }

@@ -1,9 +1,12 @@
-# Keeps the commit SHAs that .github/workflows/ pins its actions to from going
-# stale. A pinned SHA is immutable, so it never picks up upstream patches —
-# including security patches — unless something bumps it. This is that something.
+# Keeps the commit SHAs that .github/workflows/ pins its actions to and the Go
+# module dependencies in go.mod from going stale. A pinned SHA or go.sum hash is
+# immutable, so it never picks up upstream patches — including security patches —
+# unless something bumps it. This is that something.
 #
-# Only github-actions is covered here. gomod and npm are a deliberate omission,
-# not an oversight; whether to cover them is tracked in #194.
+# github-actions and gomod are covered here (#194). npm is deliberately omitted:
+# Dependabot's npm-workspaces lockfile updater drops workspace devDependencies
+# (see #217 / #229), so npm updates are managed manually with workspace test
+# verification.
 version: 2
 updates:
   - package-ecosystem: github-actions
@@ -33,6 +36,20 @@ updates:
     # arrive ungrouped.
     groups:
       github-actions:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: gomod
+    directory: "/"
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: build
+    groups:
+      go-dependencies:
         patterns:
           - "*"
         update-types:

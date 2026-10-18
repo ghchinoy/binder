@@ -14,6 +14,15 @@ import (
 
 // SchemaVersion identifies the JSON report contract. Bump ONLY on a breaking
 // change to a report payload's shape or field names.
+//
+// Emptiness convention across binder.report/v1 (issue #61):
+//   - Core report slices (findings, warnings, status_notes, concept/file tables)
+//     are always initialized to [] at construction and never carry omitempty, so
+//     consumers never encounter JSON null and can rely on a stable top-level shape.
+//   - Optional per-item or opt-in disclosure fields (such as FileResult.Added,
+//     FileResult.Overwritten, FileResult.Reason, FileResult.Normalized, and
+//     Report.Normalizations) carry omitempty so default runs omit inactive opt-in
+//     channels and remain byte-compatible with v0.2+ consumers.
 const SchemaVersion = "binder.report/v1"
 
 // Exit codes — the stable contract (design §5). Documented in README and

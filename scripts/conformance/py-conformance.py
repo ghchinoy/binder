@@ -37,12 +37,33 @@ def main(argv):
         golden = json.load(fh)
 
     go_error = {c["name"]: c["error"] for c in golden["frontmatter"]}
+    wrapped_prefix = golden.get("canonical", {}).get("wrappedPrefix", "")
 
     fails = 0
     for case in corpus["frontmatter"]:
         result = frontmatter_parse.parse_frontmatter(case["input"])
         py_err = result.get("error", "")
         want = go_error.get(case["name"], "")
+        if case.get("prefixOnly"):
+            if (
+                wrapped_prefix
+                and want.startswith(wrapped_prefix)
+                and py_err.startswith(wrapped_prefix)
+                and len(py_err) > len(wrapped_prefix)
+            ):
+                print(
+                    f"  ok   frontmatter_parse.py frontmatter[{case['name']}] "
+                    f"matches Go prefix ({json.dumps(wrapped_prefix)})"
+                )
+            else:
+                print(
+                    f"  FAIL Python (validate-plugin.sh copy) DIVERGED from Go prefix on "
+                    f"frontmatter[{case['name']}]:\n"
+                    f"         Go prefix: {json.dumps(wrapped_prefix)} (Go: {json.dumps(want)})\n"
+                    f"         Python:    {json.dumps(py_err)}"
+                )
+                fails += 1
+            continue
         if py_err == want:
             print(f"  ok   frontmatter_parse.py frontmatter[{case['name']}] matches Go")
         else:

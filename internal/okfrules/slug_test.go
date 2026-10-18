@@ -110,12 +110,14 @@ func TestSlugify(t *testing.T) {
 		{"trailing punctuation dropped", "Bang !!!", "bang-"},
 		{"surrounding spaces map to hyphens", " padded ", "-padded-"},
 		{"html tag stripped", "<code>API</code> Guide", "api-guide"},
+		{"unicode latin diacritic kept (#85)", "Café", "café"},
+		{"unicode CJK kept (#85)", "配置", "配置"},
 		{"empty", "", ""},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := slugify(tc.in); got != tc.want {
-				t.Errorf("slugify(%q) = %q, want %q", tc.in, got, tc.want)
+			if got := Slugify(tc.in); got != tc.want {
+				t.Errorf("Slugify(%q) = %q, want %q", tc.in, got, tc.want)
 			}
 		})
 	}

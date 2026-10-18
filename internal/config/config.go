@@ -147,6 +147,11 @@ func (c *Config) Load() error {
 // order, or "" if none is found:
 //  1. ./.binder.yaml
 //  2. $XDG_CONFIG_HOME/binder/config.yaml (fallback $HOME/.config/binder/config.yaml)
+//
+// By design (issue #63), a repo-local ./.binder.yaml replaces the global user
+// config file entirely rather than merging key-by-key, keeping repository
+// configuration self-contained and reproducible across machines; `binder config`
+// surfaces the active file path via ConfigFile.
 func findConfigFile() string {
 	candidates := []string{filepath.Join(".", ".binder.yaml")}
 	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {

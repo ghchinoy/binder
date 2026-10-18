@@ -98,11 +98,12 @@ type Options struct {
 type FileResult struct {
 	Path   string `json:"path"`   // source-relative
 	Status string `json:"status"` // enriched | unchanged | would-enrich | skipped
-	// Added lists keys injected because they were ABSENT (additive/never-clobber),
-	// sorted. Overwritten lists keys REFRESHED in place because they were named in
-	// --overwrite-keys and their value changed (issue #22), sorted. Overwritten is
-	// omitted (nil) when --overwrite-keys is not used, so default output is
-	// byte-identical.
+	// Added lists keys written by the additive pass (whether newly injected
+	// because they were absent or appended to as an authorized `verified`
+	// co-signature, issue #120), sorted. Overwritten lists keys REFRESHED in
+	// place because they were named in --overwrite-keys and their value changed
+	// (issue #22), sorted. Both carry omitempty (issue #61) so unchanged/skipped
+	// entries and runs without --overwrite-keys stay compact and byte-identical.
 	Added       []string `json:"added,omitempty"`
 	Overwritten []string `json:"overwritten,omitempty"`
 	Reason      string   `json:"reason,omitempty"` // for skipped, e.g. "unparseable frontmatter: <err>"

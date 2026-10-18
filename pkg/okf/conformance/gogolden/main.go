@@ -21,16 +21,17 @@
 // derivation — so it must only ever OBSERVE the Go functions, never restate
 // their literals.
 //
-// Scope / residual: this golden covers the two STRUCTURAL frontmatter error
-// strings and the two actor predicates named in #171. The parser-dependent
-// wrapped-YAML error path (native.go's `invalid frontmatter: %w`) and
-// okfrules.TrustTier / okfrules.IsStale are only transitively covered — tracked in #175.
+// Scope: this golden covers the two STRUCTURAL frontmatter error strings, the
+// wrapped-YAML error prefix (`invalid frontmatter: `), the two actor predicates
+// (`IsHumanActor`, `IsValidActor`), `okf.TrustTier`, and `okfrules.IsStale`
+// (issues #171 and #175).
 package main
 
 import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/ghchinoy/binder/internal/okfrules"
 	"github.com/ghchinoy/binder/pkg/okf"
@@ -39,42 +40,59 @@ import (
 
 type corpus struct {
 	Frontmatter []struct {
-		Name  string `json:"name"`
-		Input string `json:"input"`
+		Name       string `json:"name"`
+		Input      string `json:"input"`
+		PrefixOnly bool   `json:"prefixOnly,omitempty"`
 	} `json:"frontmatter"`
 	Actors []string `json:"actors"`
+	Tiers  []struct {
+		Name     string `json:"name"`
+		Verified []struct {
+			By string `json:"by"`
+			At string `json:"at,omitempty"`
+		} `json:"verified"`
+	} `json:"tiers"`
+	Staleness []struct {
+		Name       string `json:"name"`
+		StaleAfter string `json:"staleAfter"`
+		Today      string `json:"today"`
+	} `json:"staleness"`
 }
 
 type golden struct {
-	// Canonical is a Go-OBSERVED record of the two structural frontmatter error
-	// strings, produced by running the real codec over two minimal inputs whose
-	// ONLY job is to trigger each structural path. These are inputs, not error
-	// literals: the strings below are whatever Go actually emits, never restated
-	// here. The conformance suite uses them to assert LOCALLY that the shared
-	// corpus still exercises BOTH structural error paths — so the guarantee that
-	// each string is bound cannot silently become vacuous if the corpus changes
-	// (issue #171 round 3). If a future Go change stops producing an error for
-	// one of these inputs, the corresponding field goes empty and the coverage
-	// check fails closed.
 	Canonical   canonical           `json:"canonical"`
 	Frontmatter []frontmatterResult `json:"frontmatter"`
 	Actors      []actorResult       `json:"actors"`
+	Tiers       []tierResult        `json:"tiers"`
+	Staleness   []stalenessResult   `json:"staleness"`
 }
 
 type canonical struct {
 	UnterminatedError string `json:"unterminatedError"`
 	NonmappingError   string `json:"nonmappingError"`
+	WrappedPrefix     string `json:"wrappedPrefix"`
 }
 
 type frontmatterResult struct {
-	Name  string `json:"name"`
-	Error string `json:"error"`
+	Name       string `json:"name"`
+	Error      string `json:"error"`
+	PrefixOnly bool   `json:"prefixOnly,omitempty"`
 }
 
 type actorResult struct {
 	Actor   string `json:"actor"`
 	IsHuman bool   `json:"isHuman"`
 	IsValid bool   `json:"isValid"`
+}
+
+type tierResult struct {
+	Name string `json:"name"`
+	Tier string `json:"tier"`
+}
+
+type stalenessResult struct {
+	Name    string `json:"name"`
+	IsStale bool   `json:"isStale"`
 }
 
 // observeErr runs the real codec over input and returns Go's actual error text
@@ -119,6 +137,11 @@ func main() {
 	// literal is restated.
 	g.Canonical.UnterminatedError = observeErr(codec, "---\nname: unterminated fence, never closed\n")
 	g.Canonical.NonmappingError = observeErr(codec, "---\n- top-level node is a sequence, not a mapping\n---\n")
+	if wrapped := observeErr(codec, "---\ntitle: unquoted: colon\n---\n"); wrapped != "" {
+		if i := strings.Index(wrapped, ": "); i >= 0 {
+			g.Canonical.WrappedPrefix = wrapped[:i+2]
+		}
+	}
 
 	for _, fc := range c.Frontmatter {
 		// Observe what the real codec does; record its actual error text.
@@ -126,7 +149,11 @@ func main() {
 		if _, err := codec.ParseConcept("conformance.md", []byte(fc.Input)); err != nil {
 			msg = err.Error()
 		}
-		g.Frontmatter = append(g.Frontmatter, frontmatterResult{Name: fc.Name, Error: msg})
+		g.Frontmatter = append(g.Frontmatter, frontmatterResult{
+			Name:       fc.Name,
+			Error:      msg,
+			PrefixOnly: fc.PrefixOnly,
+		})
 	}
 
 	for _, a := range c.Actors {
@@ -135,6 +162,38 @@ func main() {
 			Actor:   a,
 			IsHuman: okfrules.IsHumanActor(a),
 			IsValid: okf.IsValidActor(a),
+		})
+	}
+
+	for _, tc := range c.Tiers {
+		fm := &okf.OrderedMap{}
+		if len(tc.Verified) > 0 {
+			list := make([]any, 0, len(tc.Verified))
+			for _, v := range tc.Verified {
+				m := map[string]any{"by": v.By}
+				if v.At != "" {
+					m["at"] = v.At
+				}
+				list = append(list, m)
+			}
+			fm.Set("verified", list)
+		}
+		con := &okf.Concept{Frontmatter: fm, Trust: okfrules.ProjectTrust(fm, "")}
+		g.Tiers = append(g.Tiers, tierResult{
+			Name: tc.Name,
+			Tier: string(okfrules.TrustTier(con)),
+		})
+	}
+
+	for _, sc := range c.Staleness {
+		fm := &okf.OrderedMap{}
+		if sc.StaleAfter != "" {
+			fm.Set("stale_after", sc.StaleAfter)
+		}
+		con := &okf.Concept{Frontmatter: fm, Trust: okfrules.ProjectTrust(fm, "")}
+		g.Staleness = append(g.Staleness, stalenessResult{
+			Name:    sc.Name,
+			IsStale: okfrules.IsStale(con, sc.Today),
 		})
 	}
 

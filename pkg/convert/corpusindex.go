@@ -3,6 +3,8 @@ package convert
 import (
 	"path"
 	"strings"
+
+	"github.com/ghchinoy/binder/internal/okfrules"
 )
 
 // corpusIndex resolves a link target (a wikilink target or a frontmatter-ref
@@ -136,23 +138,8 @@ func normRelKey(p string) string {
 	return p
 }
 
-// slugify lowercases text and turns runs of non-alphanumeric characters into
-// single hyphens, trimming leading/trailing hyphens. It is the title-slug form
-// used for wikilink title resolution.
+// slugify delegates to okfrules.Slugify (issue #86) so wikilink title resolution
+// and heading-anchor resolution share one pinned GitHub-style slug convention.
 func slugify(s string) string {
-	var b strings.Builder
-	lastHyphen := false
-	for _, r := range strings.ToLower(strings.TrimSpace(s)) {
-		switch {
-		case (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9'):
-			b.WriteRune(r)
-			lastHyphen = false
-		default:
-			if !lastHyphen && b.Len() > 0 {
-				b.WriteByte('-')
-				lastHyphen = true
-			}
-		}
-	}
-	return strings.Trim(b.String(), "-")
+	return okfrules.Slugify(strings.TrimSpace(s))
 }

@@ -100,6 +100,27 @@ def main() -> int:
                 f"actor(s) of the missing polarity."
             )
 
+    # --- Wrapped-YAML prefix + TrustTier + IsStale coverage (#175) ---------
+    wrapped_prefix = canonical.get("wrappedPrefix", "")
+    prefix_cases = [c for c in frontmatter if c.get("prefixOnly") and c.get("error", "").startswith(wrapped_prefix)]
+    if wrapped_prefix and prefix_cases:
+        oks.append(f"wrapped-YAML error prefix {wrapped_prefix!r} exercised")
+    else:
+        fails.append("no corpus case exercised the wrapped-YAML error prefix (#175).")
+
+    tiers_seen = {t.get("tier", "") for t in golden.get("tiers", [])}
+    want_tiers = {"unverified", "machine-confirmed", "human-reviewed"}
+    if want_tiers.issubset(tiers_seen):
+        oks.append("deriveTier exercised across all three OKF trust tiers")
+    else:
+        fails.append(f"deriveTier missing tier(s): {sorted(want_tiers - tiers_seen)} (#175).")
+
+    stale_vals = [bool(s.get("isStale")) for s in golden.get("staleness", [])]
+    if True in stale_vals and False in stale_vals:
+        oks.append("isStale exercised with both true and false")
+    else:
+        fails.append("isStale was not exercised with both true and false (#175).")
+
     for ok in oks:
         print(f"  ok   coverage: {ok}")
     for f in fails:

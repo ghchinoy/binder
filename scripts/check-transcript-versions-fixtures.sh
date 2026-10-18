@@ -48,7 +48,7 @@ FAIL=0
 # "ran at least one" floor is weaker — it would not catch losing three of seven —
 # exactly the inventory-over-floor reasoning from round 2. Update this when you
 # add or remove a case.
-EXPECTED_CASES=19
+EXPECTED_CASES=20
 
 # assert_exit <label> <docroot> <expected-exit> [want] [checker]
 # [want] is a substring of the output, or several joined by " && " when a case
@@ -491,6 +491,24 @@ assert_exit "allowlist entry that exempts nothing -> exit 1" "$STALE_ALLOW_TREE"
   'STALE-ALLOWLIST && ("README.md", "0.2.1") exempted nothing && 1 stale allowlist entry(ies)' \
   "$STALE_CHECKER"
 rm -rf "$STALE_ALLOW_TREE" "$(dirname "$STALE_CHECKER")"
+
+# [19] THE SHIPPED WRAPPER ENTRY POINT (#206). All cases above invoke
+#      check-transcript-versions.py directly against a throwaway tree; this case
+#      executes scripts/check-transcript-versions.sh itself and asserts exit 0
+#      and that all three scan roots (plugins, docs, README.md) are scanned,
+#      locking in the wrapper's base-path argument (`.`).
+WRAP_OUT="$("$SCRIPT_DIR/check-transcript-versions.sh" 2>&1)"
+WRAP_RC=$?
+if [ "$WRAP_RC" -eq 0 ] \
+   && echo "$WRAP_OUT" | grep -qF "3 scan root(s) (plugins, docs, README.md)" \
+   && echo "$WRAP_OUT" | grep -qF "0 drift finding(s), 0 coverage failure(s)"; then
+  echo "  PASS  wrapper entry point scans plugins, docs, and README.md -> exit 0 (exit $WRAP_RC)"
+  PASS=$((PASS + 1))
+else
+  echo "  FAIL  wrapper entry point: expected exit 0 + all 3 scan roots, got exit $WRAP_RC"
+  echo "$WRAP_OUT" | sed 's/^/        | /'
+  FAIL=$((FAIL + 1))
+fi
 
 # --- THE SWEEP (#185 round 4, R5) ------------------------------------------
 # Two independent misses of the same kind in one file means the enumeration was
