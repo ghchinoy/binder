@@ -54,8 +54,9 @@ type ProjectReport struct {Artifacts []ProjectArtifact `json:"artifacts"`; Count
 type ProjectRequest struct {Bundle string; IDKey string; Now time.Time; Out string; Target string; Today string; Version string}
 type ProjectResult struct {Bundle *okf.Bundle; Report ProjectReport}
   func (ProjectResult) EncodeJSON(w io.Writer) error
-type ReviewRequest struct {Bundle string; Entrypoints []string; Now time.Time; Today string; Version string}
+type ReviewRequest struct {Bundle string; Entrypoints []string; Now time.Time; RequireTier string; Today string; Version string}
 type ReviewResult struct {Report *review.Report}
+  func (ReviewResult) BelowRequiredTier() []string
   func (ReviewResult) EncodeJSON(w io.Writer) error
   func (ReviewResult) Gate(strict bool) error
   func (ReviewResult) GatingFindings() int

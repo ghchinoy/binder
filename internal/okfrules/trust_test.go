@@ -176,7 +176,10 @@ func TestValidateTrustShapeAdvisories(t *testing.T) {
 	fm := fmFrom(
 		"type", "Metric",
 		"generated", map[string]any{"by": "not-an-actor", "at": "whenever"},
-		"verified", []any{map[string]any{"by": "alice", "at": "2026-01-01T00:00:00Z"}},
+		"verified", []any{
+			map[string]any{"by": "alice", "at": "2026-01-01T00:00:00Z"},
+			map[string]any{"by": "human:bob"}, // missing at (issue #243)
+		},
 		"status", "wip",
 		"stale_after", "31-12-2026",
 		"sources", []any{map[string]any{"id": "s1", "author": "somebody", "last_modified": "nope"}}, // missing resource
@@ -185,7 +188,8 @@ func TestValidateTrustShapeAdvisories(t *testing.T) {
 	c := &okf.Concept{ID: "c", Type: "Metric", Frontmatter: fm, Trust: ProjectTrust(fm, "Metric")}
 	findings := ValidateTrust(c, okf.DefaultSpecVersion)
 	wantSubstrings := []string{
-		"generated.by", "generated.at", "verified[0].by", "status", "stale_after",
+		"generated.by", "generated.at", "verified[0].by", "verified[1] is missing 'at'",
+		"status", "stale_after",
 		"sources[0] is missing required 'resource'", "sources[0].author", "sources[0].last_modified",
 		"usage_window.to",
 	}
@@ -200,6 +204,41 @@ func TestValidateTrustShapeAdvisories(t *testing.T) {
 		if !contains(joined, want) {
 			t.Errorf("missing advisory containing %q; got:\n%s", want, joined)
 		}
+	}
+}
+
+func TestParseRequiredTierAndBelowTier(t *testing.T) {
+	for _, tc := range []struct {
+		in      string
+		want    Tier
+		wantErr bool
+	}{
+		{"", "", false},
+		{"machine-confirmed", TierMachineConfirmed, false},
+		{"human-reviewed", TierHumanReviewed, false},
+		{"unverified", "", true},
+		{"bogus", "", true},
+	} {
+		got, err := ParseRequiredTier(tc.in)
+		if (err != nil) != tc.wantErr {
+			t.Errorf("ParseRequiredTier(%q) err = %v, wantErr %v", tc.in, err, tc.wantErr)
+		}
+		if got != tc.want {
+			t.Errorf("ParseRequiredTier(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+
+	if !BelowTier(TierUnverified, TierMachineConfirmed) {
+		t.Error("unverified must be below machine-confirmed")
+	}
+	if !BelowTier(TierMachineConfirmed, TierHumanReviewed) {
+		t.Error("machine-confirmed must be below human-reviewed")
+	}
+	if BelowTier(TierHumanReviewed, TierHumanReviewed) {
+		t.Error("human-reviewed must not be below human-reviewed")
+	}
+	if BelowTier(TierUnverified, "") {
+		t.Error("nothing is below an empty required tier")
 	}
 }
 

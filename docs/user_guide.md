@@ -822,6 +822,7 @@ staleness are derived on demand, never stored.
 | `--json` | `false` | Emit the review report as deterministic JSON (schema `binder.report/v1`) instead of prose. See [JSON output](#json-output---json-and-the-exit-code-contract). |
 | `--strict` | `false` | Gate (exit 1) when any review finding is present (orphans, stale, unresolved, or unparsed-frontmatter recoveries). Entrypoints are advisory and never gate. Without it `review` never gates (exit 0). See [Strict mode](#strict-mode). |
 | `--entrypoint` | — | Concept id or path (repeatable) to treat as an **entrypoint**, not an orphan, in addition to the general rule and the recognized root. |
+| `--require-tier` | — | Minimum trust tier required for every concept (`machine-confirmed` or `human-reviewed`; [#243](https://github.com/ghchinoy/binder/issues/243)). Gates (exit 1) when any concept falls below the requested tier; invalid tier names exit 2. |
 
 ```console
 $ SOURCE_DATE_EPOCH=1700000000 binder convert testdata/corpus-lint-entrypoints -o /tmp/ep >/dev/null

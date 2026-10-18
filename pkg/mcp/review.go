@@ -16,6 +16,7 @@ type reviewInput struct {
 	Today       string   `json:"today,omitempty" jsonschema:"date (YYYY-MM-DD) used for staleness; defaults to now (honors SOURCE_DATE_EPOCH)"`
 	Strict      bool     `json:"strict,omitempty" jsonschema:"gate semantics only; does not change the payload (parity with the CLI flag)"`
 	Entrypoints []string `json:"entrypoints,omitempty" jsonschema:"concept ids or paths to treat as entrypoints, not orphans (parity with --entrypoint); root README.md is recognized automatically"`
+	RequireTier string   `json:"require_tier,omitempty" jsonschema:"minimum trust tier required (\"machine-confirmed\" or \"human-reviewed\"; parity with --require-tier)"`
 }
 
 // registerReview wires the review tool: it drives the shared binder.Service.Review —
@@ -37,6 +38,7 @@ func registerReview(s *mcp.Server, d *deps) {
 		res, err := d.svc.Review(ctx, binder.ReviewRequest{
 			Bundle:      in.Bundle,
 			Entrypoints: in.Entrypoints,
+			RequireTier: in.RequireTier,
 			Now:         now,
 			Today:       in.Today,
 			Version:     d.version,

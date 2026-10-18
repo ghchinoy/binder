@@ -446,7 +446,7 @@ excepted — `dot` on the CLI, `json` here; the MCP-only `list_graphs` and
 |---|---|---|
 | `convert` | `src` (req), `out` (req unless `dry_run`), `dry_run`, `default_type`, `type_map`, `fm_ref_keys`, `source_keys`, `map_citations`, `map_draft`, `status_map`, `canonicalize_status`, `stale_after_map`, `verified_by`, `workspace_root`, `external_root` (repeatable), `group_by_type`, `include_backlinks`, `include_graph` | `convert` report envelope (`dry_run:true` → the ingestion-analysis preview, writes nothing) |
 | `validate` | `bundle` (req), `strict` | `validate` report envelope |
-| `review` | `bundle` (req), `entrypoints` (array of concept id or path — the parity param for the repeatable `--entrypoint`), `today`, `strict` | `review` report envelope |
+| `review` | `bundle` (req), `entrypoints` (array of concept id or path — the parity param for the repeatable `--entrypoint`), `require_tier` (`machine-confirmed`\|`human-reviewed`), `today`, `strict` | `review` report envelope |
 | `lint` | `src` (req), `entrypoints` (array of concept id or path — the parity param for the repeatable `--entrypoint`), `today`, `strict` | `lint` report envelope |
 | `graph` | `bundle` (req), `format` (`dot`\|`json`\|`graphml`\|`html`, default `json`), `today` | raw export bytes — `format:json` is the raw `{nodes,edges}`, **not** the report envelope |
 | `list_graphs` | `bundle` (req), `today`, `id_key` | `list_graphs` report envelope — the LPG **schema descriptor** (graph name, node labels = concept types, the single `LINKS` edge label, each with counts + property declarations). Read-only introspection derived from the same projection as `graph` |

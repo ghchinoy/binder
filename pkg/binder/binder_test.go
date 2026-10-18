@@ -162,3 +162,41 @@ func TestLintConcurrent(t *testing.T) {
 		t.Errorf("concurrent Lint error: %v", err)
 	}
 }
+
+// TestReviewRequireTier proves --require-tier gates when any concept in the
+// bundle falls below the requested tier (issue #243), and returns a usage error
+// on an invalid tier name.
+func TestReviewRequireTier(t *testing.T) {
+	svc := binder.New(native.New())
+	bundleDir := "../../testdata/okf-bundles/acme_retail"
+
+	// acme_retail has human-reviewed concepts; requiring human-reviewed or
+	// machine-confirmed succeeds when all concepts meet the floor, or gates if any
+	// concept is below it.
+	res, err := svc.Review(t.Context(), binder.ReviewRequest{
+		Bundle:      bundleDir,
+		RequireTier: "human-reviewed",
+		Now:         fixedNow,
+		Today:       testToday,
+		Version:     "test",
+	})
+	if err != nil {
+		t.Fatalf("svc.Review(require-tier=human-reviewed) returned unexpected error: %v", err)
+	}
+	below := res.BelowRequiredTier()
+	gateErr := res.Gate(false)
+	if (len(below) > 0) != (gateErr != nil) {
+		t.Errorf("BelowRequiredTier() = %v, Gate(false) = %v; want gate iff len(below) > 0", below, gateErr)
+	}
+
+	// Bad tier name must return a usage-class error.
+	if _, err := svc.Review(t.Context(), binder.ReviewRequest{
+		Bundle:      bundleDir,
+		RequireTier: "bogus-tier",
+		Now:         fixedNow,
+		Today:       testToday,
+		Version:     "test",
+	}); err == nil {
+		t.Error("svc.Review(require-tier=bogus-tier) = nil, want usage error")
+	}
+}

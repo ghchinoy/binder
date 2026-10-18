@@ -6,6 +6,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/ghchinoy/binder/internal/okfrules"
 	"github.com/ghchinoy/binder/pkg/bundle"
 	"github.com/ghchinoy/binder/pkg/clijson"
 	"github.com/ghchinoy/binder/pkg/review"
@@ -20,6 +21,10 @@ type ReviewRequest struct {
 	Bundle string
 	// Entrypoints are concept ids/paths to treat as entrypoints, not orphans.
 	Entrypoints []string
+	// RequireTier is the optional minimum trust tier ("machine-confirmed" or
+	// "human-reviewed"; issue #243). When set, concepts below that tier are
+	// counted as gating findings under --strict.
+	RequireTier string
 	// Now is the RESOLVED determinism instant (see ResolveNow); when Today is empty
 	// the service defaults staleness to Now's date.
 	Now time.Time
@@ -37,18 +42,26 @@ type ReviewResult struct {
 	// Report is the complete capability report.
 	Report *review.Report
 
+	// requireTier is the validated minimum tier floor (or "") for GatingFindings.
+	requireTier okfrules.Tier
 	// version is captured so the Result renders its own JSON envelope with the same
 	// provenance the run used; adapters do not hand-build the envelope.
 	version string
 }
 
-// Review loads the bundle and runs review.Review, owning the empty-Today default.
+// Review loads the bundle and runs review.Review, owning the empty-Today default
+// and the --require-tier validation.
 //
 // ctx is accepted for a uniform service signature and future cancellation; the
 // underlying filesystem capability takes no context yet (design Non-Goal / Residual
 // Risk 6).
 func (s *Service) Review(ctx context.Context, req ReviewRequest) (ReviewResult, error) {
 	_ = ctx
+
+	reqTier, err := okfrules.ParseRequiredTier(req.RequireTier)
+	if err != nil {
+		return ReviewResult{}, clijson.Usage(err)
+	}
 
 	b, err := bundle.Load(req.Bundle, s.codec)
 	if err != nil {
@@ -61,21 +74,45 @@ func (s *Service) Review(ctx context.Context, req ReviewRequest) (ReviewResult, 
 	}
 
 	rep := review.Review(b, today, req.Entrypoints)
-	return ReviewResult{Report: rep, version: req.Version}, nil
+	return ReviewResult{Report: rep, requireTier: reqTier, version: req.Version}, nil
+}
+
+// BelowRequiredTier returns the sorted concept IDs in r.Report whose derived
+// trust tier is strictly below the request's RequireTier (or nil when
+// RequireTier was not set; issue #243).
+func (r ReviewResult) BelowRequiredTier() []string {
+	if r.requireTier == "" || r.Report == nil {
+		return nil
+	}
+	var out []string
+	for _, c := range r.Report.Concepts {
+		if okfrules.BelowTier(c.Tier, r.requireTier) {
+			out = append(out, c.ID)
+		}
+	}
+	return out
 }
 
 // GatingFindings is the ONE definition of how many review findings gate — the
 // arithmetic that used to sit inline in cmd/review.go: orphans, stale, unresolved
-// edges, and unparsed-frontmatter recoveries.
+// edges, unparsed-frontmatter recoveries, plus concepts below RequireTier when
+// --require-tier is set (#243).
 func (r ReviewResult) GatingFindings() int {
 	rep := r.Report
-	return len(rep.Orphans) + len(rep.Stale) + len(rep.Unresolved) + len(rep.UnparsedFrontmatter)
+	return len(rep.Orphans) + len(rep.Stale) + len(rep.Unresolved) +
+		len(rep.UnparsedFrontmatter) + len(r.BelowRequiredTier())
 }
 
 // Gate returns a typed *clijson.FindingsError (exit 1) when the run should gate, or
-// nil otherwise. Review has no hard non-conformance, so bare review never gates and
-// --strict gates only when a gating finding is present.
+// nil otherwise. Review has no hard non-conformance, so bare review never gates when
+// --require-tier is unset; --strict gates when any gating finding is present, and
+// --require-tier gates when any concept falls below the requested tier (#243).
 func (r ReviewResult) Gate(strict bool) error {
+	below := len(r.BelowRequiredTier())
+	if !strict && below > 0 {
+		return clijson.Gate(true, false, true,
+			fmt.Sprintf("review found %d concept(s) below required tier %q (--require-tier)", below, r.requireTier))
+	}
 	n := r.GatingFindings()
 	return clijson.Gate(strict, false, n > 0,
 		fmt.Sprintf("review found %d gating finding(s) (--strict)", n))
