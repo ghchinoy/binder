@@ -828,7 +828,7 @@ echo "exit=$?"
 ```
 
 ```text
-binder: invalid actor "agent:bot"; valid forms: human:<id>, process:<id>, team:<id>, or <producer>/<version> (e.g. binder/0.7.0)
+binder: invalid actor "agent:bot"; valid forms: human:<id>, process:<id>, team:<id>, or <producer>/<version> (e.g. binder/0.8.0)
 exit=2
 ```
 
