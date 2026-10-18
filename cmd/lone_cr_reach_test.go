@@ -126,18 +126,12 @@ func TestReach_FlagCoSignDifferentIdentity_DestroysOnLoneCR(t *testing.T) {
 	assertKeysSurvive(t, got)
 }
 
-// TestReach_GlobalConfigSameIdentity_DestroysOnLoneCR — a global (home) config
-// verified_by writes without a flag (the user's own default), so it too reaches the
-// first-key rewrite and destroys.
-//
-// CLOCK: pinned to 2023-11-14T22:13:20Z, which is DELIBERATELY DIFFERENT from the
-// fixture's existing stamp at 2024-01-01T00:00:00Z. A pin EQUAL to the existing at
-// would dedup, write nothing, leave every key intact, and pass this test while
-// proving nothing — the exact trap the brief warns about. The anti-vacuity check
-// below (the fresh at must be present) fails loudly if a dedup ever sneaks in.
-//
-// FAILS TODAY: trailing keys are gone after the same-identity stamp is written.
-func TestReach_GlobalConfigSameIdentity_DestroysOnLoneCR(t *testing.T) {
+// TestReach_GlobalConfigFreshStamp_SafeWriteOnLoneCR — a global (home) config
+// verified_by writes without a flag (the user's own default) when the concept has
+// not yet been attested, so it reaches the lone-CR write path and preserves all
+// pre-existing keys (#123). (When the same identity already attested the file,
+// issue #134 deduplicates by actor so a repeat run is idempotent.)
+func TestReach_GlobalConfigFreshStamp_SafeWriteOnLoneCR(t *testing.T) {
 	t.Setenv("SOURCE_DATE_EPOCH", pinnedEpoch)
 	dir := isolateConfig(t)
 	gdir := filepath.Join(dir, "xdg", "binder")
@@ -149,7 +143,16 @@ func TestReach_GlobalConfigSameIdentity_DestroysOnLoneCR(t *testing.T) {
 		t.Fatal(err)
 	}
 	src := t.TempDir()
-	p := writeLoneCRDoc(t, src, "human:alice", "2024-01-01T00:00:00Z") // same identity, DIFFERENT at
+	doc := "---\n" +
+		"type: Metric\r" +
+		"title: Alpha\r" +
+		"generated:\r  by: binder/0.3.0\r  at: '2020-01-01T00:00:00Z'\r" +
+		"canary_last: KEEPME\n" +
+		"---\n# Alpha\n"
+	p := filepath.Join(src, "a.md")
+	if err := os.WriteFile(p, []byte(doc), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	_, code := runCLI(t, "enrich", src) // no flag → global config default
 	if code != clijson.ExitSuccess {
@@ -157,11 +160,9 @@ func TestReach_GlobalConfigSameIdentity_DestroysOnLoneCR(t *testing.T) {
 	}
 	got := readFile(t, p)
 
-	// Anti-vacuity: a SECOND, freshly-timestamped stamp was written (no dedup, no
-	// refusal). If this fails, the clock deduped and the test proved nothing.
+	// Anti-vacuity: the freshly-timestamped stamp was written.
 	if !contains(got, pinnedAt) {
-		t.Fatalf("no fresh stamp at %s — the write path deduped or refused, so this "+
-			"test did not exercise the destroy (clock trap):\n%q", pinnedAt, got)
+		t.Fatalf("no fresh stamp at %s — the write path did not run:\n%q", pinnedAt, got)
 	}
 	assertKeysSurvive(t, got)
 }

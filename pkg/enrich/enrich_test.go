@@ -651,18 +651,11 @@ func TestNoTempFilesLeftBehind(t *testing.T) {
 	}
 }
 
-// TestIdempotent_BreaksWhenStampAdvances measures the BOUNDARY of the help claim
-// "idempotent (a second run writes nothing)". It holds with no verifier
-// (TestIdempotent) and with a verifier under a pinned clock (the second run in
-// TestVerifiedByAppendsDetectedAndWritten). It does NOT hold with a live verifier
-// and an advancing clock: a `verified` stamp dedups on (by,at), so a later run
-// appends a NEW stamp and the second run DOES write. The corrected help states the
-// idempotence guarantee conditionally (pin SOURCE_DATE_EPOCH / no stamp advancing).
-//
-// DEMONSTRATED RED (observed on this head): asserting the old blanket claim — that
-// the second run is StatusUnchanged and rewrites nothing — FAILS here; the file
-// gains a second stamp. This test pins the measured reality instead.
-func TestIdempotent_BreaksWhenStampAdvances(t *testing.T) {
+// TestIdempotent_HoldsWhenClockAdvances proves issue #134 is fixed: a repeat
+// `binder enrich` on an unchanged file is a genuine no-op even when a verifier is
+// configured and the wall clock has advanced, because `applyVerifiedBy` dedups by
+// actor (`by`) rather than `(by, at)`.
+func TestIdempotent_HoldsWhenClockAdvances(t *testing.T) {
 	src := t.TempDir()
 	p := writeFile(t, src, "a.md", "---\ntype: Note\ntitle: A\n---\n\n# A\n\nBody.\n")
 
@@ -679,32 +672,27 @@ func TestIdempotent_BreaksWhenStampAdvances(t *testing.T) {
 	}
 
 	o2 := o1
-	o2.Now = fixedNow.Add(time.Hour) // clock advanced → (by,at) differs → appends
+	o2.Now = fixedNow.Add(time.Hour) // clock advanced → still idempotent (#134)
 	rep, err := enrich.Enrich(src, o2)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res := find(t, rep, "a.md"); res.Status != enrich.StatusEnriched {
-		t.Errorf("advancing clock: 2nd run status = %q, want enriched (a new stamp is written)", res.Status)
+	if res := find(t, rep, "a.md"); res.Status != enrich.StatusUnchanged {
+		t.Errorf("advancing clock: 2nd run status = %q, want unchanged (#134)", res.Status)
 	}
 	second := read(t, p)
-	if second == first {
-		t.Errorf("advancing clock: 2nd run wrote nothing; expected an appended stamp:\n%s", second)
+	if second != first {
+		t.Errorf("advancing clock: 2nd run mutated an unchanged file:\n--- first ---\n%s\n--- second ---\n%s", first, second)
 	}
-	if n := strings.Count(second, "human:alice"); n != 2 {
-		t.Errorf("expected 2 verified stamps after advancing-clock rerun, got %d:\n%s", n, second)
+	if n := strings.Count(second, "human:alice"); n != 1 {
+		t.Errorf("expected 1 verified stamp after advancing-clock rerun, got %d:\n%s", n, second)
 	}
 }
 
 // TestAdditive_AuthorizedStampModifiesPresentVerifiedKey pins the corrected
-// "additive/never-clobber" claim. The old wording "only ABSENT keys are added" is
-// false: an authorized `verified` stamp is APPENDED to an already-PRESENT `verified`
-// list, so a present key IS modified. never-clobber still holds — the prior
-// attestation is preserved, never overwritten.
-//
-// DEMONSTRATED RED (observed on this head): asserting the old claim — that a present
-// `verified` key is left unchanged and never appears in Added — FAILS; the key gains
-// a second entry and Added lists "verified".
+// "additive/never-clobber" claim: an authorized `verified` stamp from a new
+// co-signing actor is APPENDED to an already-PRESENT `verified` list, so a
+// present key IS modified while the prior attestation is preserved untouched.
 func TestAdditive_AuthorizedStampModifiesPresentVerifiedKey(t *testing.T) {
 	src := t.TempDir()
 	doc := "---\ntype: Note\ntitle: A\n" +
@@ -712,8 +700,8 @@ func TestAdditive_AuthorizedStampModifiesPresentVerifiedKey(t *testing.T) {
 	p := writeFile(t, src, "a.md", doc)
 
 	o := opts(src)
-	o.VerifiedBy = "human:alice"
-	o.VerifiedByExplicit = true // same actor, later time → appends (not a Residual-A skip)
+	o.VerifiedBy = "human:bob"
+	o.VerifiedByExplicit = true // explicit co-sign by a second actor → appends
 	o.VerifiedBySource = "flag"
 	rep, err := enrich.Enrich(src, o)
 	if err != nil {
@@ -725,17 +713,13 @@ func TestAdditive_AuthorizedStampModifiesPresentVerifiedKey(t *testing.T) {
 		t.Fatalf("status = %q, want enriched (a PRESENT key was modified)", res.Status)
 	}
 	got := read(t, p)
-	if n := strings.Count(got, "human:alice"); n != 2 {
-		t.Errorf("present verified key did not gain a 2nd entry, got %d:\n%s", n, got)
+	if !strings.Contains(got, "human:alice") || !strings.Contains(got, "human:bob") {
+		t.Errorf("present verified key did not retain alice and append bob:\n%s", got)
 	}
 	// never-clobber: the prior attestation survives untouched.
 	if !strings.Contains(got, "2020-01-01T00:00:00Z") {
 		t.Errorf("prior attestation clobbered:\n%s", got)
 	}
-	// NOTE: res.Added currently lists "verified" here even though the `verified`
-	// key was already PRESENT — the report-envelope symptom of this same behaviour.
-	// That is a SEPARATE tracked defect (added: for a modified-not-added key);
-	// deliberately NOT asserted here so this test does not cement it as correct.
 }
 
 // TestAtomic_ExecutedControls backs the "atomic (temp file + rename)" claim with

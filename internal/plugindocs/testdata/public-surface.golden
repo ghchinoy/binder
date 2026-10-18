@@ -71,6 +71,7 @@ type Service struct {}
   func (*Service) GraphQuery(ctx context.Context, req GraphQueryRequest) (GraphQueryResult, error)
   func (*Service) Index(ctx context.Context, req IndexRequest) (IndexResult, error)
   func (*Service) Lint(ctx context.Context, req LintRequest) (LintResult, error)
+  func (*Service) LooksLikeBundle(dir string) bool
   func (*Service) Project(ctx context.Context, req ProjectRequest) (ProjectResult, error)
   func (*Service) Review(ctx context.Context, req ReviewRequest) (ReviewResult, error)
   func (*Service) Validate(ctx context.Context, req ValidateRequest) (ValidateResult, error)

@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strconv"
 	"time"
 
@@ -105,6 +106,23 @@ func (s *Service) Lint(ctx context.Context, req LintRequest) (LintResult, error)
 	rep.Src = req.Src // owned here now — the field cmd/ and mcp/ used to patch.
 
 	return LintResult{Report: rep, version: req.Version}, nil
+}
+
+// LooksLikeBundle reports whether dir carries a bundle-root index.md whose
+// frontmatter declares okf_version (issue #68). When a user runs `binder lint`
+// over an already-emitted OKF bundle instead of a source corpus, the generated
+// index.md links to every concept and masks orphans; the CLI surfaces an
+// advisory warning on stderr while preserving never-reject.
+func (s *Service) LooksLikeBundle(dir string) bool {
+	raw, err := os.ReadFile(filepath.Join(dir, "index.md"))
+	if err != nil {
+		return false
+	}
+	c, err := s.codec.ParseConcept("index.md", raw)
+	if err != nil || c.Frontmatter == nil {
+		return false
+	}
+	return c.Frontmatter.Has("okf_version")
 }
 
 // GatingFindings is the ONE definition of how many lint findings gate. It excludes

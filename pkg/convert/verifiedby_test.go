@@ -152,10 +152,10 @@ func TestVerifiedByExplicitMayCoSign(t *testing.T) {
 	}
 }
 
-// TestVerifiedByNonExplicitSameIdentityAppends confirms the guard is scoped to a
-// DIFFERENT identity: a non-explicit actor may still add its own timestamp to a
-// document it alone has attested (no other identity present).
-func TestVerifiedByNonExplicitSameIdentityAppends(t *testing.T) {
+// TestVerifiedByNonExplicitSameIdentityIsIdempotent confirms that when the same
+// identity has already attested a document, a repeat run is a no-op (deduped by
+// actor, issue #134) rather than appending duplicate timestamps on every run.
+func TestVerifiedByNonExplicitSameIdentityIsIdempotent(t *testing.T) {
 	c := newConcept("")
 	c.Frontmatter.Set("verified", []any{
 		map[string]any{"by": "human:ghchinoy", "at": "2020-01-01T00:00:00Z"},
@@ -164,8 +164,11 @@ func TestVerifiedByNonExplicitSameIdentityAppends(t *testing.T) {
 	if res.Skipped {
 		t.Fatal("skip triggered for the SAME identity (guard must key on a DIFFERENT identity)")
 	}
-	if !res.Stamped {
-		t.Error("non-explicit same-identity re-attestation should append a new timestamp")
+	if res.Stamped {
+		t.Error("same-identity repeat run should dedup as a no-op rather than appending a duplicate stamp (#134)")
+	}
+	if list := verifiedList(t, c); len(list) != 1 {
+		t.Errorf("verified len = %d, want 1 (same actor deduped)", len(list))
 	}
 }
 

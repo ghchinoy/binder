@@ -85,6 +85,12 @@ func newLintCmd(codec okf.Codec) *cobra.Command {
 
 			// Report is ALWAYS emitted before the gate signals, so the gate never
 			// suppresses output (option (a), unified never-reject).
+			if svc.LooksLikeBundle(src) {
+				fmt.Fprintf(cmd.ErrOrStderr(),
+					"binder: warning: %q has an index.md declaring okf_version and looks like an emitted OKF bundle; "+
+						"`binder lint` expects a source corpus (use `binder review` or `binder validate` on a bundle)\n",
+					src)
+			}
 			if jsonOut {
 				if err := res.EncodeJSON(cmd.OutOrStdout()); err != nil {
 					return fmt.Errorf("encoding json report: %w", err)

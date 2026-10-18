@@ -193,3 +193,28 @@ func TestLintJSONEmptySlices(t *testing.T) {
 		t.Errorf("broken_links should be an empty array:\n%s", out)
 	}
 }
+
+// TestLintWarnsWhenGivenBundle proves issue #68: pointing `binder lint` at an
+// already-emitted OKF bundle (carrying a root index.md with okf_version) emits
+// an advisory warning on stderr while preserving never-reject (exit 0) and
+// keeping the stdout JSON envelope clean.
+func TestLintWarnsWhenGivenBundle(t *testing.T) {
+	t.Setenv("SOURCE_DATE_EPOCH", "1700000000")
+	stdout, stderr, code := runCLISplit(t, "lint", "../testdata/expected-rich", "--json")
+	if code != clijson.ExitSuccess {
+		t.Fatalf("lint on bundle exit = %d, want 0; stderr:\n%s", code, stderr)
+	}
+	if !strings.Contains(stderr, "looks like an emitted OKF bundle") {
+		t.Errorf("stderr missing bundle advisory (#68):\n%s", stderr)
+	}
+	var env clijson.Envelope
+	if err := json.Unmarshal([]byte(stdout), &env); err != nil {
+		t.Fatalf("stdout JSON contaminated by warning: %v\n%s", err, stdout)
+	}
+
+	// Negative control: a source corpus without okf_version emits no warning.
+	_, cleanStderr, _ := runCLISplit(t, "lint", "../testdata/corpus-lint-clean")
+	if strings.Contains(cleanStderr, "looks like an emitted OKF bundle") {
+		t.Errorf("source corpus triggered false-positive bundle warning:\n%s", cleanStderr)
+	}
+}

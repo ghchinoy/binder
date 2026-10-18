@@ -77,10 +77,14 @@ func applyVerifiedBy(c *okf.Concept, opts Options) VerifiedResult {
 		}
 	}
 
-	// Dedup by (by, at): skip if an equivalent stamp is already present.
+	// Dedup by actor (issue #134): if opts.VerifiedBy has already attested this
+	// concept, do not append a duplicate stamp on a later run merely because the
+	// wall clock advanced. This makes repeat enrich/convert runs with a configured
+	// or explicit verifier genuinely idempotent across clock seconds, while still
+	// allowing a DIFFERENT identity to co-sign under --verified-by.
 	for _, e := range list {
 		if m, ok := e.(map[string]any); ok {
-			if okfrules.AsString(m["by"]) == opts.VerifiedBy && okfrules.AsString(m["at"]) == at {
+			if okfrules.AsString(m["by"]) == opts.VerifiedBy {
 				return VerifiedResult{}
 			}
 		}

@@ -42,6 +42,13 @@ func TestHeadingSlugs(t *testing.T) {
 			want: []string{"real", "another"},
 		},
 		{
+			// #96: 4-space indented code blocks are CommonMark code blocks, not
+			// headings, so `# InIndent` inside one must not mint a phantom anchor.
+			name: "headings inside indented code block are ignored",
+			body: "# Real\n\nsome text\n\n    # InIndent\n\nmore text\n",
+			want: []string{"real"},
+		},
+		{
 			name: "not a heading without a space after hashes",
 			body: "#nothashheading\n\n# Real Heading\n",
 			want: []string{"real-heading"},

@@ -29,15 +29,11 @@ var htmlTagRE = regexp.MustCompile(`<[^>]*>`)
 // binder's long-standing ASCII behaviour; #76 was scoped to the two polarity
 // bugs (hyphen collapsing and dropped underscores), not to Unicode support.
 func HeadingSlugs(body string) []string {
-	code := CodeRegions(body)
+	masked := MaskCode(body)
 	var slugs []string
 	seen := map[string]int{}
 
-	offset := 0
-	for _, line := range strings.SplitAfter(body, "\n") {
-		lineStart := offset
-		offset += len(line)
-
+	for _, line := range strings.SplitAfter(masked, "\n") {
 		t := strings.TrimSpace(line)
 		hashes := 0
 		for hashes < len(t) && t[hashes] == '#' {
@@ -45,9 +41,6 @@ func HeadingSlugs(body string) []string {
 		}
 		// A valid ATX heading is 1–6 '#'s followed by a space and some text.
 		if hashes == 0 || hashes > 6 || hashes >= len(t) || t[hashes] != ' ' {
-			continue
-		}
-		if InCodeRegion(lineStart, code) {
 			continue
 		}
 
