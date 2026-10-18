@@ -1,44 +1,19 @@
 # binder
 
-A Go command-line tool that converts a plain-markdown corpus into a conformant
-[Open Knowledge Format (OKF) v0.2](https://github.com/GoogleCloudPlatform/open-knowledge-format)
+A Go command-line tool and library that converts a plain-markdown corpus into a
+conformant [Open Knowledge Format (OKF) v0.2](https://github.com/GoogleCloudPlatform/open-knowledge-format)
 bundle and validates OKF bundles against the spec's conformance rules.
 
 ![license](https://img.shields.io/badge/license-Apache--2.0-blue)
 ![go](https://img.shields.io/badge/go-1.26.1+-00ADD8)
 
-**Available today** — a Go CLI that converts a non-OKF markdown corpus
-into a conformant [OKF v0.2](https://github.com/GoogleCloudPlatform/open-knowledge-format)
-bundle, extracts every relationship signal (wikilinks, anchor links, frontmatter
-refs, hashtags), maps corpus-native provenance into the trust vocabulary,
-generates per-directory index navigation, validates bundles against the spec's
-§11 conformance rules, and preserves trust frontmatter losslessly on
-round-trip — scoped to files whose frontmatter binder recognises **and that need
-no read-boundary normalization**: the fence must open with `---` and a newline
-(LF or CRLF) at the very start. A leading UTF-8 BOM or a lone-CR (classic-Mac)
-fence is now recognised too, but is normalized before recognition (#124) — a
-disclosed change that deliberately does not preserve the original encoding. It
-also reports and visualizes a bundle (`review`,
-`graph`), lints a source corpus before conversion (`lint`), declaratively stamps
-trust/lifecycle metadata (`--status-map`, `--stale-after-map`, `--verified-by`),
-is configurable via `binder config`, and supports `--strict` CI gating.
-
-**That round-trip is bounded, and the bound matters if you depend on binder for
-provenance.**
-Recognising the fence is a scanner, not a property of the file. A leading UTF-8
-BOM or a lone-CR-delimited fence used to leave the file looking plain, so
-`convert` and `enrich` synthesized a fresh block and left the original — any
-`verified:` attestation with it — in the body as text, exiting `0` with nothing
-skipped and no warning. As of
-[#124](https://github.com/ghchinoy/binder/issues/124) that input is normalized
-at the read boundary before recognition, so the fence — and the attestation it
-guards — is recognised; because the normalization (BOM strip, lone-CR → LF)
-does not preserve the original encoding it is disclosed non-optionally via a
-per-file `normalized` signal and a top-level advisory in the run report. That
-advisory never gates, so a run raising only it exits `0` with or without
-`--strict` (see [Strict mode](docs/user_guide.md#strict-mode)). Recognition
-still leaves byte-level bounds; for the ones known today, see *Residual bounds*
-under [`enrich`](docs/user_guide.md#enrich).
+`binder` turns an existing Markdown repository into an attested, graph-navigable
+OKF v0.2 knowledge bundle. It extracts relationship signals (wikilinks, anchor
+links, frontmatter references, hashtags), maps corpus-native provenance into the
+OKF trust vocabulary, generates per-directory `index.md` navigation, lints source
+corpora before conversion, projects property graphs for Spanner SQL/PGQ, and
+serves as both a stdio MCP server (`binder mcp`) and an installable Agent Plugin
+(`okf-convert`).
 
 ## Table of Contents
 
@@ -63,15 +38,16 @@ under [`enrich`](docs/user_guide.md#enrich).
   generated provenance stamp.
 - **`enrich`** adds the missing required frontmatter (`type`, `title`,
   `generated`) to a source markdown tree **in place**: frontmatter only, no body
-  changes. It is additive/never-clobber, atomic, and safe on a git-tracked repo,
-  and idempotent unless a `verified` stamp advances (see
+  changes. It is additive/never-clobber, atomic, idempotent (`verified` stamps
+  deduplicate by actor `by`), and safe on a git-tracked repo (see
   [`enrich`](docs/user_guide.md#enrich)).
 - **`validate`** checks a bundle against the OKF v0.2 §11 conformance rules and
   reports trust/lifecycle well-formedness as advisories.
 - **`index`** (re)generates per-directory `index.md` navigation for a bundle, and
   can add a type-grouped `# Catalog` to the root index (`--group-by-type`).
-- **`review`** summarizes a bundle: concepts by type, trust tiers,
-  stale/attested, orphans, and unresolved links.
+- **`review`** summarizes a bundle (concepts by type, trust tiers,
+  stale/attested, orphans, and unresolved links) and can enforce a minimum trust
+  tier floor in CI via `--require-tier` (`machine-confirmed` or `human-reviewed`).
 - **`lint`** reports source-corpus health *before* conversion (writes nothing):
   broken links (incl. `#anchors`), missing titles, orphans, stale concepts,
   schema violations, and unquoted colon-space scalars (a frontmatter value like
@@ -99,8 +75,8 @@ under [`enrich`](docs/user_guide.md#enrich).
   `--json` (see [MCP server](/binder/agent/mcp/)).
 
 `convert` can also declaratively stamp trust and lifecycle metadata across
-directory sections — `--status-map`, `--stale-after-map`, and `--verified-by`
-(#7) — and six commands support `--strict` to gate advisories in CI (see
+directory sections via `--status-map`, `--stale-after-map`, and `--verified-by`
+(#7), and six commands support `--strict` to gate advisories in CI (see
 [Declarative trust & lifecycle flags](docs/user_guide.md#declarative-trust--lifecycle-flags)
 and [Strict mode](docs/user_guide.md#strict-mode)).
 
@@ -109,20 +85,18 @@ Two properties make it trustworthy for pipelines:
 - **Deterministic output.** `convert` honours `SOURCE_DATE_EPOCH` for any
   synthesised timestamps, so identical input yields byte-identical output.
 - **Lossless frontmatter round-trip, where binder recognises the fence.**
-  Unmodified YAML frontmatter is re-emitted verbatim — including nested-map
-  and list key order — so every authored key and value survives untouched and
-  a round-trip changes nothing it did not have to change. This is scoped to
-  files whose frontmatter binder recognises **and that need no read-boundary
-  normalization**: the fence must open with `---` and a newline (LF or CRLF) at
-  the very start. A leading UTF-8 BOM or a lone-CR (classic-Mac) fence is now
-  recognised too, but is first normalized at the read boundary
-  ([#124](https://github.com/ghchinoy/binder/issues/124)) — the fence and any
-  `verified:` block it guards are preserved, but the round-trip does not
-  preserve the original encoding and is disclosed via a `normalized` signal and
-  a top-level advisory in the run report. That advisory never gates (see
-  [Strict mode](docs/user_guide.md#strict-mode)). Recognition still leaves
-  byte-level bounds; for the ones known today, see *Residual bounds* under
-  [`enrich`](docs/user_guide.md#enrich).
+  Unmodified YAML frontmatter is re-emitted verbatim, including nested-map
+  and list key order, so every authored key and value survives untouched and
+  a round-trip changes nothing it did not have to change. This applies to
+  files whose frontmatter opens with `---` and a newline (LF or CRLF) at byte 0.
+  Inputs with a leading UTF-8 BOM or a classic-Mac lone-CR (`\r`) fence are
+  normalized at the read boundary before recognition
+  ([#124](https://github.com/ghchinoy/binder/issues/124)) so the fence and any
+  `verified:` block it guards are preserved. Because normalization changes the
+  file encoding, the run discloses it via a per-file `normalized` signal and a
+  top-level advisory that never gates (see
+  [Strict mode](docs/user_guide.md#strict-mode) and
+  [Lossless frontmatter round-trip](docs/concepts/byte-faithful.md)).
   Scoped to the frontmatter: `convert` also pipelines the body and synthesises
   `index.md`, so the guarantee does not extend to a whole-file comparison.
 
@@ -191,12 +165,19 @@ download: `binder --version` prints `binder/<version>`, no leading `v`.
 > [#40](https://github.com/ghchinoy/binder/issues/40)). Windows users: take the
 > release `.zip` above.
 
-**From source.** For anyone who prefers building their own binaries, and the way
-to run a commit that has not been released yet: clone the repo and run
-`make build` with Go 1.26.1+. The resulting binary reports a Go module
-pseudo-version rather than a release version;
-[CONTRIBUTING.md](CONTRIBUTING.md#development) covers what that affects, and is
-where to start if you want to change binder rather than just run it.
+**From source (local development).** Clone the repository and build or run the
+test suite with Go 1.26.1+:
+
+```bash
+git clone https://github.com/ghchinoy/binder.git
+cd binder
+make build   # writes ./bin/binder
+make check   # runs gofmt, go vet, actionlint, and go test ./...
+```
+
+A local build reports a Go module pseudo-version or `binder/dev` rather than a
+release tag; [CONTRIBUTING.md](CONTRIBUTING.md#development) covers what that
+affects and where to start when changing binder.
 
 ## Usage
 
@@ -278,7 +259,7 @@ does too, with its own `binder.config/v1` schema. `index` and `mcp` have no
 `--json` flag. Prose is the default and is byte-unchanged when `--json` is absent.
 
 `convert`, `enrich`, `validate`, `review`, `lint`, and `infer` wrap their existing report
-in a thin, deterministic envelope (schema `binder.report/v1`) — same field names every
+in a thin, deterministic envelope (schema `binder.report/v1`): same field names every
 run, 2-space indent, a stable field order, a trailing newline, and any
 `SOURCE_DATE_EPOCH` honoured, so two runs on the same input are byte-identical:
 
@@ -303,10 +284,10 @@ binder validate path/to/bundle --json
 
 The `binder` field is whatever version *your* binary reports (`binder --version`);
 the stamp never carries a leading `v`. The field order is stable but **not**
-alphabetical — it is the order the fields are declared in, so the envelope is
-always `binder`, `command`, `schema`, `result`. Only *map*-valued objects
-(`review`'s `by_type` and `tiers`, `config`'s `values`) have their keys sorted. A
-consumer that re-sorts the output and then compares bytes will not match.
+alphabetical: it follows Go struct declaration order (`binder`, `command`,
+`schema`, `result`). Only *map*-valued objects (`review`'s `by_type` and `tiers`,
+`config`'s `values`) have their keys sorted. A consumer that re-sorts the output
+and then compares bytes will not match.
 
 `graph` is already machine-readable, so `graph --json` is an **alias for
 `--format json`**, the raw `{nodes, edges}` export, **not** the envelope above.
@@ -318,15 +299,15 @@ prose and `--json` mode):
 
 | Code | Meaning |
 |---|---|
-| `0` | Success. Advisories (broken links, true orphans, staleness, recovered frontmatter, missing trust, non-conformant `status` values) may be present — they are reported but never gate unless `--strict` is set. Entrypoints, and the read-boundary normalization advisory, are reported and **never** gate. |
-| `1` | Gating findings: `validate` spec §11 non-conformance (always), or, under `--strict`, the per-command advisory/finding set, which excludes the read-boundary normalization advisory (see [Strict mode](docs/user_guide.md#strict-mode)). |
-| `2` | Usage error — anything wrong with the command line **or with the config file that feeds it**. Unknown subcommand (`binder bogus`); unknown flag; wrong number of positional arguments; `convert` with neither `-o` nor `--dry-run`; `--json` conflicting with `--format`; an unknown `graph --format`; a malformed `--today`, `--verified-by`, `--type-map`, `--status-map`, `--stale-after-map`, or empty `--external-root` value; `enrich --overwrite-keys` naming a protected trust-provenance key (the whole run is refused and nothing is written); an unknown `config` key; and an unreadable `<corpus>`/`<src>` for `lint`, `enrich`, and `infer`. A bad value in `.binder.yaml` fails the same way, before the command runs — e.g. `verified_by: "agent:bot"` makes *every* subcommand exit 2. |
-| `3` | I/O or internal error — an unreadable bundle or source for `convert`, `validate`, `index`, `review`, and `graph`, or a write failure. |
+| `0` | Success. Advisories (broken links, true orphans, staleness, recovered frontmatter, missing trust, non-conformant `status` values) may be present; they are reported but never gate unless `--strict` is set. Entrypoints, and the read-boundary normalization advisory, are reported and **never** gate. |
+| `1` | Gating findings: `validate` spec §11 non-conformance (always), `review --require-tier` violations, or, under `--strict`, the per-command advisory/finding set, which excludes the read-boundary normalization advisory (see [Strict mode](docs/user_guide.md#strict-mode)). |
+| `2` | Usage error: anything wrong with the command line **or with the config file that feeds it**. Unknown subcommand (`binder bogus`); unknown flag; wrong number of positional arguments; `convert` with neither `-o` nor `--dry-run`; `--json` conflicting with `--format`; an unknown `graph --format`; a malformed `--today`, `--verified-by`, `--require-tier`, `--type-map`, `--status-map`, `--stale-after-map`, or empty `--external-root` value; `enrich --overwrite-keys` naming a protected trust-provenance key (the whole run is refused and nothing is written); an unknown `config` key; and an unreadable `<corpus>`/`<src>` for `lint`, `enrich`, and `infer`. A bad value in `.binder.yaml` fails the same way before the command runs (for example, `verified_by: "agent:bot"` makes *every* subcommand exit 2). |
+| `3` | I/O or internal error: an unreadable bundle or source for `convert`, `validate`, `index`, `review`, and `graph`, or a write failure. |
 
 **Never-reject governs corpus content. The command line has its own contract.**
 binder never refuses a corpus for being imperfect: a well-formed bundle with
 broken links or orphans still exits `0`. A malformed *flag value* is a different
-act, and binder does refuse it with exit `2` rather than silently computing
+act, and binder refuses it with exit `2` rather than computing without warning
 against a value you did not mean. See the [user guide](docs/user_guide.md) for
 the per-command field lists, the discovery surface (`--version`/`--help`), and a
 CI example.
@@ -359,7 +340,7 @@ flag, the precise semantics, and worked end-to-end examples) lives in the
 ## Agent Skill / Plugin
 
 binder ships an **Agent Plugin**, `okf-convert`, that teaches an AI agent to
-*drive* binder — to ingest a plain-markdown corpus into a conformant OKF v0.2
+*drive* binder: ingesting a plain-markdown corpus into a conformant OKF v0.2
 bundle by reasoning over binder's `--json` output, with the ingestion-analysis
 judgment the deterministic CLI cannot encode (flag-choice triage, the
 `enrich`/`lint` remediation loop, and the never-fabricate-trust discipline). It
@@ -376,11 +357,11 @@ standalone-installable.
 This resolves binder's self-hosted marketplace
 ([`.claude-plugin/marketplace.json`](.claude-plugin/marketplace.json)) and the
 `okf-convert` skill. The plugin **assumes the `binder` binary is installed** (see
-[Installation](/binder/install/)) — it drives the CLI, it does not embed it.
+[Installation](/binder/install/)); it drives the CLI and does not embed it.
 
 **Usage walkthrough.** A tiny sample corpus ships at
 [`plugins/okf-convert/skills/okf-convert/assets/sample-corpus/`](plugins/okf-convert/skills/okf-convert/assets/sample-corpus/)
-with three deliberate triage cases (an unresolved link, a missing-title file, a
+with three triage cases (an unresolved link, a missing-title file, a
 no-frontmatter file). Following the skill, an agent drives:
 
 ```bash
@@ -398,7 +379,7 @@ binder convert . -o /tmp/sample-bundle --json | jq '.result.num_concepts'
 binder validate /tmp/sample-bundle --json | jq '.result.findings'   # [] ⇒ conformant (exit 0)
 ```
 
-The plugin's boundary is deliberate: it is the **binder-driven** ingestion
+The plugin's boundary is intentional: it is the **binder-driven** ingestion
 surface. For authoring or validating a *single* bundle by hand with no binaries,
 use the tool-agnostic `okf-author` / `okf-validate` skills in
 [`ghchinoy/agent-skills`](https://github.com/ghchinoy/agent-skills). The bundle
@@ -438,19 +419,19 @@ claude mcp add binder -- binder mcp
 ```
 
 **Tools** (for the five verbs with a CLI counterpart, each parameter mirrors the
-corresponding CLI flag or positional argument 1:1, `graph`'s `format` **default**
-excepted — `dot` on the CLI, `json` here; the MCP-only `list_graphs` and
+corresponding CLI flag or positional argument 1:1, with `graph`'s `format` **default**
+excepted: `dot` on the CLI, `json` here; the MCP-only `list_graphs` and
 `query_graph` have no CLI flags to mirror):
 
 | Tool | Key params | Returns |
 |---|---|---|
 | `convert` | `src` (req), `out` (req unless `dry_run`), `dry_run`, `default_type`, `type_map`, `fm_ref_keys`, `source_keys`, `map_citations`, `map_draft`, `status_map`, `canonicalize_status`, `stale_after_map`, `verified_by`, `workspace_root`, `external_root` (repeatable), `group_by_type`, `include_backlinks`, `include_graph` | `convert` report envelope (`dry_run:true` → the ingestion-analysis preview, writes nothing) |
 | `validate` | `bundle` (req), `strict` | `validate` report envelope |
-| `review` | `bundle` (req), `entrypoints` (array of concept id or path — the parity param for the repeatable `--entrypoint`), `require_tier` (`machine-confirmed`\|`human-reviewed`), `today`, `strict` | `review` report envelope |
-| `lint` | `src` (req), `entrypoints` (array of concept id or path — the parity param for the repeatable `--entrypoint`), `today`, `strict` | `lint` report envelope |
-| `graph` | `bundle` (req), `format` (`dot`\|`json`\|`graphml`\|`html`, default `json`), `today` | raw export bytes — `format:json` is the raw `{nodes,edges}`, **not** the report envelope |
-| `list_graphs` | `bundle` (req), `today`, `id_key` | `list_graphs` report envelope — the LPG **schema descriptor** (graph name, node labels = concept types, the single `LINKS` edge label, each with counts + property declarations). Read-only introspection derived from the same projection as `graph` |
-| `query_graph` | `bundle` (req), `op` (req: `lookup`\|`neighbors`\|`neighborhood`\|`pattern`\|`path`), `today`, `id_key`, `id`, `label`, `direction` (`out`\|`in`\|`both`, default `out`), `rel`, `depth` (`1..5`, required for `neighborhood`), `to_label`, `where` (`{prop, eq}`; `prop` ∈ `type`\|`tier`\|`stale`), `from`/`to`/`max_depth` (`1..5`, all required for `path`) | `query_graph` report envelope — bounded read-only traversal of the same projection. `additionalProperties: false` |
+| `review` | `bundle` (req), `entrypoints` (array of concept id or path, the parity param for the repeatable `--entrypoint`), `require_tier` (`machine-confirmed`\|`human-reviewed`), `today`, `strict` | `review` report envelope |
+| `lint` | `src` (req), `entrypoints` (array of concept id or path, the parity param for the repeatable `--entrypoint`), `today`, `strict` | `lint` report envelope |
+| `graph` | `bundle` (req), `format` (`dot`\|`json`\|`graphml`\|`html`, default `json`), `today` | raw export bytes (`format:json` is the raw `{nodes,edges}`, **not** the report envelope) |
+| `list_graphs` | `bundle` (req), `today`, `id_key` | `list_graphs` report envelope: the LPG **schema descriptor** (graph name, node labels = concept types, the single `LINKS` edge label, each with counts + property declarations). Read-only introspection derived from the same projection as `graph` |
+| `query_graph` | `bundle` (req), `op` (req: `lookup`\|`neighbors`\|`neighborhood`\|`pattern`\|`path`), `today`, `id_key`, `id`, `label`, `direction` (`out`\|`in`\|`both`, default `out`), `rel`, `depth` (`1..5`, required for `neighborhood`), `to_label`, `where` (`{prop, eq}`; `prop` ∈ `type`\|`tier`\|`stale`), `from`/`to`/`max_depth` (`1..5`, all required for `path`) | `query_graph` report envelope: bounded read-only traversal of the same projection. `additionalProperties: false` |
 
 **`query_graph` details worth knowing before you call it.** Every response echoes
 a `node_key` object; `id_key` is accepted **for parity with `list_graphs` only
@@ -461,9 +442,9 @@ the path-derived concept id. A query that matches nothing comes back as a
 out-of-range `depth`/`max_depth` is a **tool error** (`isError:true`, plain text
 rather than the envelope). Every traversal is depth-bounded by construction.
 
-The surface is deliberately additive (produce/validate) plus **read-only** graph
+The surface is additive (produce/validate) plus **read-only** graph
 introspection and traversal. Source-mutating verbs (`enrich`, `emit_concept`) are
-**not** exposed — authoring over MCP is a later concern — and neither is `infer`,
+**not** exposed (authoring over MCP is a later concern) and neither is `infer`,
 which is proposal-only and can call out to a model. General read/search over a
 knowledge store remains out of scope; `list_graphs` and `query_graph` read the
 bundle binder itself produced.
@@ -526,10 +507,14 @@ schemas and examples.
   `graph`, `config`, `enrich`, and `project`, plus the stdio
   [MCP server](#mcp-server-binder-mcp) (`binder mcp`);
 - the `okf-convert` [Agent Skill / Plugin](#agent-skill--plugin);
+- the Go library packages `pkg/binder`, `pkg/okf`, and `pkg/okfproto`
+  (Protobuf / Buf `FileDescriptorSet` ↔ OKF v0.2 bridge via
+  [`ghchinoy/okf-proto`](https://github.com/ghchinoy/okf-proto));
 - the declarative trust/lifecycle flags `--status-map`, `--stale-after-map`,
   and `--verified-by`;
-- `--strict` gating, `--canonicalize-status`, `convert --external-root`,
-  `--entrypoint` on `review` and `lint`, and `enrich --overwrite-keys`.
+- `--strict` gating, `review --require-tier`, `--canonicalize-status`,
+  `convert --external-root`, `--entrypoint` on `review` and `lint`, and
+  `enrich --overwrite-keys`.
 
 **Planned, not yet shipped** (what binder does *not* do today):
 
@@ -550,8 +535,9 @@ that surface was sequenced.
 
 ## Contributing
 
-Pull requests are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) covers how to
-build binder from a clone, run `make check`, and how the shipped surface was
+Pull requests are welcome. For larger changes, please open an issue first to
+discuss the design. [CONTRIBUTING.md](CONTRIBUTING.md) covers how to build
+binder from a clone, run `make check`, and how the shipped surface was
 sequenced; the release process and the project's full exit gate are in
 [docs/RELEASING.md](docs/RELEASING.md).
 
