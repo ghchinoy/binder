@@ -359,8 +359,8 @@ prose and `--json` mode:
 | Code | Meaning |
 |---|---|
 | `0` | Success. Advisories may be present but never gate unless `--strict` is set. The read-boundary normalization advisory never gates at all. |
-| `1` | Gating findings: `validate` §11 non-conformance (always), or, under `--strict`, a command's advisory set, which excludes the read-boundary normalization advisory (see [Strict mode](user_guide.md#strict-mode)). |
-| `2` | Usage error — anything wrong with the command line, **or with the `.binder.yaml` that feeds it**: an unknown subcommand or flag, the wrong number of arguments, an invalid actor, a malformed `--today`/`--type-map`/`--status-map`/`--stale-after-map` value, an unknown `graph --format`, and an unreadable corpus for `lint`/`enrich`/`infer`. |
+| `1` | Gating findings: `validate` §11 non-conformance (always), `review --require-tier` violations, or, under `--strict`, a command's advisory set, which excludes the read-boundary normalization advisory (see [Strict mode](user_guide.md#strict-mode)). |
+| `2` | Usage error — anything wrong with the command line, **or with the `.binder.yaml` that feeds it**: an unknown subcommand or flag, the wrong number of arguments, an invalid actor, a malformed `--today`/`--require-tier`/`--type-map`/`--status-map`/`--stale-after-map` value, an unknown `graph --format`, and an unreadable corpus for `lint`/`enrich`/`infer`. |
 | `3` | I/O or internal error — an unreadable bundle or source for `convert`/`validate`/`index`/`review`/`graph`, or a write failure. |
 
 Never-reject governs the *corpus*: binder will not refuse your documents for
@@ -409,6 +409,54 @@ colon-space scalars. A clean corpus exits `0` even with
 `infer`. Use `validate --strict` to gate on trust well-formedness in addition to
 hard conformance, and `convert --strict` to gate on unresolved links or
 recoveries.
+
+When a CI pipeline also needs a minimum OKF §5.3 trust tier across the bundle,
+pass `--require-tier` (`unverified`, `machine-confirmed`, or `human-reviewed`)
+to `binder review`. While OKF v0.2 requires consumers never to reject a document
+for lacking verification, `--require-tier` lets a producer pipeline enforce a
+release bar explicitly and turns a red build into a short to-do list naming why
+each concept fell short (`no verified entry` versus
+`verified only by non-human actor(s): ...`):
+
+```bash
+binder review /tmp/tut-bundle --today 2026-08-15 --require-tier human-reviewed
+echo "exit=$?"
+```
+
+```text
+binder review
+  bundle: /tmp/tut-bundle
+  concepts: 5
+  by type:
+    Note: 2
+    Playbook: 1
+    Reference: 2
+  trust tiers:
+    human-reviewed: 0
+    machine-confirmed: 0
+    unverified: 5
+  below required tier (human-reviewed): 5
+    README (unverified: no verified entry)
+    notes/scratch (unverified: no verified entry)
+    topics/architecture (unverified: no verified entry)
+    topics/glossary (unverified: no verified entry)
+    topics/onboarding (unverified: no verified entry)
+  stale (as of 2026-08-15): 0
+  attested computations: 0
+  unparsed frontmatter (recovered as body): 0
+  entrypoints (no inbound links): 1
+    README
+  orphans (no inbound or outbound links): 2
+    notes/scratch
+    topics/glossary
+  unresolved links: 1
+    topics/onboarding -> /topics/deploy.md
+binder: review found 5 concept(s) below required tier "human-reviewed" (--require-tier): README (unverified: no verified entry); notes/scratch (unverified: no verified entry); topics/architecture (unverified: no verified entry); topics/glossary (unverified: no verified entry); topics/onboarding (unverified: no verified entry)
+exit=1
+```
+
+Part 2 shows how stamping `verified` attestations moves concepts up the tiers
+and clears that list.
 
 ### Multi-repo corpora: `--workspace-root`
 

@@ -22,6 +22,14 @@ type Edge struct {
 	Text      string `json:"text"`
 }
 
+// TierShortfall records one concept whose derived trust tier fell short of the
+// minimum tier requested via --require-tier, along with why (issues #243, #247).
+type TierShortfall struct {
+	Concept string        `json:"concept"`
+	Tier    okfrules.Tier `json:"tier"`
+	Reason  string        `json:"reason"`
+}
+
 // ConceptView is the per-concept derived summary.
 type ConceptView struct {
 	ID       string        `json:"id"`
@@ -66,6 +74,14 @@ type Report struct {
 	// load-time recovery (which is both recorded AND marker-stamped) is counted once.
 	UnparsedFrontmatter []string      `json:"unparsed_frontmatter"`
 	Concepts            []ConceptView `json:"concepts"`
+	// RequiredTier is the minimum trust tier floor requested via --require-tier
+	// ("unverified", "machine-confirmed", or "human-reviewed"; issues #243, #247).
+	// Omitted when --require-tier is unset so default review output is unchanged.
+	RequiredTier okfrules.Tier `json:"required_tier,omitempty"`
+	// BelowRequiredTier lists each concept that fell short of RequiredTier along
+	// with its derived tier and why it fell short (e.g., "no verified entry" vs.
+	// "verified only by non-human actor(s): ..."; issue #247). Omitted when empty.
+	BelowRequiredTier []TierShortfall `json:"below_required_tier,omitempty"`
 }
 
 // Review computes the review report for a loaded bundle as of `today`
@@ -220,6 +236,28 @@ func Review(b *okf.Bundle, today string, entrypoints []string) *Report {
 	return r
 }
 
+// ApplyRequiredTier evaluates every concept in b against req (in sorted concept
+// ID order) and records req and any shortfalls on r (issues #243, #247). When req
+// is empty it is a no-op so default review output stays byte-identical.
+func (r *Report) ApplyRequiredTier(b *okf.Bundle, req okfrules.Tier) {
+	if req == "" || r == nil || b == nil {
+		return
+	}
+	r.RequiredTier = req
+	concepts := append([]*okf.Concept(nil), b.Concepts...)
+	sort.Slice(concepts, func(i, j int) bool { return concepts[i].ID < concepts[j].ID })
+	for _, c := range concepts {
+		tier := okfrules.TrustTier(c)
+		if okfrules.BelowTier(tier, req) {
+			r.BelowRequiredTier = append(r.BelowRequiredTier, TierShortfall{
+				Concept: c.ID,
+				Tier:    tier,
+				Reason:  okfrules.TierShortfallReason(c, req),
+			})
+		}
+	}
+}
+
 // String renders a deterministic, human-readable review.
 func (r *Report) String() string {
 	var b strings.Builder
@@ -235,6 +273,12 @@ func (r *Report) String() string {
 	b.WriteString("  trust tiers:\n")
 	for _, tier := range []okfrules.Tier{okfrules.TierHumanReviewed, okfrules.TierMachineConfirmed, okfrules.TierUnverified} {
 		fmt.Fprintf(&b, "    %s: %d\n", tier, r.Tiers[tier])
+	}
+	if r.RequiredTier != "" {
+		fmt.Fprintf(&b, "  below required tier (%s): %d\n", r.RequiredTier, len(r.BelowRequiredTier))
+		for _, s := range r.BelowRequiredTier {
+			fmt.Fprintf(&b, "    %s (%s: %s)\n", s.Concept, s.Tier, s.Reason)
+		}
 	}
 
 	fmt.Fprintf(&b, "  stale (as of %s): %d\n", r.Today, len(r.Stale))

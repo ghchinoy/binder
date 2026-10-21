@@ -79,6 +79,6 @@ func newReviewCmd(codec okf.Codec) *cobra.Command {
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "emit the review report as deterministic JSON (schema "+clijson.SchemaVersion+") instead of prose")
 	cmd.Flags().BoolVar(&strict, "strict", false, "gate (exit 1) when any review finding is present (orphans, stale, unresolved, unparsed)")
 	cmd.Flags().StringSliceVar(&entrypoints, "entrypoint", nil, "concept id or path to treat as an entrypoint, not an orphan (repeatable); root README.md is recognized automatically")
-	cmd.Flags().StringVar(&requireTier, "require-tier", "", "minimum trust tier required for every concept (\"machine-confirmed\" or \"human-reviewed\"); gates (exit 1) when any concept is below this tier")
+	cmd.Flags().StringVar(&requireTier, "require-tier", "", "minimum trust tier required for every concept (\"unverified\", \"machine-confirmed\", or \"human-reviewed\"); gates (exit 1) when any concept is below this tier")
 	return cmd
 }

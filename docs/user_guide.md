@@ -824,7 +824,7 @@ staleness are derived on demand, never stored.
 | `--json` | `false` | Emit the review report as deterministic JSON (schema `binder.report/v1`) instead of prose. See [JSON output](#json-output---json-and-the-exit-code-contract). |
 | `--strict` | `false` | Gate (exit 1) when any review finding is present (orphans, stale, unresolved, or unparsed-frontmatter recoveries). Entrypoints are advisory and never gate. Without it `review` never gates (exit 0). See [Strict mode](#strict-mode). |
 | `--entrypoint` | — | Concept id or path (repeatable) to treat as an **entrypoint**, not an orphan, in addition to the general rule and the recognized root. |
-| `--require-tier` | — | Minimum trust tier required for every concept (`machine-confirmed` or `human-reviewed`; [#243](https://github.com/ghchinoy/binder/issues/243)). Gates (exit 1) when any concept falls below the requested tier; invalid tier names exit 2. |
+| `--require-tier` | — | Minimum trust tier required for every concept (`unverified`, `machine-confirmed`, or `human-reviewed`; [#243](https://github.com/ghchinoy/binder/issues/243), [#247](https://github.com/ghchinoy/binder/issues/247)). Gates (exit 1) when any concept falls below the requested tier and reports why each fell short; invalid tier names exit 2. |
 
 ```console
 $ SOURCE_DATE_EPOCH=1700000000 binder convert testdata/corpus-lint-entrypoints -o /tmp/ep >/dev/null
@@ -889,6 +889,92 @@ agreement is **not guaranteed**: the rule is shared, the graph is not, because
 conversion sits in between (see [`lint`](#lint) for the mechanism). Handing
 `lint` a bundle rather than a source corpus changes the graph wholesale, and the
 two then disagree systematically.
+
+#### Trust-tier gating (`--require-tier`) and how it rides on OKF v0.2
+
+OKF v0.2 (§5.1, §5.3, §11) defines a **consumer interoperability contract**:
+- **Trust tiers are derived on demand, never stored.** A consumer computes a
+  concept's tier at read time from its `verified` events: `unverified` (no
+  `verified` entries), `machine-confirmed` (at least one `verified` entry, all
+  from non-human actors such as `<producer>/<version>`, `process:<id>`, or
+  `team:<id>`), or `human-reviewed` (at least one `verified` entry with a
+  `human:<id>` actor).
+- **Never-reject by default.** A consumer must not reject a conformant document
+  for an unknown `type`, a missing optional trust family (`verified`, `sources`,
+  `status`, `stale_after`), or a broken cross-link. Bare `binder validate` and
+  bare `binder review` honor this unconditionally: missing verification is never
+  a spec error.
+
+**Why `--require-tier` exists on top of the spec.** While a *consumer* reading an
+OKF bundle must never reject unverified content, a *producer or CI pipeline*
+publishing a bundle often needs to enforce a release bar (for example, requiring
+every production runbook to be `human-reviewed`, or every generated table schema
+to be at least `machine-confirmed`). `--require-tier` makes that strictness an
+explicit CI choice on `binder review` without storing a credibility score in
+frontmatter or altering OKF §11 conformance.
+
+`--require-tier` accepts all three tier names defined by OKF §5.3:
+
+| `--require-tier` value | Requirement | Typical use |
+|---|---|---|
+| `unverified` | Every concept is at least `unverified` (always satisfied; exits `0`). | Baseline default when parameterizing a CI job (`--require-tier "$REQUIRED_TIER"`) across dev/staging/prod environments. |
+| `machine-confirmed` | Every concept has at least one `verified` entry (machine, process, team, or human). | Automated pipelines where a validator, schema checker, or team process stamps `verified` before publishing. |
+| `human-reviewed` | Every concept has at least one `verified` entry with a `human:<id>` actor. | High-trust or production bundles where a named human must review and attest every concept. |
+
+When any concept falls below the requested tier, `review` exits `1` (whether or
+not `--strict` is also passed) and turns the failure into a short remediation
+to-do list explaining *why* each document fell short—distinguishing a document
+with no `verified` entry at all (`no verified entry`) from one verified only by
+a non-human actor (`verified only by non-human actor(s): ...`):
+
+```console
+$ SOURCE_DATE_EPOCH=1700000000 binder review /tmp/opencode/tier-demo --require-tier human-reviewed --today 2026-08-15
+binder review
+  bundle: /tmp/opencode/tier-demo
+  concepts: 3
+  by type:
+    Note: 2
+    Table: 1
+  trust tiers:
+    human-reviewed: 1
+    machine-confirmed: 1
+    unverified: 1
+  below required tier (human-reviewed): 2
+    orders (machine-confirmed: verified only by non-human actor(s): process:nightly)
+    scratch (unverified: no verified entry)
+  stale (as of 2026-08-15): 0
+  attested computations: 0
+  unparsed frontmatter (recovered as body): 0
+  entrypoints (no inbound links): 1
+    README
+  orphans (no inbound or outbound links): 0
+  unresolved links: 0
+binder: review found 2 concept(s) below required tier "human-reviewed" (--require-tier): orders (machine-confirmed: verified only by non-human actor(s): process:nightly); scratch (unverified: no verified entry)
+```
+
+Under `--json`, the same run populates `required_tier` and `below_required_tier`
+on `.result` (both fields carry `omitempty`, so default `binder review --json`
+runs without `--require-tier` remain byte-identical):
+
+```console
+$ SOURCE_DATE_EPOCH=1700000000 binder review /tmp/opencode/tier-demo --require-tier human-reviewed --today 2026-08-15 --json 2>/dev/null \
+    | jq '{required_tier: .result.required_tier, below_required_tier: .result.below_required_tier}'
+{
+  "required_tier": "human-reviewed",
+  "below_required_tier": [
+    {
+      "concept": "orders",
+      "tier": "machine-confirmed",
+      "reason": "verified only by non-human actor(s): process:nightly"
+    },
+    {
+      "concept": "scratch",
+      "tier": "unverified",
+      "reason": "no verified entry"
+    }
+  ]
+}
+```
 
 ### `lint`
 
@@ -1811,6 +1897,8 @@ greater than zero.
 | `unresolved` | array | Broken concept references, each `{ from, raw_target, text }`. |
 | `unparsed_frontmatter` | array of string | Concept IDs recovered from unparseable frontmatter. |
 | `concepts` | array | Per-concept view: `{ id, type, tier, stale, attested, orphan, entrypoint }`. |
+| `required_tier` | string | **Opt-in (`omitempty`)** — minimum trust tier requested via `--require-tier` (`unverified`, `machine-confirmed`, or `human-reviewed`). Omitted when `--require-tier` is not set. |
+| `below_required_tier` | array | **Opt-in (`omitempty`)** — concepts strictly below `required_tier`, each `{ concept, tier, reason }` where `reason` states why the concept fell short (`"no verified entry"` or `"verified only by non-human actor(s): <actors>"`). Omitted when empty. |
 
 `by_type` and `tiers` are JSON objects with sorted keys; all list fields are
 `[]` when empty.
@@ -2031,7 +2119,7 @@ The per-command contract:
 | Command | `--strict` gates (exit 1) on | Always gates, regardless |
 |---|---|---|
 | `validate` | trust advisories (malformed trust, actor-convention, date-shape warnings) | spec §11 hard non-conformance (unparseable frontmatter, missing/empty `type`) |
-| `review` | any review finding: orphans, stale concepts, unresolved links, unparsed-frontmatter recoveries | — |
+| `review` | any review finding: orphans, stale concepts, unresolved links, unparsed-frontmatter recoveries, or concepts below `--require-tier` | concepts below `--require-tier` (when `--require-tier` is set; [#243](https://github.com/ghchinoy/binder/issues/243), [#247](https://github.com/ghchinoy/binder/issues/247)) |
 | `lint` | any lint finding: broken links, missing titles, orphans, stale, schema violations. The unquoted colon-space advisory is excluded and never gates (see below) | — |
 | `convert` | unresolved links, recovery warnings, or non-conformant `--status-map` status values | — (a clean run is exit `0` even under `--strict`) |
 | `enrich` | skipped (unparseable-frontmatter) files, preserve-or-advise findings, or non-conformant `--status-map` status values. The read-boundary normalization advisory is excluded and never gates (see below) | — (a clean run is exit `0` even under `--strict`) |
@@ -2203,7 +2291,7 @@ Required params are marked **(req)**.
 |---|---|---|
 | `convert` | `src` **(req)**, `out` (req unless `dry_run`), `dry_run`, `default_type`, `type_map`, `fm_ref_keys`, `source_keys`, `map_citations`, `map_draft`, `status_map`, `canonicalize_status`, `stale_after_map`, `verified_by`, `workspace_root`, `external_root`, `group_by_type`, `include_backlinks`, `include_graph`, `strict` | `convert` report envelope. `dry_run:true` → `convert.Analyze`, the ingestion-analysis preview (writes nothing); `dry_run:false` → writes the bundle to `out`. |
 | `validate` | `bundle` **(req)**, `strict` | `validate` report envelope. |
-| `review` | `bundle` **(req)**, `today`, `strict`, `entrypoints` | `review` report envelope. |
+| `review` | `bundle` **(req)**, `today`, `strict`, `entrypoints`, `require_tier` (`unverified`\|`machine-confirmed`\|`human-reviewed`) | `review` report envelope. |
 | `lint` | `src` **(req)**, `today`, `strict`, `entrypoints` | `lint` report envelope (read-only source-corpus health). |
 | `graph` | `bundle` **(req)**, `format` (`dot`\|`json`\|`graphml`\|`html`, default `json`), `today` | The **raw** export bytes. `format:json` is the raw `{nodes,edges}` object — **not** the report envelope (see [graph JSON](#graph-json--a-raw-export-not-the-envelope)). |
 | `list_graphs` | `bundle` **(req)**, `today`, `id_key` | `list_graphs` report envelope: the LPG **schema descriptor** for the graph binder projects from the bundle — graph name, `node_key` strategy, counts, node labels (the concept `type`s present) and the single `LINKS` edge label, each with property declarations. Read-only introspection derived from the same `graph.Build` projection; `id_key` prefers an authored stable-id frontmatter key as the node key when present, else path identity (never minted). |
@@ -3518,9 +3606,10 @@ fi
 # lint the SOURCE corpus before conversion; --strict gates on any finding.
 binder lint    docs/ --strict                   # fail on broken links / orphans / …
 
-# review is advisory by default; --strict makes it (and convert) gate.
+# review is advisory by default; --strict makes it (and convert) gate, and
+# --require-tier enforces a minimum OKF §5.3 trust tier floor with per-doc reasons.
 binder convert docs/ -o build/bundle --strict   # fail on unresolved links / recoveries
-binder review  build/bundle --strict            # fail on orphans / stale / unresolved
+binder review  build/bundle --strict --require-tier human-reviewed
 ```
 
 By default `review` and `graph` never fail the build (they always exit `0`); use

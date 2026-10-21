@@ -214,9 +214,9 @@ func TestParseRequiredTierAndBelowTier(t *testing.T) {
 		wantErr bool
 	}{
 		{"", "", false},
+		{"unverified", TierUnverified, false},
 		{"machine-confirmed", TierMachineConfirmed, false},
 		{"human-reviewed", TierHumanReviewed, false},
-		{"unverified", "", true},
 		{"bogus", "", true},
 	} {
 		got, err := ParseRequiredTier(tc.in)
@@ -237,8 +237,44 @@ func TestParseRequiredTierAndBelowTier(t *testing.T) {
 	if BelowTier(TierHumanReviewed, TierHumanReviewed) {
 		t.Error("human-reviewed must not be below human-reviewed")
 	}
+	if BelowTier(TierUnverified, TierUnverified) {
+		t.Error("unverified must not be below unverified")
+	}
 	if BelowTier(TierUnverified, "") {
 		t.Error("nothing is below an empty required tier")
+	}
+
+	// TierShortfallReason distinguishes missing verified entries from non-human actors (#247).
+	unv := &okf.Concept{ID: "u"}
+	if got := TierShortfallReason(unv, TierMachineConfirmed); got != "no verified entry" {
+		t.Errorf("unverified vs machine-confirmed reason = %q, want %q", got, "no verified entry")
+	}
+	if got := TierShortfallReason(unv, TierUnverified); got != "" {
+		t.Errorf("unverified vs unverified reason = %q, want empty", got)
+	}
+
+	mc := &okf.Concept{
+		ID: "m",
+		Trust: okf.TrustSignals{
+			Verified: []okf.Actorstamp{{By: "binder/0.8.0"}, {By: "process:nightly"}},
+		},
+	}
+	if got := TierShortfallReason(mc, TierMachineConfirmed); got != "" {
+		t.Errorf("machine-confirmed vs machine-confirmed reason = %q, want empty", got)
+	}
+	wantMC := "verified only by non-human actor(s): binder/0.8.0, process:nightly"
+	if got := TierShortfallReason(mc, TierHumanReviewed); got != wantMC {
+		t.Errorf("machine-confirmed vs human-reviewed reason = %q, want %q", got, wantMC)
+	}
+
+	hr := &okf.Concept{
+		ID: "h",
+		Trust: okf.TrustSignals{
+			Verified: []okf.Actorstamp{{By: "human:alice"}},
+		},
+	}
+	if got := TierShortfallReason(hr, TierHumanReviewed); got != "" {
+		t.Errorf("human-reviewed vs human-reviewed reason = %q, want empty", got)
 	}
 }
 

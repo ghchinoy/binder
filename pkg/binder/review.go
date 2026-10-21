@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/ghchinoy/binder/internal/okfrules"
@@ -21,9 +22,10 @@ type ReviewRequest struct {
 	Bundle string
 	// Entrypoints are concept ids/paths to treat as entrypoints, not orphans.
 	Entrypoints []string
-	// RequireTier is the optional minimum trust tier ("machine-confirmed" or
-	// "human-reviewed"; issue #243). When set, concepts below that tier are
-	// counted as gating findings under --strict.
+	// RequireTier is the optional minimum trust tier ("unverified",
+	// "machine-confirmed", or "human-reviewed"; issues #243, #247). When set,
+	// concepts below that tier are counted as gating findings and reported with
+	// per-concept shortfall reasons.
 	RequireTier string
 	// Now is the RESOLVED determinism instant (see ResolveNow); when Today is empty
 	// the service defaults staleness to Now's date.
@@ -74,6 +76,7 @@ func (s *Service) Review(ctx context.Context, req ReviewRequest) (ReviewResult, 
 	}
 
 	rep := review.Review(b, today, req.Entrypoints)
+	rep.ApplyRequiredTier(b, reqTier)
 	return ReviewResult{Report: rep, requireTier: reqTier, version: req.Version}, nil
 }
 
@@ -83,6 +86,13 @@ func (s *Service) Review(ctx context.Context, req ReviewRequest) (ReviewResult, 
 func (r ReviewResult) BelowRequiredTier() []string {
 	if r.requireTier == "" || r.Report == nil {
 		return nil
+	}
+	if len(r.Report.BelowRequiredTier) > 0 {
+		out := make([]string, len(r.Report.BelowRequiredTier))
+		for i, s := range r.Report.BelowRequiredTier {
+			out[i] = s.Concept
+		}
+		return out
 	}
 	var out []string
 	for _, c := range r.Report.Concepts {
@@ -106,16 +116,33 @@ func (r ReviewResult) GatingFindings() int {
 // Gate returns a typed *clijson.FindingsError (exit 1) when the run should gate, or
 // nil otherwise. Review has no hard non-conformance, so bare review never gates when
 // --require-tier is unset; --strict gates when any gating finding is present, and
-// --require-tier gates when any concept falls below the requested tier (#243).
+// --require-tier gates when any concept falls below the requested tier (#243, #247).
 func (r ReviewResult) Gate(strict bool) error {
 	below := len(r.BelowRequiredTier())
 	if !strict && below > 0 {
-		return clijson.Gate(true, false, true,
-			fmt.Sprintf("review found %d concept(s) below required tier %q (--require-tier)", below, r.requireTier))
+		return clijson.Gate(true, false, true, r.tierShortfallSummary())
 	}
 	n := r.GatingFindings()
-	return clijson.Gate(strict, false, n > 0,
-		fmt.Sprintf("review found %d gating finding(s) (--strict)", n))
+	msg := fmt.Sprintf("review found %d gating finding(s) (--strict)", n)
+	if strict && below > 0 {
+		msg = fmt.Sprintf("%s; %s", msg, r.tierShortfallSummary())
+	}
+	return clijson.Gate(strict, false, n > 0, msg)
+}
+
+func (r ReviewResult) tierShortfallSummary() string {
+	var parts []string
+	if r.Report != nil {
+		for _, s := range r.Report.BelowRequiredTier {
+			parts = append(parts, fmt.Sprintf("%s (%s: %s)", s.Concept, s.Tier, s.Reason))
+		}
+	}
+	if len(parts) == 0 {
+		return fmt.Sprintf("review found %d concept(s) below required tier %q (--require-tier)",
+			len(r.BelowRequiredTier()), r.requireTier)
+	}
+	return fmt.Sprintf("review found %d concept(s) below required tier %q (--require-tier): %s",
+		len(parts), r.requireTier, strings.Join(parts, "; "))
 }
 
 // EncodeJSON writes the binder.report/v1 envelope for this result to w via the core

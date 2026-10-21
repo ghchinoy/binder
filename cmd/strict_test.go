@@ -3,6 +3,7 @@ package cmd
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/ghchinoy/binder/pkg/clijson"
@@ -134,5 +135,50 @@ func TestConvertStrict(t *testing.T) {
 	// A clean corpus does not gate even under --strict.
 	if _, code := runCLI(t, "convert", "../testdata/corpus-clean", "--dry-run", "--strict"); code != clijson.ExitSuccess {
 		t.Errorf("clean corpus with --strict: exit = %d, want 0", code)
+	}
+}
+
+// TestReviewRequireTierShortfallReasons: --require-tier accepts all three spec
+// tier names ("unverified", "machine-confirmed", "human-reviewed") and names why
+// each concept fell short ("no verified entry" vs. "verified only by non-human
+// actor(s)") in both prose and --json (issues #243, #247).
+func TestReviewRequireTierShortfallReasons(t *testing.T) {
+	t.Setenv("SOURCE_DATE_EPOCH", "1700000000")
+	bundle := writeTree(t, map[string]string{
+		"README.md":  "---\ntype: Note\ntitle: Home\nverified:\n  - by: human:alice\n    at: \"2026-01-01T00:00:00Z\"\n---\n# Home\n\nSee [orders](orders.md) and [scratch](scratch.md).\n",
+		"orders.md":  "---\ntype: Table\ntitle: Orders\nverified:\n  - by: binder/0.8.0\n    at: \"2026-01-01T00:00:00Z\"\n---\n# Orders\n",
+		"scratch.md": "---\ntype: Note\ntitle: Scratch\n---\n# Scratch\n",
+	})
+
+	// "unverified" is a valid spec tier and passes (exit 0).
+	if out, code := runCLI(t, "review", bundle, "--require-tier", "unverified"); code != clijson.ExitSuccess {
+		t.Errorf("require-tier unverified: exit = %d, want 0; out:\n%s", code, out)
+	}
+
+	// "machine-confirmed" fails only on scratch (no verified entry).
+	outMC, codeMC := runCLI(t, "review", bundle, "--require-tier", "machine-confirmed")
+	if codeMC != clijson.ExitFindings {
+		t.Errorf("require-tier machine-confirmed: exit = %d, want 1", codeMC)
+	}
+	if !strings.Contains(outMC, "scratch (unverified: no verified entry)") {
+		t.Errorf("expected scratch shortfall reason in output, got:\n%s", outMC)
+	}
+	if strings.Contains(outMC, "orders (machine-confirmed") {
+		t.Errorf("orders meets machine-confirmed and must not be listed in shortfalls:\n%s", outMC)
+	}
+
+	// "human-reviewed" fails on both orders (non-human actor) and scratch (no verified entry).
+	outHR, codeHR := runCLI(t, "review", bundle, "--require-tier", "human-reviewed")
+	if codeHR != clijson.ExitFindings {
+		t.Errorf("require-tier human-reviewed: exit = %d, want 1", codeHR)
+	}
+	for _, want := range []string{
+		"below required tier (human-reviewed): 2",
+		"orders (machine-confirmed: verified only by non-human actor(s): binder/0.8.0)",
+		"scratch (unverified: no verified entry)",
+	} {
+		if !strings.Contains(outHR, want) {
+			t.Errorf("require-tier human-reviewed output missing %q:\n%s", want, outHR)
+		}
 	}
 }

@@ -71,7 +71,8 @@ healthy, so binder cannot be its own check.
    (`generated`, `verified` events, `sources`); the *tier* (`unverified` /
    `machine-confirmed` / `human-reviewed`) is **derived on read** (`binder
    review` computes it, and `binder review --require-tier` can enforce a tier
-   floor in CI; it is never written to frontmatter). No
+   floor of `unverified`, `machine-confirmed`, or `human-reviewed` in CI with
+   per-concept shortfall reasons; it is never written to frontmatter). No
    `score`/`credibility`/`tier` keys.
 2. **Never reject or drop unknown keys/types.** Preserve producer-defined keys
    verbatim; unknown `type` values are legal.
