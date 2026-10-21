@@ -122,6 +122,9 @@ binder validate <bundle> --json | jq -c '.result | {findings, reserved_structure
   "attested": [],
   "unresolved": [ { "from": "docs/guide", "raw_target": "/docs/nope.md", "text": "missing" } ],
   "unparsed_frontmatter": [],
+  // "required_tier": "human-reviewed",        // present when --require-tier is set (#243, #247)
+  // "below_required_tier": [ { "concept": "docs/guide", "tier": "unverified",
+  //                            "reason": "no verified entry" } ],
   "concepts": [ { "id": "docs/guide", "type": "Guide", "tier": "unverified",
                   "stale": false, "attested": false, "orphan": true,
                   "entrypoint": false } ]              // entrypoint: reachable root vs orphan

@@ -164,11 +164,30 @@ func TestLintConcurrent(t *testing.T) {
 }
 
 // TestReviewRequireTier proves --require-tier gates when any concept in the
-// bundle falls below the requested tier (issue #243), and returns a usage error
-// on an invalid tier name.
+// bundle falls below the requested tier (issues #243, #247), accepts all three
+// OKF §5.3 tier names (including "unverified"), and returns a usage error on an
+// invalid tier name.
 func TestReviewRequireTier(t *testing.T) {
 	svc := binder.New(native.New())
 	bundleDir := "../../testdata/okf-bundles/acme_retail"
+
+	// "unverified" is a valid spec tier and must succeed with 0 shortfalls.
+	resUnv, err := svc.Review(t.Context(), binder.ReviewRequest{
+		Bundle:      bundleDir,
+		RequireTier: "unverified",
+		Now:         fixedNow,
+		Today:       testToday,
+		Version:     "test",
+	})
+	if err != nil {
+		t.Fatalf("svc.Review(require-tier=unverified) returned unexpected error: %v", err)
+	}
+	if got := resUnv.BelowRequiredTier(); len(got) != 0 {
+		t.Errorf("BelowRequiredTier(unverified) = %v, want empty", got)
+	}
+	if err := resUnv.Gate(false); err != nil {
+		t.Errorf("Gate(false) under require-tier=unverified = %v, want nil", err)
+	}
 
 	// acme_retail has human-reviewed concepts; requiring human-reviewed or
 	// machine-confirmed succeeds when all concepts meet the floor, or gates if any

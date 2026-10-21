@@ -240,6 +240,42 @@ func TestReviewReportsResidualWikilinkAsUnresolved(t *testing.T) {
 	}
 }
 
+func TestApplyRequiredTierShortfalls(t *testing.T) {
+	unv := concept("calc", "Note", "Calc")
+	mc := concept("orders", "BigQuery Table", "Orders")
+	mc.Trust = okf.TrustSignals{Verified: []okf.Actorstamp{{By: "binder/0.1.0", At: "2026-01-01T00:00:00Z"}}}
+	hr := concept("guide", "Guide", "Guide")
+	hr.Trust = okf.TrustSignals{Verified: []okf.Actorstamp{{By: "human:alice", At: "2026-01-01T00:00:00Z"}}}
+
+	b := &okf.Bundle{Root: "/b", Concepts: []*okf.Concept{unv, mc, hr}}
+	r := Review(b, "2026-08-15", nil)
+	r.ApplyRequiredTier(b, okfrules.TierHumanReviewed)
+
+	if r.RequiredTier != okfrules.TierHumanReviewed {
+		t.Fatalf("RequiredTier = %q, want %q", r.RequiredTier, okfrules.TierHumanReviewed)
+	}
+	if len(r.BelowRequiredTier) != 2 {
+		t.Fatalf("BelowRequiredTier = %+v, want 2 entries (calc, orders)", r.BelowRequiredTier)
+	}
+	if r.BelowRequiredTier[0].Concept != "calc" || r.BelowRequiredTier[0].Reason != "no verified entry" {
+		t.Errorf("BelowRequiredTier[0] = %+v, want calc with 'no verified entry'", r.BelowRequiredTier[0])
+	}
+	wantOrdersReason := "verified only by non-human actor(s): binder/0.1.0"
+	if r.BelowRequiredTier[1].Concept != "orders" || r.BelowRequiredTier[1].Reason != wantOrdersReason {
+		t.Errorf("BelowRequiredTier[1] = %+v, want orders with %q", r.BelowRequiredTier[1], wantOrdersReason)
+	}
+	prose := r.String()
+	for _, want := range []string{
+		"below required tier (human-reviewed): 2",
+		"calc (unverified: no verified entry)",
+		"orders (machine-confirmed: verified only by non-human actor(s): binder/0.1.0)",
+	} {
+		if !strings.Contains(prose, want) {
+			t.Errorf("prose missing %q:\n%s", want, prose)
+		}
+	}
+}
+
 func contains(ss []string, want string) bool {
 	for _, s := range ss {
 		if s == want {

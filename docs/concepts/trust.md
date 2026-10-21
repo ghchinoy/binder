@@ -41,13 +41,44 @@ The **actor convention** (spec §7): `"<producer>/<version>"` for tools/agents
 
 ## Derived trust tiers
 
-Tiers are computed from `verified`, never stored:
+Tiers are computed from `verified` at read time, never stored in frontmatter
+(spec §5.1, §5.3). They form a strict total order:
 
-| Tier | Condition |
-|---|---|
-| `human-reviewed` | at least one `verified[].by` uses the `human:` prefix |
-| `machine-confirmed` | one or more `verified` events, none by a `human:` actor |
-| `unverified` | no `verified` events |
+$$\text{unverified} < \text{machine-confirmed} < \text{human-reviewed}$$
+
+| Tier | Condition | What it represents |
+|---|---|---|
+| `unverified` | no `verified` events | Generated or authored content that has not yet been attested by any automated check, team process, or human reviewer. |
+| `machine-confirmed` | one or more `verified` events, none by a `human:` actor | Content attested by a tool, validator, or automated pipeline (`<producer>/<version>`, `process:<id>`, or `team:<id>`), but not yet signed off by a named person. |
+| `human-reviewed` | at least one `verified[].by` uses the `human:` prefix | Content reviewed and attested by a named human (`human:<id>`), even if machine or process stamps are also present. |
+
+### Consumer never-reject vs. producer CI gating (`--require-tier`)
+
+OKF v0.2 separates **what makes a bundle valid** from **what makes a bundle
+ready to publish in a given environment**:
+
+- **Consumers never reject on tier (spec §11).** A reader, search indexer, or
+  agent consuming an OKF bundle must not reject a document for an unknown `type`,
+  a missing optional field family (`verified`, `sources`, `status`,
+  `stale_after`), or a broken cross-link. The same bundle is valid OKF whether
+  its concepts are `unverified` on a feature branch or `human-reviewed` in
+  production. Bare `binder validate` and bare `binder review` follow this
+  consumer posture by default and exit `0`.
+- **Producers enforce tier floors in CI (`binder review --require-tier`).** A
+  team curating or releasing a bundle can opt into a minimum trust tier floor at
+  the application layer by passing `--require-tier` (`unverified`,
+  `machine-confirmed`, or `human-reviewed`) to `binder review` (or
+  `require_tier` on the MCP `review` tool; [#243](https://github.com/ghchinoy/binder/issues/243),
+  [#247](https://github.com/ghchinoy/binder/issues/247)). When any concept falls
+  below the requested floor, `review` exits `1` and reports *why* each concept
+  fell short—distinguishing a concept with no `verified` entry at all
+  (`no verified entry`) from one attested only by non-human actors
+  (`verified only by non-human actor(s): ...`). That turns a failing CI check
+  into a short remediation to-do list rather than a wall of errors, without
+  storing a credibility score in frontmatter.
+
+See [Trust-tier gating (`--require-tier`)](../user_guide.md#trust-tier-gating---require-tier-and-how-it-rides-on-okf-v02)
+in the user guide for examples and JSON output.
 
 ## Derived staleness
 

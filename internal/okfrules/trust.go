@@ -102,17 +102,18 @@ func TrustTier(c *okf.Concept) Tier {
 	return TierMachineConfirmed
 }
 
-// ParseRequiredTier validates a --require-tier value ("machine-confirmed" or
-// "human-reviewed", or "" for no tier floor; issue #243).
+// ParseRequiredTier validates a --require-tier value ("unverified",
+// "machine-confirmed", or "human-reviewed", or "" for no tier floor;
+// issues #243, #247).
 func ParseRequiredTier(s string) (Tier, error) {
 	s = strings.TrimSpace(s)
 	switch Tier(s) {
 	case "":
 		return "", nil
-	case TierMachineConfirmed, TierHumanReviewed:
+	case TierUnverified, TierMachineConfirmed, TierHumanReviewed:
 		return Tier(s), nil
 	default:
-		return "", fmt.Errorf("invalid --require-tier %q (want %q or %q)", s, TierMachineConfirmed, TierHumanReviewed)
+		return "", fmt.Errorf("invalid --require-tier %q (want %q, %q, or %q)", s, TierUnverified, TierMachineConfirmed, TierHumanReviewed)
 	}
 }
 
@@ -121,6 +122,28 @@ func ParseRequiredTier(s string) (Tier, error) {
 // concept is below it.
 func BelowTier(got, req Tier) bool {
 	return tierRank(got) < tierRank(req)
+}
+
+// TierShortfallReason returns a concise human-readable reason explaining why a
+// concept fell short of req (issue #247), or "" when c meets or exceeds req.
+func TierShortfallReason(c *okf.Concept, req Tier) string {
+	got := TrustTier(c)
+	if !BelowTier(got, req) {
+		return ""
+	}
+	if len(c.Trust.Verified) == 0 {
+		return "no verified entry"
+	}
+	var actors []string
+	for _, v := range c.Trust.Verified {
+		if strings.TrimSpace(v.By) != "" {
+			actors = append(actors, v.By)
+		}
+	}
+	if len(actors) == 0 {
+		return "verified entry is missing 'by'"
+	}
+	return fmt.Sprintf("verified only by non-human actor(s): %s", strings.Join(actors, ", "))
 }
 
 func tierRank(t Tier) int {

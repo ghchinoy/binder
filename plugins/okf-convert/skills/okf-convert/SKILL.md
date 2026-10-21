@@ -317,7 +317,10 @@ config `verified_by` stamps without the flag. Pass a real `--verified-by` only
 when a real actor attests. Confirm with the `tiers` line in the
 `review` output below, which is the quickest check that no claim was fabricated.
 To gate a bundle against a minimum trust floor in CI, pass `--require-tier
-machine-confirmed` or `--require-tier human-reviewed` to `binder review` (#243).
+unverified`, `--require-tier machine-confirmed`, or `--require-tier
+human-reviewed` to `binder review` (#243, #247); any concept below the floor is
+reported with why it fell short (`no verified entry` vs. `verified only by
+non-human actor(s): ...`).
 
 `binder validate` checks the OKF §11 hard rule that every non-reserved `.md` has
 parseable frontmatter with a **non-empty `type`** (§11.1 and §11.2 only).

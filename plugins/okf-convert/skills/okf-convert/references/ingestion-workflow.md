@@ -151,8 +151,10 @@ binder review   <bundle> --json | jq '.result | {by_type, tiers, orphans, stale,
 - `review` advisories (orphans, stale, unresolved, tiers) are for *understanding*,
   not zeroing; decide per the table in §B whether each is expected. When a CI
   pipeline requires a minimum trust tier across all concepts, pass
-  `--require-tier machine-confirmed` or `--require-tier human-reviewed` to
-  `binder review` (#243).
+  `--require-tier unverified`, `--require-tier machine-confirmed`, or
+  `--require-tier human-reviewed` to `binder review` (#243, #247); concepts
+  below the floor are listed with their shortfall reason (`no verified entry` or
+  `verified only by non-human actor(s): ...`).
 - Optionally `binder graph <bundle> --json` to inspect the resolved edge set.
 
 Stop when `validate` is conformant and every remaining advisory is one you have
