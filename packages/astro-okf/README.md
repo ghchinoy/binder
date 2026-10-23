@@ -21,7 +21,7 @@ author had stored it.
 npm install astro-okf
 ```
 
-`astro` is a peer dependency (`^7.0.0`). Node `>=22.19.0`.
+`astro` is a peer dependency (`^7.0.0`). Node `>=22.23.4`.
 
 ## Use
 

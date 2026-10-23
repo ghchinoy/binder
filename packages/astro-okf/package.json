@@ -23,7 +23,7 @@
     "directory": "packages/astro-okf"
   },
   "engines": {
-    "node": ">=22.19.0"
+    "node": ">=22.23.4"
   },
   "sideEffects": false,
   "files": [
@@ -55,7 +55,7 @@
     "astro": "^7.0.0"
   },
   "devDependencies": {
-    "astro": "7.2.8",
+    "astro": "7.4.2",
     "typescript": "^5.9.3"
   },
   "publishConfig": {

@@ -8,7 +8,7 @@
     "site"
   ],
   "engines": {
-    "node": ">=22.19.0"
+    "node": ">=22.23.4"
   },
   "scripts": {
     "build": "npm run build --workspace astro-okf && npm run build --workspace binder-site",
