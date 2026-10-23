@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.9.0](https://github.com/ghchinoy/binder/compare/v0.8.0...v0.9.0) (2026-10-23)
+
+
+### Features
+
+* **review:** accept spec tiers and report shortfall reasons ([#248](https://github.com/ghchinoy/binder/issues/248)) ([2c145af](https://github.com/ghchinoy/binder/commit/2c145af9f5e44d3dad822def16e366821984f253))
+
+
+### Build System
+
+* bump vite from 8.2.2 to 8.3.5 ([#249](https://github.com/ghchinoy/binder/issues/249)) ([68275a3](https://github.com/ghchinoy/binder/commit/68275a3b985cb83ecea4c475e71a4ab89396891c))
+
+
+### Documentation
+
+* **readme:** refine pitch, deduplicate normalization bounds, and align with editorial & README rubrics ([0876fe1](https://github.com/ghchinoy/binder/commit/0876fe193a41fb8161db04e7a13a1137373f428c))
+* refresh version transcripts for v0.8.0 ([cbcb468](https://github.com/ghchinoy/binder/commit/cbcb4685aab737eb97b8a4420f72f846194cd8f1))
+* update tutorial, concepts, and okf-convert plugin (v1.1.0) for v0.8.0 and editorial house style ([1c0dfb7](https://github.com/ghchinoy/binder/commit/1c0dfb7c1274809d18796dfec2316416cef6a073))
+
 ## [0.8.0](https://github.com/ghchinoy/binder/compare/v0.7.0...v0.8.0) (2026-10-18)
 
 
