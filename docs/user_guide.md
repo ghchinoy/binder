@@ -57,17 +57,17 @@ blanket promise across every command:
   ([`goldmark`](https://github.com/yuin/goldmark) for markdown +
   [`gopkg.in/yaml.v3`](https://gopkg.in/yaml.v3) `yaml.Node` for frontmatter).
   Every package above `pkg/okf` depends only on binder-owned interfaces
-  (`Codec`, `LinkGraph`) — the **dependency rule** — so the codec is swappable
+  (`Codec`, `LinkGraph`) (the **dependency rule**) so the codec is swappable
   without touching the converter, CLI, or validators.
 - **Lossless frontmatter round-trip, where binder recognises the fence.**
-  Unmodified YAML frontmatter is re-emitted verbatim — including nested-map
-  and list key order and scalar quoting style — so every authored key and value
+  Unmodified YAML frontmatter is re-emitted verbatim: including nested-map
+  and list key order and scalar quoting style: so every authored key and value
   survives untouched and a round-trip changes nothing it did not have to
   change. This is scoped to files whose frontmatter binder recognises **and that
   need no read-boundary normalization**: the fence must open with `---` and then
   a newline, LF or CRLF, at the very start. A leading UTF-8 BOM or a lone-CR
   (classic-Mac) fence is now recognised too, but is normalized before
-  recognition ([#124](https://github.com/ghchinoy/binder/issues/124)) — the
+  recognition ([#124](https://github.com/ghchinoy/binder/issues/124)); the
   fence and any `verified:` block it guards are preserved, though the round-trip
   does not preserve the original encoding and is disclosed via a `normalized`
   signal and a top-level advisory in the run report. That advisory never gates
@@ -89,13 +89,13 @@ blanket promise across every command:
   binder recognises, binder never invents a source, a credibility score, or
   provenance. Trust mapping is opt-in and additive; with no mapping flags,
   frontmatter that binder recognised and that needed no read-boundary
-  normalization round-trips losslessly — bounded exactly as the round-trip
+  normalization round-trips losslessly: bounded exactly as the round-trip
   guarantee above. A leading UTF-8 BOM or a lone-CR fence is now recognised via
   read-boundary normalization
   ([#124](https://github.com/ghchinoy/binder/issues/124)), so its `verified:`
-  attestation is preserved rather than demoted — but because that normalization
+  attestation is preserved rather than demoted, and because that normalization
   does not preserve the original encoding it is disclosed rather than passing
-  silently: a `normalized` signal plus a top-level advisory in the run report.
+  without notice: a `normalized` signal plus a top-level advisory in the run report.
   On a file with **no** frontmatter fence at all this does not hold: the file is
   treated as plain, so its content is left in the body as text while binder
   synthesizes keys of its own, among them a `type`, a `title`, and a `generated`
@@ -105,7 +105,7 @@ blanket promise across every command:
   frontmatter, never stored. A `verified` attestation in particular is written
   only for a verifier **you** supplied on this invocation or set as your own
   default, it is never written **over** another identity's attestation from a
-  default, and every stamp-writing run discloses what it wrote — see
+  default, and every stamp-writing run discloses what it wrote: see
   [Writing a `verified` stamp](#writing-a-verified-stamp).
 
 ## Concepts and terminology
@@ -132,7 +132,7 @@ bundle-reading command nor one of these exceptions: it is a transport that
 exposes the additive verbs over stdio (see
 [MCP server](#mcp-server-binder-mcp)).
 
-*Summary of the command set — written for this guide, **not** verbatim
+*Summary of the command set: written for this guide, **not** verbatim
 `binder --help` output. Run `binder --help` for the authoritative strings.*
 
 ```text
@@ -217,12 +217,12 @@ Output is required unless you pass `--dry-run`.
 | `--include-graph` | `false` | Annotate each catalog entry with its outbound resolved edges (requires `--group-by-type`). |
 
 `--map-citations`, `--source-keys`, and `--map-draft` are the **trust-mapping**
-flags — all off by default. See [The trust vocabulary](#the-trust-vocabulary).
+flags: all off by default. See [The trust vocabulary](#the-trust-vocabulary).
 `--status-map`, `--stale-after-map`, and `--verified-by` are the **declarative
-trust & lifecycle** flags — also off by default; with none set, output is
+trust & lifecycle** flags: also off by default; with none set, output is
 byte-identical to a plain run. See [Declarative trust & lifecycle](#declarative-trust--lifecycle-flags).
 `--group-by-type`, `--include-backlinks`, and `--include-graph` are the
-**catalog** flags — also off by default and shared with `binder index`; see
+**catalog** flags: also off by default and shared with `binder index`; see
 [The type-grouped catalog](#the-type-grouped-catalog).
 
 #### Output report
@@ -284,10 +284,10 @@ binder convert /home/me/notes -o /tmp/bundle
 ##### Declaring known sibling roots (`--external-root`)
 
 In an established multi-repo tree, an author often links across sibling
-workspaces on purpose — `speech/` referencing
-`file:///Users/me/projects/jibo/docs/...`. Those links are **genuinely
-external** and `convert` leaves them exactly as written, but it also emits an
-advisory for each one — *stand-in paths; the message shape is verbatim:*
+workspaces on purpose, such as `speech/` referencing
+`file:///Users/me/projects/jibo/docs/...`. Those links are **external**
+and `convert` leaves them as written, but it also emits an
+advisory for each one (*stand-in paths; the message shape is verbatim*):
 
 ```text
 Warnings:
@@ -309,7 +309,7 @@ narrow:
 - **Symlinks stay coherent.** A link whose real target (through a symlink)
   resolves under a declared root is suppressed the same way as a lexical match.
 - **Declared roots need not exist here.** A well-formed path is accepted even if
-  it is absent on the converting machine (e.g. in CI) — that is the point, since
+  it is absent on the converting machine (e.g. in CI): that is the point, since
   the sibling lives outside this checkout. Only an *empty* value is a usage error
   (exit 2). No filesystem `stat` is performed, so runs stay deterministic and the
   ordering of declared roots never affects output.
@@ -343,8 +343,7 @@ their files without a convert-to-temp-and-copy-back dance.
 
 **enrich touches frontmatter ONLY.** Unlike `convert`, it does **no** link
 rewriting, **no** `index.md` generation, **no** `## Related` section, and **no**
-`#hashtag` merge — bodies are otherwise untouched. `binder convert` is unchanged —
-it still writes a full bundle to the output directory and rewrites `<src>` only if
+`#hashtag` merge (bodies are otherwise untouched. `binder convert` is unchanged) it still writes a full bundle to the output directory and rewrites `<src>` only if
 `-o` resolves to it (see [`convert`](#convert)). Enrichment per file:
 
 - `type` ensured (precedence: existing → `--type-map` per-directory →
@@ -364,7 +363,7 @@ A plain-markdown file (no frontmatter fence) gets a fresh, valid block prepended
 1. **Additive / never-clobber.** Only keys that are **absent** are added; an
    authored value (any key) is never overwritten. The **one** exception is the
    explicit, opt-in [`--overwrite-keys`](#opt-in-refresh---overwrite-keys) flag,
-   which refreshes only the keys you name — trust keys are refused.
+   which refreshes only the keys you name: trust keys are refused.
 2. **Idempotent unless a `verified` stamp advances.** With no verifier configured
    (or the clock pinned via `SOURCE_DATE_EPOCH`), a second run finds every key
    present → `unchanged` → **no write**; `generated.at` is stable across runs
@@ -378,7 +377,7 @@ A plain-markdown file (no frontmatter fence) gets a fresh, valid block prepended
    re-emitted, never re-derived or dropped (scoped to files whose frontmatter
    binder recognises and that need no read-boundary normalization: the fence
    opens with `---` and a newline, LF or CRLF, at the very start; a leading
-   UTF-8 BOM or lone-CR fence is recognised but normalized — disclosed rather
+   UTF-8 BOM or lone-CR fence is recognised but normalized: disclosed rather
    than silent, see [#124](https://github.com/ghchinoy/binder/issues/124)
    and residual bounds 2 and 6).** enrich reuses the codec's serializer, which
    re-emits the source verbatim as its internal mechanism for staying lossless.
@@ -394,15 +393,15 @@ A plain-markdown file (no frontmatter fence) gets a fresh, valid block prepended
    bytes, copied verbatim line-for-line; nothing re-parses or re-scans those
    lines, so nothing can misformat them. Nested-map and list order,
    flow-vs-block style, interior spacing, scalar quoting/folding, YAML tags (an
-   `!!timestamp` never silently becomes an `!!str`), **and comments** are all
-   preserved — unconditionally. Only the **added or changed** keys are encoded
+   `!!timestamp` never becomes an `!!str` behind your back), **and comments** are all
+   preserved unconditionally. Only the **added or changed** keys are encoded
    fresh.
 
    **(b) A pre-existing entry inside a *changed* container is preserved by a
    scanner.** When a container itself changes (e.g. a stamp appended to
    `verified`), the codec locates where each pre-existing entry begins and ends
    and copies those bytes, so an existing human attestation is **never reshaped
-   or retyped merely because a neighbour was added** — its flow style, interior
+   or retyped merely because a neighbour was added**: its flow style, interior
    spacing, `{by,at}` sub-key order, and `!!timestamp` tag stay intact. This half
    is **pattern recognition over YAML, not a verbatim line copy**, so its
    guarantee is bounded by the *Scanner limitations* below. It covers a
@@ -415,12 +414,12 @@ A plain-markdown file (no frontmatter fence) gets a fresh, valid block prepended
    Appending to a flow sequence or bare mapping re-emits the container as a block
    sequence (the natural shape once it has more than one entry), but each
    pre-existing entry keeps its exact bytes. Because preservation is a source-byte
-   copy of the entry, it holds whatever the entry contains — nested mappings,
+   copy of the entry, it holds whatever the entry contains: nested mappings,
    multi-line block scalars, anchors/aliases, quoted scalars, and a double-quoted
    scalar with backslash-escaped quotes. A `{by,at}` written instead as an
-   *indented block mapping* is re-indented into the first list item — its leading
+   *indented block mapping* is re-indented into the first list item: its leading
    whitespace necessarily changes when a lone mapping value becomes a sequence
-   item — but its tokens, sub-key order, and YAML tags are still preserved, so an
+   item: but its tokens, sub-key order, and YAML tags are still preserved, so an
    `!!timestamp` never becomes an `!!str`.
 
    > **Scanner limitations (the (b) guarantee is bounded, not unconditional).**
@@ -431,20 +430,20 @@ A plain-markdown file (no frontmatter fence) gets a fresh, valid block prepended
    >   multi-line flow **sequence** is **dropped**; a comment inside a changed flow
    >   **mapping** is copied verbatim but **not re-indented**. In a changed **block
    >   sequence**, by contrast, the lines before the first entry and *between*
-   >   entries — a blank separator or a comment line — **are** carried verbatim, so
+   >   entries (a blank separator or a comment line) **are** carried verbatim, so
    >   an appended stamp leaves the pre-existing entries **and the lines preceding
    >   and between them** byte-for-byte in place
    >   ([#142](https://github.com/ghchinoy/binder/issues/142),
    >   [#191](https://github.com/ghchinoy/binder/issues/191)). (Comments on keys
    >   or containers that do **not** change are preserved by construction, per (a)
-   >   — this limit applies only to the container that changes.) Such a sequence
+   >  : this limit applies only to the container that changes.) Such a sequence
    >   with an interior comment used to produce **unparseable** output; it no
    >   longer does.
    > - **Empty or reshaped flow containers.** An empty flow mapping
    >   (`verified: {}`) is reshaped to a block item (`- {}`) when a stamp is
    >   appended, and a changed multi-line flow **mapping** (`verified: {` … `}`
    >   over several lines) is copied into the first block item without
-   >   re-indentation — its interior lines and closing `}` keep their original
+   >   re-indentation: its interior lines and closing `}` keep their original
    >   columns, so the output re-parses but is not cleanly re-indented.
 
    The **body** is re-emitted exactly, *including the original frontmatter/body
@@ -454,19 +453,19 @@ A plain-markdown file (no frontmatter fence) gets a fresh, valid block prepended
    normalization: the fence opens with `---` and a newline, LF or CRLF, at the
    very start. A leading UTF-8 BOM or a lone-CR fence is recognised too, but is
    normalized before recognition ([#124](https://github.com/ghchinoy/binder/issues/124),
-   residual bounds 2 and 6 below) — disclosed, and the original encoding is not
+   residual bounds 2 and 6 below): disclosed, and the original encoding is not
    preserved. See *Residual bounds* below for the byte-level cases it does
    **not** cover even within that scope.
 
-   A file with **no** frontmatter fence at all is not covered here, and is not
-   one of those residual bounds: it is treated as plain and synthesized over,
+   A file with **no** frontmatter fence falls outside this scope rather than
+   counting as one of those residual bounds: it is treated as plain and synthesized over,
    leaving its content in the body as text, with exit `0`, nothing skipped, and
    no warning (residual bound 5, *No frontmatter at all*).
 4. **Skip-unchanged (no git churn).** A file that needs no key is **not written
    at all**: no spurious diffs, no mtime bumps. Critical for git-tracked trees.
 5. **Skip-unparseable.** A file whose frontmatter will not parse (invalid YAML or
    an unterminated fence) is **skipped and reported** (`status: skipped`, with a
-   reason), **never rewritten** — and is left **byte-identical on disk**. This is
+   reason), **never rewritten**: and is left **byte-identical on disk**. This is
    deliberately unlike `convert`'s out-of-place recover-as-body (which moves the
    bad frontmatter into the body): silent recovery in place would be destructive.
 6. **Reserved files** (`index.md`/`log.md`) are skipped.
@@ -485,13 +484,13 @@ A plain-markdown file (no frontmatter fence) gets a fresh, valid block prepended
 >    file round-tripped is not byte-identical.
 > 2. **Lone CR → LF, whole document, at the read boundary.** A file containing any
 >    bare `\r` (a carriage return that is not part of a `\r\n`) has **every** lone
->    CR — in the frontmatter **and** the body — translated to `\n` before
+>    CR (in the frontmatter **and** the body) translated to `\n` before
 >    frontmatter is recognised (#124). This is deliberately wider than the codec's
 >    older frontmatter-only normalization: enrich now normalizes the whole input at
 >    the read boundary so a lone-CR-delimited (classic-Mac) frontmatter block, and
 >    any human `verified` block it guards, is **recognised** rather than demoted to
 >    body. Because the rewrite does not preserve the source encoding it is disclosed
->    non-optionally — the file's result carries a `normalized: ["translated-lone-cr"]`
+>    non-optionally; the file's result carries a `normalized: ["translated-lone-cr"]`
 >    signal and, in `--json`, the run raises a matching `result.normalizations` entry
 >    (see bound 6, which covers both channels and why this advisory never gates).
 >    `\r\n` pairs are left untouched (that is bound 1's separate concern).
@@ -503,13 +502,13 @@ A plain-markdown file (no frontmatter fence) gets a fresh, valid block prepended
 > 5. **No frontmatter at all (synthesis, not round-trip).** A file with no
 >    frontmatter is not a round-trip: enrich **synthesizes** a header and inserts a
 >    single blank line between it and the body. Every body byte survives verbatim
->    and in order, but a blank is prepended — which is why the lossless
+>    and in order, but a blank is prepended: which is why the lossless
 >    round-trip guarantee is scoped to files whose frontmatter binder
 >    recognises, and does not apply here.
 > 6. **Leading UTF-8 BOM stripped, and boundary normalization is disclosed.** A file
 >    beginning with a UTF-8 byte-order mark (`EF BB BF`) has that single leading BOM
->    removed before frontmatter is recognised (#124), so a BOM-prefixed `---` fence —
->    and any human `verified` block it guards — is recognised rather than silently
+>    removed before frontmatter is recognised (#124), so a BOM-prefixed `---` fence
+>    (and any human `verified` block it guards) is recognised rather than
 >    demoted to a synthetic `type: Note` body. Only a *single leading* BOM is
 >    stripped; a BOM elsewhere in the file is left untouched. Whenever this or the
 >    lone-CR translation of bound 2 fires on a file enrich rewrites, the output does
@@ -528,7 +527,7 @@ A plain-markdown file (no frontmatter fence) gets a fresh, valid block prepended
 >    additive to `binder.report/v1` (the schema string is unbumped) and is omitted
 >    when nothing was normalized, so a run that normalized nothing serializes
 >    exactly as it did before. A file enrich leaves unchanged is never rewritten,
->    so its bytes — BOM and lone CRs included — are left exactly as-is and nothing is
+>    so its bytes (BOM and lone CRs included) are left exactly as-is and nothing is
 >    normalized or disclosed.
 >
 > A file that needs no key is never rewritten, so untouched files (including CRLF-
@@ -571,9 +570,9 @@ the same renderer. See [Writing a `verified` stamp](#writing-a-verified-stamp).
 
 The `--json` report carries `src`, `dry_run`, the `num_files`/`num_enriched`/
 `num_unchanged`/`num_skipped` counts, a per-file `files` array (`path`, `status`
-∈ `enriched|unchanged|would-enrich|skipped`, sorted `added` keys — covering keys
+∈ `enriched|unchanged|would-enrich|skipped`, sorted `added` keys: covering keys
 written by the additive pass whether newly injected or appended to as a `verified`
-co-signature — the sorted `overwritten` keys when
+co-signature: the sorted `overwritten` keys when
 [`--overwrite-keys`](#opt-in-refresh---overwrite-keys)
 refreshed a pre-existing key, and a `reason` for skips), a `warnings` array
 (preserve-or-advise notes), and the `verified` trust disclosure. Empty arrays
@@ -602,23 +601,23 @@ Rules that make it safe to run on a git-tracked tree:
   untouched and preserved losslessly. A named key is refreshed **in place** (its
   position is kept).
 - **Only when a value source exists.** A key is refreshed only if the run
-  actually produces a value for it (e.g. `status` needs `--status-map`/
+  produces a value for it (e.g. `status` needs `--status-map`/
   `--default-type`; `stale_after` needs `--stale-after-map`). Naming a key with
-  no source leaves the authored value untouched — it is never blanked.
-- **The effective refreshable set is exactly four keys: `type`, `title`,
+  no source leaves the authored value untouched; it is never blanked.
+- **The effective refreshable set is four keys: `type`, `title`,
   `status`, `stale_after`.** Those are the only keys `enrich` ever computes, so
   they are the only keys `--overwrite-keys` can refresh. Naming any *other*
-  non-trust key — `--overwrite-keys owner`, `--overwrite-keys foo` — is
-  **accepted silently**: the run exits `0`, the named key is left exactly as
+  non-trust key (`--overwrite-keys owner`, `--overwrite-keys foo`) is
+  **accepted without error**: the run exits `0`, the named key is left as
   authored, and nothing is reported. There is no "unknown key" diagnostic, so
   check your spelling. (Naming a *trust* key is the opposite: a loud refusal,
-  exit `2`, nothing written — see **Trust keys are refused** below.)
+  exit `2`, nothing written: see **Trust keys are refused** below.)
 - **Respects `--dry-run`, skip-unchanged, and the atomic write.** Refreshing a
   key to the value it already has rewrites nothing and is not counted as
   modified; two runs are byte-identical (`SOURCE_DATE_EPOCH`-deterministic).
 - **Trust keys are refused (exit 2).** Naming a trust/attestation-carrying key —
   `verified`, `verified_by`, `sources`, `generated`, `usage_window`, `runtime`,
-  `parameters`, `computation`, `executor`, `attester` — fails loudly with a
+  `parameters`, `computation`, `executor`, `attester`: fails loudly with a
   message naming the offending key and **writes nothing**. These can carry human
   attestations; overwriting them would violate the **never-fabricate-trust**
   invariant. The lifecycle keys `status` and `stale_after` are the intended,
@@ -639,7 +638,7 @@ enrich path/to/corpus
 When a run is [authorized to stamp](#writing-a-verified-stamp) and a file already
 carries a **spec-invalid scalar** `verified` value (spec §5.2 wants a `{by,at}`
 stamp or a list of them), enrich **preserves the authored value unchanged** and
-does **not** append — it never silently drops or reshapes authored data —
+does **not** append (it never drops or reshapes authored data),
 reporting the file under `warnings` instead:
 
 ```text
@@ -714,7 +713,7 @@ directory's own concepts under `# Concepts` and its immediate subdirectories
 under `# Subdirectories`. The **bundle-root `index.md`** is the only index that
 carries frontmatter and the only place `okf_version` is declared (spec §12).
 `log.md` files are never touched. Each write is reported (`write` for a new file,
-`regenerate` for an existing one) so nothing is overwritten silently.
+`regenerate` for an existing one) so nothing is overwritten without notice.
 
 | Flag | Default | Purpose |
 |---|---|---|
@@ -737,7 +736,7 @@ The catalog lists **every** concept in the bundle, grouped under `## <type>`
 subheaders:
 
 - **Types are used verbatim** — no pluralization or humanization (`Pattern` stays
-  `Pattern`, not `Patterns`) — and sorted alphabetically. Concepts with an
+  `Pattern`, not `Patterns`): and sorted alphabetically. Concepts with an
   empty/unknown type are collected under a final `## (untyped)` group.
 - Within a group, concepts are sorted by their bundle-relative path and each is
   linked by its bundle-relative-absolute path, `* [Title](/path/to/concept.md)`,
@@ -865,7 +864,7 @@ is classified by whether it links outward:
   `--entrypoint`. A root `README.md` that links out is an entrypoint, **not** an
   orphan; reporting it as an orphan was a false positive (issue #24).
 - **Orphan** — a **true** orphan has **no inbound AND no outbound** resolved edges:
-  a genuinely disconnected node, reported for you to wire up or accept, never
+  a disconnected node, reported for you to wire up or accept, never
   removed.
 
 `README.md` is the only name recognized this way, and only at the corpus root.
@@ -1008,7 +1007,7 @@ It reports these checks:
 2. **Missing titles** — no authored `title:` **and** no first-level (`# `)
    heading (`convert` would humanize the filename; `lint` flags the gap).
 3. **Orphans** — a concept with **0 inbound AND 0 outbound** resolved edges: a
-   truly disconnected node. A concept with no inbound but **outbound** edges (or
+   disconnected node. A concept with no inbound but **outbound** edges (or
    the recognized root `README.md`, or one named via `--entrypoint`) is an
    **entrypoint** instead, reported separately and never as an orphan (issue #24).
    `review` applies the identical rule, so with each used on its intended input
@@ -1045,14 +1044,14 @@ It reports these checks:
    title: "Multi-View: Tabs and Windows" # the fix
    ```
 
-   It applies to **any** key, not a fixed list — the instance measured in the
+   It applies to **any** key, not a fixed list: the instance measured in the
    wild was a `title:`, not a `description:`. Only *unquoted plain scalars*
    count: a URL (`https://example.com`), a timestamp (`12:30`), a ratio
    (`16:9`), an already-quoted value, a multi-line quoted scalar, the interior
-   of a `|`/`>` block scalar, and a flow **sequence** are all left alone — the
+   of a `|`/`>` block scalar, and a flow **sequence** are all left alone: the
    detector looks for exactly one spelling: a colon followed by a **space or a
    tab** inside an unquoted plain scalar. That is deliberately **narrower than
-   YAML's own rule** — other spellings end a key too. A flow **mapping** IS
+   YAML's own rule**: other spellings end a key too. A flow **mapping** IS
    scanned rather than skipped, so `meta: {name: Multi-View: Tabs, x: 1}` names
    `name`: the issue measured that shape in the wild, so it is a true instance
    rather than a false-positive class. A single-line flow mapping is scanned
@@ -1071,7 +1070,7 @@ It reports these checks:
 
 All findings are **spec-tolerated advisories**: bare `binder lint` always exits
 `0` even with findings (§11 hard conformance stays `validate`'s job over a
-bundle). `--strict` gates **exit 1** when any finding is present — except
+bundle). `--strict` gates **exit 1** when any finding is present: except
 unquoted colon-space scalars (check 7), which are never counted and so never
 gate in either mode. That is the
 same shared contract as `convert`/`review`. The report is always emitted before
@@ -1177,18 +1176,18 @@ binder project <bundle> --out <dir> [flags]
 Projects a loaded bundle into a **deterministic, credential-free** property-graph
 schema **and its loader row data**, writing them to `--out`. It emits:
 
-- `schema.ddl` — `CREATE TABLE Nodes`, `CREATE TABLE Edges`, `CREATE TABLE
+- `schema.ddl`: `CREATE TABLE Nodes`, `CREATE TABLE Edges`, `CREATE TABLE
   NodeVerified` (the attestation child table), and a `CREATE PROPERTY GRAPH`
   wrapper with a single `LINKS` edge label;
-- `nodes.csv` and `edges.csv` — the row data for the two tables, one header row
+- `nodes.csv` and `edges.csv`: the row data for the two tables, one header row
   naming the columns in `schema.ddl` order followed by one row per node/edge;
-- `load.sql` — DML `INSERT` statements that populate `Nodes` and `Edges` with the
+- `load.sql`: DML `INSERT` statements that populate `Nodes` and `Edges` with the
   same rows (GoogleSQL has no SQL statement that bulk-loads a CSV, so the CSVs are
   the bulk-import representation for tooling such as `gcloud spanner databases
   import` and `load.sql` is the credential-free, tool-free loader);
-- `node_verified.csv` — one row per `verified[]` attestation, copied losslessly
+- `node_verified.csv`: one row per `verified[]` attestation, copied losslessly
   from the source (see below);
-- `derivation.sql` — a `CREATE VIEW` that recomputes `tier`/`stale` from the
+- `derivation.sql`: a `CREATE VIEW` that recomputes `tier`/`stale` from the
   stored facts, so no consumer is stuck with the frozen snapshot.
 
 It also prints a `binder.report/v1` summary (command `project`) to stdout, uses
@@ -1216,13 +1215,13 @@ column order and deterministic identifier sanitization.
 
 The row files match `schema.ddl` exactly: `nodes.csv`/`edges.csv` and the
 `load.sql` `INSERT` column lists carry the same column names in the same order as
-the declared tables. Rows are deterministically ordered — nodes by `node_key`,
-edges in resolved-link order — so repeated runs are byte-identical. `edges.csv`
+the declared tables. Rows are deterministically ordered: nodes by `node_key`,
+edges in resolved-link order: so repeated runs are byte-identical. `edges.csv`
 maps each edge's endpoints to the corresponding `node_key`, so the row data
 carries referential integrity to `Nodes`. In `load.sql`, an empty optional value
 is rendered as `NULL` and `stale_after` as a `DATE` literal; string literals are
 escaped so no value can break out of a statement. `binder project` never mints a
-key and never writes back to the source bundle — it only reads and emits.
+key and never writes back to the source bundle: it only reads and emits.
 
 The summary envelope carries `node_key.strategy` (`path` | `frontmatter`),
 `identity_stability` (`re_rooting_stable`, `path_fallback_count`), `counts`
@@ -1233,7 +1232,7 @@ anywhere means a moved corpus root would change those keys).
 
 #### Provenance completeness: `NodeVerified` + the derivation view
 
-`tier` is a *derived* value, never stored on disk — the raw truth is each
+`tier` is a *derived* value, never stored on disk: the raw truth is each
 concept's `verified[]` list. So the projection also emits that list losslessly.
 
 `node_verified.csv` (and the matching `CREATE TABLE NodeVerified`, keyed
@@ -1275,12 +1274,12 @@ toward a frontmatter type majority and is never listed in a mapping's
 `sample_files`, because `infer` read no authored value from it. Each such file
 is instead disclosed in the report's `warnings` array. Its filename still feeds
 the Tier-2 filename/heading heuristics **only when its directory also holds at
-least one file that did parse** — the deterministic tiers (folder, pattern,
+least one file that did parse**: the deterministic tiers (folder, pattern,
 frontmatter) only propose for a directory that contributed at least one parsed
 file, so on those tiers a directory whose files are *all* unparseable produces no
 mapping at all. The opt-in `--gemini` tier is the exception: directory names are
 handed to Gemini regardless of whether any file parsed, so it may still propose a
-type for an all-unparseable directory — that mapping carries `source: gemini` and
+type for an all-unparseable directory; that mapping carries `source: gemini` and
 an empty `sample_files`, and the per-file `warnings` persist alongside it. Either
 way, no unparsed file is ever cited in `sample_files`.
 
@@ -1340,7 +1339,7 @@ the note `No directory type mappings inferred (use --default-type: Note)` goes t
 stderr, and the exit code is still `0`, so the substitution expands to an empty
 `--type-map`. Both `convert` and `enrich` accept that as a map that matches
 nothing and go on to do the rest of their work exactly as if the flag had been
-omitted — on `testdata/corpus-basic`, the bundle `convert --type-map ""` emits is
+omitted: on `testdata/corpus-basic`, the bundle `convert --type-map ""` emits is
 byte-identical to the one it emits with no `--type-map` at all (`concepts: 4`,
 `links: 5 (resolved 4, unresolved 1)`). The idiom is therefore safe to write once
 and run against **every** corpus, not only the ones with a directory signal to
@@ -1387,7 +1386,7 @@ error), it is reported as `binder: gemini semantic inference: <error>`. Both exi
 warning: <error>` respectively. Grep for the pair, not for one string.
 
 So a prose `--gemini` run that quietly returns a deterministic-looking proposal
-may in fact be a degraded one. If it matters whether the model was actually
+may in fact be a degraded one. If it matters whether the model was
 consulted, use `--json` and inspect `warnings` (and `mappings[].source`), or
 make the failure loud with `--gemini-required` / `--strict`.
 
@@ -1423,7 +1422,7 @@ flag  >  environment variable  >  config file  >  built-in default
   Exactly **one** file is loaded; the two are not merged. If `./.binder.yaml`
   exists it is the config file, and the global file is ignored in its entirety
   (not just for the keys the local file sets). `binder config` prints the file
-  actually in effect on its `config file:` line, so that line is the way to tell
+  in effect on its `config file:` line, so that line is the way to tell
   which one you are editing.
 - **Environment variables** use the `BINDER_` prefix, e.g. `BINDER_VERIFIED_BY`, `BINDER_DEFAULT_TYPE`, `BINDER_GEMINI_PROJECT`.
 
@@ -1564,7 +1563,7 @@ from a config file removes the file itself rather than leaving an empty one.
 `schema: "binder.config/v1"`, and `command` distinguishes the four subcommands.
 Each `result` is a different object.
 
-**`binder config --json` / `binder config list --json`** — `command: "config"`.
+**`binder config --json` / `binder config list --json`**; `command: "config"`.
 `config_file` is the file in effect (`""` when none), and `values` is a **map**,
 so its keys are sorted alphabetically (unlike the struct-backed envelope, which
 is field-ordered):
@@ -1609,7 +1608,7 @@ is field-ordered):
 Every key is always present, `value` is always a string (`""` when unset), and
 `source` ∈ `flag` | `env` | `file` | `default`.
 
-**`binder config get <key> --json`** — `command: "config get"`; `result` carries
+**`binder config get <key> --json`**; `command: "config get"`; `result` carries
 the resolved `key` (always the snake_case spelling), its `source`, and its
 `value`:
 
@@ -1626,7 +1625,7 @@ the resolved `key` (always the snake_case spelling), its `source`, and its
 }
 ```
 
-**`binder config set <key> <value> --json`** — `command: "config set"`; `result`
+**`binder config set <key> <value> --json`**; `command: "config set"`; `result`
 names the `file` written, the `key`, the `value`, and a `status`:
 
 ```json
@@ -1643,7 +1642,7 @@ names the `file` written, the `key`, the `value`, and a `status`:
 }
 ```
 
-**`binder config unset <key> --json`** — `command: "config unset"`; `result` is
+**`binder config unset <key> --json`**; `command: "config unset"`; `result` is
 the same minus `value`. `status` is `removed` when the key was present and
 `noop` when it was not (both exit `0`):
 
@@ -1686,8 +1685,8 @@ binder: invalid actor "bogus actor!"; valid forms: human:<id>, process:<id>, tea
 ```
 
 The same validation runs again at config-**load**, so a `verified_by` that was
-hand-edited into the file is caught on the next run rather than silently stamped
-into a bundle.
+hand-edited into the file is caught on the next run rather than stamped
+into a bundle without validation.
 
 ## JSON output (`--json`) and the exit-code contract
 
@@ -1695,7 +1694,7 @@ into a bundle.
 (including `config list`, `config get`, `config set`, and `config unset`) accept
 `--json` for
 scripting, agents, and CI. Prose is the default and is **byte-unchanged** when
-`--json` is absent — `--json` is a presentation layer over the already-computed
+`--json` is absent: `--json` is a presentation layer over the already-computed
 report, it changes no behavior and fabricates no fields or trust data.
 
 ### The envelope (schema `binder.report/v1`)
@@ -1731,7 +1730,7 @@ consumer needs to parse it safely:
 
 JSON output is deterministic: fixed 2-space indentation, HTML escaping **off**
 (so `<`, `>`, `&` are literal), a stable field order, and a trailing newline.
-Struct-backed objects — including the envelope itself — emit in
+Struct-backed objects (including the envelope itself) emit in
 field-declaration order (`binder`, `command`, `schema`, `result`), which is
 deterministic but not alphabetical; map-valued objects such as `by_type`,
 `tiers`, and `config`'s `values` do have their keys sorted alphabetically. All
@@ -1872,8 +1871,8 @@ disclosure is the never-stamp shape: present, and empty.
 | `findings` | array | Each `{ concept_id, severity, message }`. |
 | `reserved_structure_checked` | bool | Whether the structure of the reserved files (spec §8/§9) was examined. Always `false`: reserved-file structure is outside `validate`'s scope. |
 
-`severity` is `error` (a hard §11 violation — gates the exit code) or `advisory`
-(trust/lifecycle well-formedness — reported, never gates). See the
+`severity` is `error` (a hard §11 violation: gates the exit code) or `advisory`
+(trust/lifecycle well-formedness: reported, never gates). See the
 [exit-code contract](#exit-code-contract).
 
 `reserved_structure_checked` is **unconditional**: every `validate --json`
@@ -1919,7 +1918,7 @@ greater than zero.
 
 All list fields are `[]` when empty. `lint`'s exit code follows the shared
 contract: `0` by default (findings are advisories), `1` under `--strict` when any
-finding is present — `colon_space_scalars` excepted, which is never counted. See
+finding is present: `colon_space_scalars` excepted, which is never counted. See
 the [exit-code contract](#exit-code-contract).
 
 ### `infer --json` — `result` fields
@@ -1952,12 +1951,12 @@ in for a real corpus. This is not a capture of any particular run:*
 - **`mappings`** (`[]object`) — list of per-directory proposals with `dir`, `suggested_type`, `source` (`folder` | `pattern` | `frontmatter` | `gemini`), `rationale`, and optional `sample_files`, `model`, `backend`.
 - **`warnings`** (`[]string`) — always present, `[]` on a clean run. A degraded
   Gemini tier lands here as `gemini tier disabled: <error>` (the client could not
-  be built — the common no-credentials case) or `gemini inference warning:
+  be built; the common no-credentials case) or `gemini inference warning:
   <error>` (the client was built but the model call failed); in prose mode this
   is the **only** place the degradation is visible.
 
 `model` and `backend` appear **only** on entries the Gemini tier produced
-(`"source": "gemini"`); they name the model actually called and the auth
+(`"source": "gemini"`); they name the model called and the auth
 backend that was resolved for the call.
 
 *A single `mappings[]` entry captured from a live tier-4 run of `binder infer
@@ -2005,7 +2004,7 @@ a data export consumed directly (e.g. by a viewer), not a run report.
 
 `--json` composes with an explicit `--format json` (redundant but fine).
 Combining `--json` with a conflicting `--format {dot,graphml,html}` is a **usage
-error** (exit 2) — binder will not silently override your chosen format.
+error** (exit 2): binder will not override your chosen format.
 
 ### Exit-code contract
 
@@ -2095,7 +2094,7 @@ default they are reported (in prose and JSON) and exit `0`. The only default
 non-zero for a well-formed run is `validate`'s spec §11 hard non-conformance,
 which is a genuine violation, not an advisory. Opting into [`--strict`](#strict-mode)
 promotes those advisories into gating findings (exit `1`) **only for the run that
-requests it** — the default posture is unchanged.
+requests it**: the default posture is unchanged.
 
 > **Compatibility note.** This refines the previous behavior (where non-IO
 > failures collapsed to exit `1`): `0` still means success, and failures are now
@@ -2110,8 +2109,8 @@ By default binder is **never-reject**: advisories are reported but exit `0`.
 locally. Each command promotes its own advisory set, listed in the table below.
 The read-boundary normalization advisory is carved out of those sets: it is
 reported and does not gate, on `enrich` or on `convert`. On a run that reports,
-the flag changes only the exit code — the report (prose or JSON) is
-byte-identical with and without the flag — and in no case does it affect any
+the flag changes only the exit code: the report (prose or JSON) is
+byte-identical with and without the flag: and in no case does it affect any
 other run.
 
 The per-command contract:
@@ -2153,7 +2152,7 @@ reason is not squeamishness about a new rule, and it is not a claim about YAML's
 quoting rules: a colon-space can appear in plenty of documents that parse
 perfectly well, for instance inside a block scalar, where it is ordinary text and
 not a key at all. The guarantee comes from the wiring instead. The advisory is
-*derived only for a file the codec could not parse* — `convert` computes it from
+*derived only for a file the codec could not parse*: `convert` computes it from
 the same `recovered` flag that produces the `invalid frontmatter` schema
 violation, so the file carrying an advisory is *always* already reported by that
 violation, and that violation **does** gate under `--strict`. Counting the
@@ -2239,22 +2238,22 @@ structured tool payloads). It serves over stdio until the client disconnects.
 > `validate`, `review`, `lint` and `graph`, every tool parameter mirrors its CLI
 > flag or positional argument one-to-one *except* the output-routing flags —
 > `convert --report`, `graph --output`, and the report-envelope `--json` of
-> `convert`, `validate`, `review` and `lint` — which the tools do not expose:
+> `convert`, `validate`, `review` and `lint`; which the tools do not expose:
 > over MCP the transport **is** the JSON channel, so there is nothing to route
 > and no `--json` flag to toggle. The tool payloads are byte-identical to the
 > corresponding `binder <cmd> --json`, with `graph` the exception: its payload is
 > the raw export in whatever `format` was asked for, so it equals
 > `binder graph --json` only at `format:json`, and `binder graph --format dot` at
 > `format:dot`. (`convert`'s `out`/`dry_run` and `graph`'s `format` select *what*
-> is produced, not how the report is routed, so they remain — though `format` is
+> is produced, not how the report is routed, so they remain: though `format` is
 > also the one parameter whose **default** diverges from its flag's: the CLI
 > defaults to `dot`, the tool to `json`. Two of those flag names mean different
 > things on different commands. `convert`'s `-o`/`--output` is the output
 > **bundle directory**, a destination rather than a report route, which is why it
 > is exposed as `out`; `graph`'s `-o`/`--output` writes the export to a file
-> instead of stdout and is genuinely routing. And `graph --json` is merely an
-> alias for `--format json` — a format selector, not the report envelope, which
-> `graph` never emits — so it is already covered by the exposed `format` param.
+> instead of stdout and is output routing. And `graph --json` is an
+> alias for `--format json` (a format selector, not the report envelope, which
+> `graph` never emits), so it is already covered by the exposed `format` param.
 > `lint` and `review` have no `--output` flag at all.)
 >
 > `list_graphs` and `query_graph` have **no CLI equivalent**: `binder list-graphs`
@@ -2318,7 +2317,7 @@ exit code it does **not** change the payload (the report is returned either way)
 
 ### Behavior and invariants
 
-The server adds **no business logic** — it is a thin, invariant-preserving
+The server adds **no business logic**: it is a thin, invariant-preserving
 transport over the existing internal functions:
 
 - **Never-reject.** Findings (non-conformance, broken links, orphans, stale, …)
@@ -2330,8 +2329,8 @@ transport over the existing internal functions:
   never-reject rule to the query surface: a `lookup` for an id that does not
   exist returns the normal envelope with `result.not_found: true`, and **no**
   `isError` field on the wire at all (MCP treats an absent `isError` as false,
-  so do not wait for a literal `"isError": false` — it is never sent). What
-  *is* a tool error is malformed usage — an unknown `op`
+  so do not wait for a literal `"isError": false`; it is never sent). What
+  *is* a tool error is malformed usage: an unknown `op`
   (`unknown op "bogus" (want lookup|neighbors|neighborhood|pattern|path)`)
   or an out-of-range `depth` (`depth must be in 1..5`) come back as
   `isError: true` with **plain text**, not the envelope. So a consumer must
@@ -2489,7 +2488,7 @@ derived from the same projection `binder graph` exports.
 [`graph` flag table](#graph) is the reference. `--format json` (or its `--json`
 alias) is the raw `{nodes, edges}` export, **not** the `binder.report/v1` envelope
 the other commands wrap their reports in (see
-[graph JSON — a raw export, not the envelope](#graph-json--a-raw-export-not-the-envelope)):
+[graph JSON; a raw export, not the envelope](#graph-json--a-raw-export-not-the-envelope)):
 
 ```json
 {
@@ -2606,7 +2605,7 @@ node_key:  {"strategy":"frontmatter","key":"slug"}          # id_key resolves, s
 
 `strategy` is
 `frontmatter` only when the key resolves on at least one concept; otherwise it stays
-`path` with the key still echoed. The value is never invented — a concept missing the
+`path` with the key still echoed. The value is never invented: a concept missing the
 key keeps its path id.
 
 ### `query_graph`: asking questions of the graph
@@ -2620,7 +2619,7 @@ examples below run against `testdata/okf-bundles/acme_retail`.
 
 #### The five operations
 
-**`lookup`** — fetch a node by exact `id`, or all nodes of a `label`:
+**`lookup`**; fetch a node by exact `id`, or all nodes of a `label`:
 
 ```json
 {
@@ -2639,7 +2638,7 @@ examples below run against `testdata/okf-bundles/acme_retail`.
 }
 ```
 
-**`neighbors`** — one-hop neighbors of `id` in a `direction` (`out`|`in`|`both`,
+**`neighbors`**: one-hop neighbors of `id` in a `direction` (`out`|`in`|`both`,
 default `out`), optionally filtered by `rel`:
 
 ```json
@@ -2668,8 +2667,8 @@ default `out`), optionally filtered by `rel`:
 (Envelope fields `binder`/`command`/`schema` omitted from here on; every response
 carries them.)
 
-**`neighborhood`** — bounded k-hop BFS from `id` up to `depth`, with each node's
-minimum depth in `depths[]` (`nodes` and `edges` omitted here — excerpt):
+**`neighborhood`**: bounded k-hop BFS from `id` up to `depth`, with each node's
+minimum depth in `depths[]` (`nodes` and `edges` omitted here; excerpt):
 
 ```json
 {
@@ -2690,7 +2689,7 @@ minimum depth in `depths[]` (`nodes` and `edges` omitted here — excerpt):
 }
 ```
 
-**`pattern`** — source nodes of `label` that link to a node matching `to_label`
+**`pattern`**: source nodes of `label` that link to a node matching `to_label`
 and/or a `where` property filter over `type`/`tier`/`stale`:
 
 ```json
@@ -2718,7 +2717,7 @@ and/or a `where` property filter over `type`/`tier`/`stale`:
 property filter uses `"where": { "prop": "tier", "eq": "human-reviewed" }` in place
 of (or alongside) `to_label`.
 
-**`path`** — bounded existence and shortest hop-path from `from` to `to`:
+**`path`**; bounded existence and shortest hop-path from `from` to `to`:
 
 ```json
 {
@@ -2801,7 +2800,7 @@ rel = "even"      → nodes: []                      # a substring is not a matc
 
 #### The `node_key` echo
 
-Every `query_graph` result echoes the identity basis it actually used:
+Every `query_graph` result echoes the identity basis it used:
 
 ```json
 "node_key": { "strategy": "path", "key": "<your id_key, or empty>", "honored": false }
@@ -2809,7 +2808,7 @@ Every `query_graph` result echoes the identity basis it actually used:
 
 In this version `query_graph` **accepts** an `id_key` but does **not** re-key
 traversal identity; traversal is always by path id. Rather than ignore the
-parameter silently, it says so: `strategy` stays `path`, `key` echoes what you sent,
+parameter without disclosure, it says so: `strategy` stays `path`, `key` echoes what you sent,
 and `honored` is `false`. Supplying `id_key: "slug"` against the sample bundle:
 
 ```json
@@ -2831,7 +2830,7 @@ This matters for harnesses. `list_graphs` may report
 still traverses by path and returns `honored: false`. **A harness that passes an
 `id_key` here must read `honored` and know its key was not applied**: the returned
 ids are path ids (`orders`, not `urn:acme:orders`). Joining `query_graph` output on
-your authored id without checking `honored` will silently mis-join results.
+your authored id without checking `honored` will mis-join results.
 
 #### Errors and exit codes
 
@@ -2852,7 +2851,7 @@ write failure.
 
 The graph is a **read model**: derived from the bundle on every call, never stored,
 never written back. `binder graph`, `list_graphs`, and `query_graph` cannot change a
-bundle — not its frontmatter, not its links, not an identity. You can run any of them
+bundle: not its frontmatter, not its links, not an identity. You can run any of them
 against a production bundle, in any order, as often as you like, and the bundle bytes
 are unchanged. If you need the graph again, ask again: it is always recomputed from
 the current bundle, so it never drifts from the source.
@@ -2948,7 +2947,7 @@ stable, de-duplicated `## Related` section appended to the concept body:
 ```
 
 This matters because the read side (`review`/`graph`) rebuilds edges only from
-persisted body links — without materialization, a frontmatter-only edge would
+persisted body links: without materialization, a frontmatter-only edge would
 vanish on reload and its target would be wrongly reported as an orphan. If no ref
 resolves, the body is left byte-identical.
 
@@ -2966,7 +2965,7 @@ binder recognises and that need no read-boundary normalization: the fence opens
 with `---` and a newline, LF or CRLF, at the very start. A leading UTF-8 BOM or
 a lone-CR (classic-Mac) fence is now recognised via read-boundary normalization
 ([#124](https://github.com/ghchinoy/binder/issues/124)), so the `verified:`
-attestation it guards is preserved rather than demoted to body — but because
+attestation it guards is preserved rather than demoted to body: but because
 that normalization (BOM strip, lone-CR to LF) does not preserve the original
 encoding, it is disclosed non-optionally rather than passing as a silent
 round-trip: a `normalized` signal plus a top-level advisory in the run report.
@@ -3039,11 +3038,11 @@ the same discipline as the trust-mapping flags: deterministic, additive, and
 - **`--status-map "archive=deprecated,drafts=draft,default=active"`** — assigns
   `status` by the concept's source directory. Keys are directory prefixes matched
   **longest-first** (the most specific directory wins; ties are broken
-  **lexicographically**, and each key is trimmed of surrounding `/`) — the same
+  **lexicographically**, and each key is trimmed of surrounding `/`): the same
   matcher `--type-map` and `--stale-after-map` use; the reserved `default=`
   key is the fallback for anything unmatched. `status` is set **only when the
-  concept has none** — an authored `status` is always preserved. Values are the
-  spec `status` enum (`draft`, `stable`, `deprecated`) — a value outside it is
+  concept has none**: an authored `status` is always preserved. Values are the
+  spec `status` enum (`draft`, `stable`, `deprecated`): a value outside it is
   **checked and reported** on every run, and rewritten only if you ask. See
   [Status vocabulary and `--canonicalize-status`](#status-vocabulary-and---canonicalize-status).
 
@@ -3066,7 +3065,7 @@ the same discipline as the trust-mapping flags: deterministic, additive, and
   `{ by: <actor>, at: <now> }` (RFC 3339, `SOURCE_DATE_EPOCH`-aware) to each
   concept. Unlike the two maps above it is not set-when-absent: it **appends**
   to any existing `verified` list and de-duplicates by `(by, at)`; it never
-  rewrites the derived trust tier — the tier stays computed from the `verified`
+  rewrites the derived trust tier: the tier stays computed from the `verified`
   events (see [Derived trust tiers](#derived-trust-tiers)). The actor is
   validated with the actor grammar (`human:<id>`, `process:<id>`, `team:<id>`,
   or `<producer>/<version>` such as `binder/0.3.0`); an invalid value is a
@@ -3143,7 +3142,7 @@ evidence a decision by the person running the command, and an attestation is
 exactly the thing that must not be written on somebody else's say-so. binder
 treats it as it treats no config at all: no flag, no stamp.
 
-It is not silently dropped either. The run discloses the value it declined to
+It is not dropped without notice either. The run discloses the value it declined to
 act on, and tells you what would honour it:
 
 ```bash
@@ -3174,7 +3173,7 @@ config` reports it, and a malformed one is still a fail-fast usage error (exit
 Two consequences worth knowing:
 
 - **`binder config set verified_by …` writes the repo-local file** — local is
-  the default — so setting your actor that way will *not* make binder stamp.
+  the default: so setting your actor that way will *not* make binder stamp.
   Pass `-g`/`--global` to set the default that does.
 - Exactly one config file is ever loaded, and `./.binder.yaml` wins the search
   (see [`config`](#config)). A repo-local file therefore also **shadows** a
@@ -3258,7 +3257,7 @@ Trust (verified stamps):
 (`binder config unset --global verified_by` takes the default away again; `-g` is
 required to reach the global file.)
 
-**A skip is not a rejection** — never-reject still holds. The run exits `0`, the
+**A skip is not a rejection**: never-reject still holds. The run exits `0`, the
 concept is converted (or enriched) like any other, and the existing attestation
 is neither dropped nor reshaped: `metrics/revenue.md` keeps the authored bare
 mapping it came in with, verbatim.
@@ -3324,12 +3323,12 @@ conditional on `--dry-run`, on anything being written, or on the output format:
 The `verified` object is additive to the
 [`binder.report/v1` envelope](#the-envelope-schema-binderreportv1); the schema is
 unchanged, and the four other report-emitting commands (`validate`, `review`,
-`lint`, `infer`) do not carry it — they write no frontmatter.
+`lint`, `infer`) do not carry it: they write no frontmatter.
 
 ### Status vocabulary and `--canonicalize-status`
 
 OKF §5.4 fixes the `status` enum at `draft` | `stable` | `deprecated`, but the
-vocabularies real corpora use rarely match — `wip`, `active`, `archived`. Binder
+vocabularies real corpora use rarely match: `wip`, `active`, `archived`. Binder
 splits this into two separate behaviours, and the distinction is the whole point
 of the feature:
 
@@ -3337,7 +3336,7 @@ of the feature:
   §5.4 enum on every `convert` and `enrich` run, whether or not you pass a flag.
 - **The rewrite is opt-in.** `--canonicalize-status` is the only thing that
   changes a value. Without it binder **writes your value unchanged** and tells
-  you what it would have mapped it to. Binder never silently rewrites a status.
+  you what it would have mapped it to. Binder never rewrites a status behind your back.
 
 The alias table is **fixed and closed**. There is no way to extend it, and
 anything not in it is never rewritten:
@@ -3527,7 +3526,7 @@ is not a violation.
 
 `convert` never rejects. A source file whose frontmatter will not parse (invalid
 YAML in a closed fence, or an unterminated fence) is preserved losslessly: its
-original text — fence and all — becomes the concept body, a default `type` is
+original text (fence and all) becomes the concept body, a default `type` is
 stamped so the bundle stays conformant, and the file is reported.
 
 Such a file carries a binder-namespaced marker in its emitted frontmatter:
@@ -3540,7 +3539,7 @@ x_binder:
 
 This marker is binder-owned (no OKF-vocabulary collision), round-trips as an
 unknown key, and is the single authoritative signal both
-`binder convert --report` and `binder review` read to report recovery — so the
+`binder convert --report` and `binder review` read to report recovery: so the
 two surfaces can never disagree, and no fragile body-shape heuristic is needed.
 `review` lists these under `unparsed frontmatter (recovered as body)`.
 
@@ -3707,7 +3706,7 @@ Both generated indexes are counted but not examined, so the verdict covers
 `overview.md` and `metrics/revenue.md`.
 
 **3. Review** (revenue is human-reviewed via `verified.by: human:alice`;
-overview is unverified). Keep the clock pinned here too — `review` derives its
+overview is unverified). Keep the clock pinned here too: `review` derives its
 staleness date from `SOURCE_DATE_EPOCH`, so an unpinned run prints today's date
 and the example stops reproducing:
 
@@ -3755,7 +3754,7 @@ community-core codec adapter. This guide grows a full section for each as it lan
 
 - **In-place enrichment** — ✅ shipped: `binder enrich` injects the missing
   required frontmatter (`type`/`title`/`generated`) into a source tree **in
-  place** — frontmatter-only, additive/never-clobber, idempotent unless a
+  place**: frontmatter-only, additive/never-clobber, idempotent unless a
   `verified` stamp advances, and lossless. See [`enrich`](#enrich).
   [#5](https://github.com/ghchinoy/binder/issues/5)
 - **`file://` edge resolution** — ✅ shipped: workspace-relative `file://` URIs
