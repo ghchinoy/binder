@@ -48,7 +48,7 @@ func TestInferFromFrontmatter(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			got, _ := InferFromFrontmatter(tc.files)
 			if got != tc.wantType {
-				t.Errorf("InferFromFrontmatter() = %q, want %q", got, tc.wantType)
+				t.Errorf("InferFromFrontmatter(%+v) = %q, want %q", tc.files, got, tc.wantType)
 			}
 		})
 	}

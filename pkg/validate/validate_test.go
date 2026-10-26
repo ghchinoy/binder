@@ -47,21 +47,6 @@ func TestValidateGoldenBundles(t *testing.T) {
 	}
 }
 
-func writeBundle(t *testing.T, files map[string]string) string {
-	t.Helper()
-	dir := t.TempDir()
-	for rel, content := range files {
-		p := filepath.Join(dir, filepath.FromSlash(rel))
-		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	return dir
-}
-
 func TestValidateHardFailures(t *testing.T) {
 	t.Run("missing type is an error (§11.2)", func(t *testing.T) {
 		dir := writeBundle(t, map[string]string{
@@ -150,4 +135,19 @@ func TestValidateNeverRejectsOptional(t *testing.T) {
 	if !res.Conformant() {
 		t.Fatalf("unknown keys/types/broken links must not reject: %v", res.Errors())
 	}
+}
+
+func writeBundle(t *testing.T, files map[string]string) string {
+	t.Helper()
+	dir := t.TempDir()
+	for rel, content := range files {
+		p := filepath.Join(dir, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dir
 }

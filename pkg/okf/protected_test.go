@@ -1,8 +1,8 @@
 package okf
 
 import (
-	"reflect"
-	"sort"
+	"maps"
+	"slices"
 	"testing"
 )
 
@@ -41,8 +41,8 @@ func TestProtectedTrustKeysDerivation(t *testing.T) {
 	for _, k := range got {
 		gotSet[k] = true
 	}
-	if !reflect.DeepEqual(gotSet, want) {
-		t.Errorf("ProtectedTrustKeys() set mismatch:\n got:  %v\n want: %v\n(derivation drifted from TrustFields − {status,stale_after} + {verified_by})", gotSet, want)
+	if !maps.Equal(gotSet, want) {
+		t.Errorf("ProtectedTrustKeys(%q) set mismatch:\n got:  %v\n want: %v\n(derivation drifted from TrustFields − {status,stale_after} + {verified_by})", DefaultSpecVersion, gotSet, want)
 	}
 
 	// The two refreshable lifecycle keys must NOT be protected — that is the whole
@@ -55,10 +55,10 @@ func TestProtectedTrustKeysDerivation(t *testing.T) {
 
 	// Sorted + stable across calls: the CLI refusal error text joins this slice,
 	// so its order is part of the observable contract.
-	if !sort.StringsAreSorted(got) {
-		t.Errorf("ProtectedTrustKeys() is not sorted: %v", got)
+	if !slices.IsSorted(got) {
+		t.Errorf("ProtectedTrustKeys(%q) is not sorted: %v", DefaultSpecVersion, got)
 	}
-	if again := ProtectedTrustKeys(); !reflect.DeepEqual(got, again) {
-		t.Errorf("ProtectedTrustKeys() not stable across calls:\n first:  %v\n second: %v", got, again)
+	if again := ProtectedTrustKeys(); !slices.Equal(got, again) {
+		t.Errorf("ProtectedTrustKeys(%q) not stable across calls:\n first:  %v\n second: %v", DefaultSpecVersion, got, again)
 	}
 }

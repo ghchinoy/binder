@@ -1,8 +1,8 @@
 package convert
 
 import (
-	"reflect"
-	"sort"
+	"maps"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -19,7 +19,7 @@ func TestResolveStatusVocabularyConformant(t *testing.T) {
 		if res.NonConformant() {
 			t.Fatalf("canon=%v conformant reported NonConformant", canon)
 		}
-		if def != "stable" || !reflect.DeepEqual(out, prefixes) {
+		if def != "stable" || !maps.Equal(out, prefixes) {
 			t.Fatalf("canon=%v conformant changed values: def=%q out=%v", canon, def, out)
 		}
 	}
@@ -139,10 +139,10 @@ func TestGateMessageOmitsWroteItUnchanged(t *testing.T) {
 func TestResolveStatusVocabularyDeterministicOrder(t *testing.T) {
 	prefixes := map[string]string{"zeta": "active", "alpha": "wip", "mid": "bogus"}
 	_, _, res := ResolveStatusVocabulary(prefixes, "legacy", true)
-	if !sort.StringsAreSorted(res.Notes) {
+	if !slices.IsSorted(res.Notes) {
 		t.Errorf("notes not sorted: %v", res.Notes)
 	}
-	if !sort.StringsAreSorted(res.Warnings) {
+	if !slices.IsSorted(res.Warnings) {
 		t.Errorf("warnings not sorted: %v", res.Warnings)
 	}
 	// Notes = rewrites ∪ warnings.

@@ -7,10 +7,8 @@
 package validate
 
 import (
-	"io/fs"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/ghchinoy/binder/internal/okfrules"
@@ -77,31 +75,10 @@ func Bundle(root string, codec okf.Codec, spec okf.SpecVersion) (*Result, error)
 		return nil, &os.PathError{Op: "validate", Path: root, Err: os.ErrInvalid}
 	}
 
-	var files []string
-	err = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			if p != root && strings.HasPrefix(d.Name(), ".") {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if !strings.EqualFold(filepath.Ext(d.Name()), ".md") {
-			return nil
-		}
-		rel, err := filepath.Rel(root, p)
-		if err != nil {
-			return err
-		}
-		files = append(files, filepath.ToSlash(rel))
-		return nil
-	})
+	files, err := okfrules.WalkMarkdownFiles(root)
 	if err != nil {
 		return nil, err
 	}
-	sort.Strings(files)
 
 	// Initialize Findings so a conformant bundle serializes to [] not null (#13).
 	result := &Result{Root: root, Findings: []okfrules.Finding{}}

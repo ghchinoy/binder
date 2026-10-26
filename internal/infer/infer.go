@@ -320,31 +320,14 @@ type sourceFile struct {
 }
 
 func walkCorpus(root string) ([]sourceFile, error) {
-	var files []sourceFile
-	err := filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			if p != root && strings.HasPrefix(d.Name(), ".") {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if !strings.EqualFold(filepath.Ext(d.Name()), ".md") {
-			return nil
-		}
-		rel, err := filepath.Rel(root, p)
-		if err != nil {
-			return err
-		}
-		files = append(files, sourceFile{rel: filepath.ToSlash(rel), abs: p})
-		return nil
-	})
+	rels, err := okfrules.WalkMarkdownFiles(root)
 	if err != nil {
 		return nil, err
 	}
-	sort.Slice(files, func(i, j int) bool { return files[i].rel < files[j].rel })
+	files := make([]sourceFile, 0, len(rels))
+	for _, rel := range rels {
+		files = append(files, sourceFile{rel: rel, abs: filepath.Join(root, filepath.FromSlash(rel))})
+	}
 	return files, nil
 }
 

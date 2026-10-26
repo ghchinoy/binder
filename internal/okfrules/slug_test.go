@@ -1,7 +1,7 @@
 package okfrules
 
 import (
-	"reflect"
+	"slices"
 	"testing"
 )
 
@@ -75,7 +75,7 @@ func TestHeadingSlugs(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			got := HeadingSlugs(tc.body)
-			if !reflect.DeepEqual(got, tc.want) {
+			if !slices.Equal(got, tc.want) {
 				t.Errorf("HeadingSlugs(%q) = %v, want %v", tc.body, got, tc.want)
 			}
 		})

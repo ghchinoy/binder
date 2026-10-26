@@ -1,25 +1,13 @@
 package review
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/ghchinoy/binder/internal/okfrules"
 	"github.com/ghchinoy/binder/pkg/okf"
 )
-
-// concept is a tiny helper to build a concept with a title and links.
-func concept(id, typ, title string, links ...okf.Link) *okf.Concept {
-	fm := okfrules.NewOrderedMap()
-	if title != "" {
-		fm.Set("title", title)
-	}
-	return &okf.Concept{ID: id, RelPath: id + ".md", Type: typ, Frontmatter: fm, Links: links}
-}
-
-func edge(to string) okf.Link {
-	return okf.Link{TargetID: to, RawTarget: to, Resolved: true}
-}
 
 func TestReviewCountsTypesTiersOrphansUnresolved(t *testing.T) {
 	intro := concept("intro", "Note", "Intro", edge("guide"), okf.Link{RawTarget: "missing.md", Resolved: false})
@@ -62,25 +50,25 @@ func TestReviewCountsTypesTiersOrphansUnresolved(t *testing.T) {
 	if strings.Contains(orphans, "guide") {
 		t.Errorf("guide should not be an orphan (intro links to it): %q", orphans)
 	}
-	if contains(r.Orphans, "intro") {
+	if slices.Contains(r.Orphans, "intro") {
 		t.Errorf("intro links out (to guide) so it is an entrypoint, not an orphan: %v", r.Orphans)
 	}
-	if !contains(r.Entrypoints, "intro") {
-		t.Errorf("expected intro among entrypoints (no inbound links): %v", r.Entrypoints)
+	if !slices.Contains(r.Entrypoints, "intro") {
+		t.Errorf("Review().Entrypoints = %v, want intro present", r.Entrypoints)
 	}
 	for _, id := range []string{"orders", "calc"} {
-		if !contains(r.Orphans, id) {
-			t.Errorf("expected %q among orphans %v", id, r.Orphans)
+		if !slices.Contains(r.Orphans, id) {
+			t.Errorf("Review().Orphans = %v, want %q present", r.Orphans, id)
 		}
-		if contains(r.Entrypoints, id) {
+		if slices.Contains(r.Entrypoints, id) {
 			t.Errorf("%q has no edges; it is a true orphan, not an entrypoint: %v", id, r.Entrypoints)
 		}
 	}
 
-	if !contains(r.Stale, "guide") {
+	if !slices.Contains(r.Stale, "guide") {
 		t.Errorf("guide should be stale as of 2026-08-15: %v", r.Stale)
 	}
-	if !contains(r.Attested, "calc") {
+	if !slices.Contains(r.Attested, "calc") {
 		t.Errorf("calc should be reported attested: %v", r.Attested)
 	}
 	if len(r.Unresolved) != 1 || r.Unresolved[0].From != "intro" || r.Unresolved[0].RawTarget != "missing.md" {
@@ -289,11 +277,15 @@ func TestApplyRequiredTierShortfalls(t *testing.T) {
 	}
 }
 
-func contains(ss []string, want string) bool {
-	for _, s := range ss {
-		if s == want {
-			return true
-		}
+// concept is a tiny helper to build a concept with a title and links.
+func concept(id, typ, title string, links ...okf.Link) *okf.Concept {
+	fm := okfrules.NewOrderedMap()
+	if title != "" {
+		fm.Set("title", title)
 	}
-	return false
+	return &okf.Concept{ID: id, RelPath: id + ".md", Type: typ, Frontmatter: fm, Links: links}
+}
+
+func edge(to string) okf.Link {
+	return okf.Link{TargetID: to, RawTarget: to, Resolved: true}
 }

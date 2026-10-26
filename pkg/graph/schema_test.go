@@ -2,21 +2,11 @@ package graph
 
 import (
 	"encoding/json"
-	"reflect"
+	"slices"
 	"testing"
 
 	"github.com/ghchinoy/binder/pkg/okf"
 )
-
-// conceptWithKey builds a concept carrying an arbitrary extra frontmatter key,
-// used to exercise the authored stable-id identity path.
-func conceptWithKey(id, typ, title, key, val string) *okf.Concept {
-	c := concept(id, typ, title)
-	if key != "" {
-		c.Frontmatter.Set(key, val)
-	}
-	return c
-}
 
 func TestDescribeNodeLabelsAndCounts(t *testing.T) {
 	set := Describe(sampleBundle(), "2026-08-15", "")
@@ -64,20 +54,20 @@ func TestDescribePropertyDeclarationsMatchModel(t *testing.T) {
 	wantNode := []string{"id", "title", "type", "tier", "stale"}
 	wantEdge := []string{"from", "to", "text"}
 
-	if got := nodeProperties(); !reflect.DeepEqual(got, wantNode) {
-		t.Errorf("node properties = %v, want %v", got, wantNode)
+	if got := nodeProperties(); !slices.Equal(got, wantNode) {
+		t.Errorf("nodeProperties() = %v, want %v", got, wantNode)
 	}
-	if got := edgeProperties(); !reflect.DeepEqual(got, wantEdge) {
-		t.Errorf("edge properties = %v, want %v", got, wantEdge)
+	if got := edgeProperties(); !slices.Equal(got, wantEdge) {
+		t.Errorf("edgeProperties() = %v, want %v", got, wantEdge)
 	}
 
 	g := Describe(sampleBundle(), "2026-08-15", "").Graphs[0]
 	for _, nl := range g.NodeLabels {
-		if !reflect.DeepEqual(nl.Properties, wantNode) {
+		if !slices.Equal(nl.Properties, wantNode) {
 			t.Errorf("node label %q properties = %v, want %v", nl.Label, nl.Properties, wantNode)
 		}
 	}
-	if !reflect.DeepEqual(g.EdgeLabels[0].Properties, wantEdge) {
+	if !slices.Equal(g.EdgeLabels[0].Properties, wantEdge) {
 		t.Errorf("edge properties = %v, want %v", g.EdgeLabels[0].Properties, wantEdge)
 	}
 }
@@ -138,4 +128,14 @@ func TestDescribeNodeKeyStrategy(t *testing.T) {
 	if nk := Describe(b, "2026-08-15", "absent-key").Graphs[0].NodeKey; nk.Strategy != "path" || nk.Key != "absent-key" {
 		t.Errorf("id_key absent everywhere: node_key = %+v, want {path absent-key}", nk)
 	}
+}
+
+// conceptWithKey builds a concept carrying an arbitrary extra frontmatter key,
+// used to exercise the authored stable-id identity path.
+func conceptWithKey(id, typ, title, key, val string) *okf.Concept {
+	c := concept(id, typ, title)
+	if key != "" {
+		c.Frontmatter.Set(key, val)
+	}
+	return c
 }

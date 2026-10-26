@@ -39,7 +39,7 @@ func TestInferFromPatterns(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			got, _ := InferFromPatterns(tc.files)
 			if got != tc.wantType {
-				t.Errorf("InferFromPatterns() = %q, want %q", got, tc.wantType)
+				t.Errorf("InferFromPatterns(%v) = %q, want %q", tc.files, got, tc.wantType)
 			}
 		})
 	}
