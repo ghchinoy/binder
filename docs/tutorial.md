@@ -1012,6 +1012,208 @@ derives the same tier binder would — no credibility score, no fabricated trust
 the same guarantee restated by a different tool. For the full command set, run
 `okf --help` or see the [okf README](https://github.com/okfcli/okf).
 
+## Part 3: exploring and projecting public-domain knowledge graphs (`okf-bundles`)
+
+Parts 1 and 2 walked through small 3–5 file examples. To exercise `binder`'s
+trust tiers, lifecycle staleness, Attested Computations, graph exports (`graph`),
+Spanner SQL/PGQ projection (`project`), and agent graph traversal (`binder mcp`)
+against richer multi-type knowledge graphs, clone the companion
+[`ghchinoy/okf-bundles`](https://github.com/ghchinoy/okf-bundles) repository
+(CC0-1.0 public domain):
+
+```bash
+git clone --depth 1 https://github.com/ghchinoy/okf-bundles.git /tmp/okf-bundles
+```
+
+The repository carries four conformant OKF v0.2 bundles under `/tmp/okf-bundles/bundles/`:
+
+| Bundle | Concepts | Edges | What it exercises |
+|---|:---:|:---:|---|
+| `bundles/nist-ai-rmf` | 26 | 104 | **NIST AI RMF 1.0**: `Function`, `Category`, `Trustworthiness Characteristic`, 2 `Attested Computation` SQL metrics, `human-reviewed` tier |
+| `bundles/ietf-rfcs` | 17 | 51 | **Core IETF RFCs**: `RFC` & `Internet-Draft`, `status: stable \| draft \| deprecated`, `stale_after` dates, `machine-confirmed` tier |
+| `bundles/cybersecurity-cwe-attack` | 18 | 60 | **MITRE CWE & ATT&CK**: `Weakness` → `Technique` → `Mitigation` + SIEM SQL `Attested Computation`, mixed `human-reviewed` & `machine-confirmed` tiers |
+| `bundles/classical-mythology` | 24 | 151 | **Bulfinch's Mythology**: 5-type entity graph (`Deity`, `Hero`, `Place`, `Quest`, `Artifact`) for multi-hop graph traversal |
+
+### Step 1: review lifecycle, staleness, and Attested Computations
+
+Run `binder review` against `bundles/ietf-rfcs` as of `2026-07-31`:
+
+```bash
+binder review /tmp/okf-bundles/bundles/ietf-rfcs --today 2026-07-31
+```
+
+```text
+binder review
+  bundle: /tmp/okf-bundles/bundles/ietf-rfcs
+  concepts: 17
+  by type:
+    Internet-Draft: 1
+    RFC: 16
+  trust tiers:
+    human-reviewed: 0
+    machine-confirmed: 17
+    unverified: 0
+  stale (as of 2026-07-31): 2
+    http/rfc2616
+    security/rfc5246
+  attested computations: 0
+  unparsed frontmatter (recovered as body): 0
+  entrypoints (no inbound links): 0
+  orphans (no inbound or outbound links): 0
+  unresolved links: 0
+```
+
+Every RFC carries a `verified` stamp from `process:ietf-datatracker` (a non-human
+actor), so `binder` derives `machine-confirmed` across all 17 concepts. The two
+obsoleted specifications (`http/rfc2616` for HTTP/1.1 and `security/rfc5246` for
+TLS 1.2) carry `status: "deprecated"` and historical `stale_after` dates, so
+`review` surfaces them under `stale` while `auth/draft-ietf-oauth-v2-1`
+(`stale_after: "2027-06-01"`) remains fresh.
+
+Now review `bundles/nist-ai-rmf` and enforce a `human-reviewed` release floor:
+
+```bash
+binder review /tmp/okf-bundles/bundles/nist-ai-rmf \
+  --today 2026-07-31 \
+  --require-tier human-reviewed
+```
+
+```text
+binder review
+  bundle: /tmp/okf-bundles/bundles/nist-ai-rmf
+  concepts: 26
+  by type:
+    Attested Computation: 2
+    Category: 13
+    Function: 4
+    Trustworthiness Characteristic: 7
+  trust tiers:
+    human-reviewed: 26
+    machine-confirmed: 0
+    unverified: 0
+  below required tier (human-reviewed): 0
+  stale (as of 2026-07-31): 0
+  attested computations: 2
+    computations/calibration-drift-score
+    computations/demographic-parity-ratio
+  unparsed frontmatter (recovered as body): 0
+  entrypoints (no inbound links): 0
+  orphans (no inbound or outbound links): 0
+  unresolved links: 0
+```
+
+All 26 concepts meet the `human-reviewed` floor (exit `0`), and `review` lists
+the two OKF v0.2 §10 `Attested Computation` concepts (`demographic-parity-ratio`
+and `calibration-drift-score`), which `validate --strict` also checks for the
+required `runtime` field.
+
+### Step 2: export the concept graph (`binder graph`)
+
+Export the `classical-mythology` concept graph in JSON, Graphviz DOT, GraphML,
+or self-contained HTML:
+
+```bash
+binder graph --format json /tmp/okf-bundles/bundles/classical-mythology \
+  | jq '{nodes: (.nodes | length), edges: (.edges | length), sample_node: .nodes[0], sample_edge: .edges[0]}'
+```
+
+```json
+{
+  "nodes": 24,
+  "edges": 151,
+  "sample_node": {
+    "id": "artifacts/aegis",
+    "title": "The Aegis",
+    "type": "Artifact",
+    "tier": "human-reviewed",
+    "stale": false
+  },
+  "sample_edge": {
+    "from": "artifacts/aegis",
+    "to": "deities/athena",
+    "text": "athena"
+  }
+}
+```
+
+To generate a zero-dependency HTML view of the nodes and edges:
+
+```bash
+binder graph --format html /tmp/okf-bundles/bundles/classical-mythology > /tmp/mythology-graph.html
+```
+
+### Step 3: project to Spanner SQL/PGQ (`binder project`)
+
+`binder project` turns any loaded OKF bundle into offline, credential-free
+Google Cloud Spanner Graph DDL and CSV/SQL loader artifacts. Project the
+`cybersecurity-cwe-attack` bundle:
+
+```bash
+binder project /tmp/okf-bundles/bundles/cybersecurity-cwe-attack \
+  --target spanner \
+  --today 2026-07-31 \
+  --out /tmp/cwe-spanner
+```
+
+```json
+{
+  "binder": "binder/<version>",
+  "command": "project",
+  "schema": "binder.report/v1",
+  "result": {
+    "target": "spanner",
+    "node_key": {
+      "strategy": "path",
+      "key": ""
+    },
+    "identity_stability": {
+      "re_rooting_stable": false,
+      "path_fallback_count": 18
+    },
+    "counts": {
+      "nodes": 18,
+      "edges": 60
+    },
+    "projected_as_of": "2026-07-31",
+    "artifacts": [
+      { "name": "schema.ddl", "bytes": 2146 },
+      { "name": "nodes.csv", "bytes": 1463 },
+      { "name": "edges.csv", "bytes": 2678 },
+      { "name": "load.sql", "bytes": 6291 },
+      { "name": "node_verified.csv", "bytes": 1152 },
+      { "name": "derivation.sql", "bytes": 1391 }
+    ]
+  }
+}
+```
+
+Inspect the emitted files in `/tmp/cwe-spanner`:
+- **`schema.ddl`** creates `Nodes`, `Edges` (`INTERLEAVE IN PARENT Nodes`),
+  `NodeVerified` (storing the raw `verified[]` actorstamps losslessly), and
+  `CREATE PROPERTY GRAPH OkfGraph`.
+- **`nodes.csv`**, **`edges.csv`**, and **`node_verified.csv`** hold the bulk-import
+  rows, while **`load.sql`** provides standalone `INSERT` statements.
+- **`derivation.sql`** defines `CREATE VIEW NodeTrustDerived`, which recomputes
+  `tier` and `stale` dynamically from `Nodes.stale_after` and `NodeVerified` as
+  of `CURRENT_DATE()` so downstream consumers are never locked to the frozen
+  projection date.
+
+Once loaded into Spanner Graph, you can traverse from software weaknesses (`Weakness`)
+through adversarial techniques (`Technique`) to defensive controls (`Mitigation`)
+with standard SQL/PGQ:
+
+```sql
+SELECT weakness_title, technique_title, mitigation_title
+FROM GRAPH_TABLE (
+  OkfGraph
+  MATCH (w:Nodes {type: 'Weakness'})-[:LINKS]->(t:Nodes {type: 'Technique'})-[:LINKS]->(m:Nodes {type: 'Mitigation'})
+  COLUMNS (w.title AS weakness_title, t.title AS technique_title, m.title AS mitigation_title)
+);
+```
+
+See [Graph projection (`project`)](concepts/project.md) for the full schema and
+provenance contract.
+
 ## Which surface: CLI, Agent Skill, or MCP
 
 The CLI you used above is the deterministic core. Two other surfaces ship today
@@ -1049,6 +1251,10 @@ whichever surface you reach for.
 
 ## Where to go next
 
+- [Public-domain OKF bundles](guides/public-bundles.md) covers the
+  [`ghchinoy/okf-bundles`](https://github.com/ghchinoy/okf-bundles) collection,
+  the six-step reproducible build pipeline, and MCP `list_graphs`/`query_graph`
+  traversal examples.
 - The [user guide](user_guide.md) documents every command, flag, and the full
   trust vocabulary.
 - [CI usage](user_guide.md#ci-usage) shows a complete convert-validate-review

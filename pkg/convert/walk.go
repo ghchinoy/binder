@@ -14,6 +14,9 @@ type sourceFile struct {
 }
 
 // walkCorpus returns every .md file under root, in deterministic (sorted) order.
+// Hidden dot-directories (e.g. .git, .github, .claude, .obsidian) under root are
+// skipped so agent harness and repo metadata are not ingested as OKF concepts
+// (issue #252).
 func walkCorpus(root string) ([]sourceFile, error) {
 	var files []sourceFile
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
@@ -21,6 +24,9 @@ func walkCorpus(root string) ([]sourceFile, error) {
 			return err
 		}
 		if d.IsDir() {
+			if path != root && strings.HasPrefix(d.Name(), ".") {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 		if !strings.EqualFold(filepath.Ext(d.Name()), ".md") {

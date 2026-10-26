@@ -49,6 +49,23 @@ func TestBuildEdgesAreResolvedOnlyAndSorted(t *testing.T) {
 	}
 }
 
+func TestEdgesFromConceptsDeduplicatesAndSkipsMissingTargets(t *testing.T) {
+	a := concept("a", "Note", "A",
+		okf.Link{TargetID: "b", RawTarget: "b.md", Text: "Countries", Resolved: true},
+		okf.Link{TargetID: "b", RawTarget: "b.md", Text: "Countries", Resolved: true},      // duplicate triple (#253)
+		okf.Link{TargetID: "b", RawTarget: "b.md", Text: "Origin", Resolved: true},         // distinct text kept
+		okf.Link{TargetID: "index", RawTarget: "../index.md", Text: "idx", Resolved: true}, // target not in concepts (#251)
+	)
+	b := concept("b", "Note", "B")
+	edges := EdgesFromConcepts([]*okf.Concept{a, b})
+	if len(edges) != 2 {
+		t.Fatalf("edges = %+v, want 2 deduplicated edges to existing concepts", edges)
+	}
+	if edges[0].Text != "Countries" || edges[1].Text != "Origin" {
+		t.Errorf("unexpected edge texts: %+v", edges)
+	}
+}
+
 func TestExportAllFormatsRenderAndParse(t *testing.T) {
 	b := sampleBundle()
 

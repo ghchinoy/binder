@@ -88,6 +88,25 @@ func TestValidateHardFailures(t *testing.T) {
 			t.Fatal("bundle with unparseable frontmatter must not be conformant")
 		}
 	})
+
+	t.Run("hidden dot-directories (.claude, .github, .obsidian) are skipped (#252)", func(t *testing.T) {
+		dir := writeBundle(t, map[string]string{
+			"concepts/a.md":                    "---\ntype: Note\ntitle: A\n---\n\nbody\n",
+			".claude/skills/foo/SKILL.md":      "---\nname: foo\n---\n\nno type field\n",
+			".github/PULL_REQUEST_TEMPLATE.md": "no frontmatter at all\n",
+			".obsidian/workspace.md":           "no frontmatter at all\n",
+		})
+		res, err := validate.Bundle(dir, native.New(), okf.DefaultSpecVersion)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !res.Conformant() {
+			t.Fatalf("hidden dot-directories should be skipped, got findings: %+v", res.Findings)
+		}
+		if res.NumConcepts != 1 {
+			t.Fatalf("NumConcepts = %d, want 1", res.NumConcepts)
+		}
+	})
 }
 
 // TestReservedStructureUnchecked pins the scope contract for #77 item 1: the

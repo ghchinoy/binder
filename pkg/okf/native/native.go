@@ -933,7 +933,8 @@ func (c *Codec) ExtractLinks(fromConceptID, body string) []okf.Link {
 }
 
 // ResolveLink resolves a raw markdown target to a bundle-relative concept ID.
-// External (scheme/anchor-only) and non-.md targets are unresolvable.
+// External (scheme/anchor-only), reserved (index.md/log.md), and non-.md
+// targets are unresolvable as concept IDs (issue #251).
 func (c *Codec) ResolveLink(fromConceptID, rawTarget string) (string, bool) {
 	target := strings.TrimSpace(rawTarget)
 	if hash := strings.IndexByte(target, '#'); hash >= 0 {
@@ -951,6 +952,9 @@ func (c *Codec) ResolveLink(fromConceptID, rawTarget string) (string, bool) {
 		resolved = path.Clean(target)
 	} else {
 		resolved = path.Clean(path.Join("/"+path.Dir(fromRel), target))
+	}
+	if c.IsReservedFile(resolved) {
+		return "", false
 	}
 	id := strings.TrimPrefix(strings.TrimSuffix(resolved, ".md"), "/")
 	if id == "" || strings.HasPrefix(id, "..") {

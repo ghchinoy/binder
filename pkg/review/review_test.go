@@ -88,6 +88,19 @@ func TestReviewCountsTypesTiersOrphansUnresolved(t *testing.T) {
 	}
 }
 
+func TestReviewIgnoresLinksToReservedFiles(t *testing.T) {
+	c := concept("tools/binder", "Tool", "binder",
+		okf.Link{RawTarget: "../index.md", Text: "bundle index", Resolved: false},
+		okf.Link{RawTarget: "/log.md#2026", Text: "changelog", Resolved: false},
+		okf.Link{RawTarget: "sub/index.md", Text: "section index", Resolved: false},
+	)
+	b := &okf.Bundle{Root: "/b", Concepts: []*okf.Concept{c}}
+	r := Review(b, "2026-08-15", nil)
+	if len(r.Unresolved) != 0 {
+		t.Fatalf("links to reserved files (index.md, log.md) must not be unresolved, got %+v", r.Unresolved)
+	}
+}
+
 func TestReviewStringIsDeterministic(t *testing.T) {
 	b := &okf.Bundle{Root: "/b", Concepts: []*okf.Concept{
 		concept("b", "Note", "B"),

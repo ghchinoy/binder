@@ -47,18 +47,24 @@ type Model struct {
 }
 
 // EdgesFromConcepts returns the resolved directed edge set for the given
-// concepts, sorted deterministically (by From, then To, then Text). It is the
-// SINGLE definition of what counts as an edge — a resolved link only
-// (Link.Resolved && TargetID != ""), with From=c.ID → To=l.TargetID. Build uses
-// it, and any caller that must stay in edge-parity with `binder graph` (e.g. the
-// index catalog's backlinks/graph annotations) calls it too, so the two can
-// never disagree. It does NOT reimplement link resolution; it reads the already
-// resolved Links on each concept.
+// concepts, sorted deterministically (by From, then To, then Text) and
+// deduplicated so identical (From, To, Text) triples appear once (issue #253).
+// It is the SINGLE definition of what counts as an edge — a resolved link whose
+// target concept exists in the concept set (Link.Resolved && exists[TargetID]),
+// with From=c.ID → To=l.TargetID (issue #251). Build uses it, and any caller
+// that must stay in edge-parity with `binder graph` (e.g. the index catalog's
+// backlinks/graph annotations) calls it too, so the two can never disagree. It
+// does NOT reimplement link resolution; it reads the already resolved Links on
+// each concept.
 func EdgesFromConcepts(concepts []*okf.Concept) []Edge {
+	exists := make(map[string]bool, len(concepts))
+	for _, c := range concepts {
+		exists[c.ID] = true
+	}
 	var edges []Edge
 	for _, c := range concepts {
 		for _, l := range c.Links {
-			if l.Resolved && l.TargetID != "" {
+			if l.Resolved && l.TargetID != "" && exists[l.TargetID] {
 				edges = append(edges, Edge{From: c.ID, To: l.TargetID, Text: l.Text})
 			}
 		}
@@ -72,6 +78,15 @@ func EdgesFromConcepts(concepts []*okf.Concept) []Edge {
 		}
 		return edges[i].Text < edges[j].Text
 	})
+	if len(edges) > 1 {
+		dedup := edges[:1]
+		for _, e := range edges[1:] {
+			if e != dedup[len(dedup)-1] {
+				dedup = append(dedup, e)
+			}
+		}
+		edges = dedup
+	}
 	return edges
 }
 

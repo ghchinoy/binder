@@ -55,6 +55,7 @@ jobs:
           # engines.node ">=22.19.0" floor (the true install-clean minimum:
           # undici, transitively via Astro, wants >=22.19).
           node-version: 22
+          check-latest: true
           cache: npm
           cache-dependency-path: package-lock.json
       - run: npm ci
