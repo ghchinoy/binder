@@ -3,7 +3,7 @@ package convert
 import (
 	"bytes"
 	"fmt"
-	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -209,8 +209,8 @@ func TestEdgeSetParity(t *testing.T) {
 	concepts := catalogFixture()
 	catalogEdges := graph.EdgesFromConcepts(concepts)
 	graphEdges := graph.Build(&okf.Bundle{Concepts: concepts}, "").Edges
-	if !reflect.DeepEqual(catalogEdges, graphEdges) {
-		t.Errorf("edge-set parity broken:\ncatalog=%v\ngraph  =%v", catalogEdges, graphEdges)
+	if !slices.Equal(catalogEdges, graphEdges) {
+		t.Errorf("EdgesFromConcepts(concepts) = %v, want %v", catalogEdges, graphEdges)
 	}
 	// Sanity: only the two resolved links are edges; the unresolved one is dropped.
 	if len(catalogEdges) != 2 {

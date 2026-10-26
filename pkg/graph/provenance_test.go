@@ -3,7 +3,7 @@ package graph
 import (
 	"bytes"
 	"encoding/csv"
-	"reflect"
+	"slices"
 	"testing"
 
 	"github.com/ghchinoy/binder/internal/okfrules"
@@ -55,8 +55,8 @@ func TestNodeVerifiedRowsByteFaithful(t *testing.T) {
 		{NodeKey: "node-multi", Seq: 1, By: "human:alice@corp", At: "2025-04-02T09:30:00Z", IsHuman: true},
 		{NodeKey: "node-multi", Seq: 2, By: "process:nightly-refresh", At: "", IsHuman: false},
 	}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("NodeVerifiedRows mismatch\n got: %+v\nwant: %+v", got, want)
+	if !slices.Equal(got, want) {
+		t.Fatalf("NodeVerifiedRows() =\n got: %+v\nwant: %+v", got, want)
 	}
 	// is_human must equal the SHARED predicate okfrules.IsHumanActor for every row —
 	// never a second definition of "human".

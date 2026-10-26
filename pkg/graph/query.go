@@ -45,12 +45,6 @@ type ResultNodeKey struct {
 	Honored  bool   `json:"honored"`
 }
 
-// nodeKey builds the v1 node-key echo: path strategy, the id_key echoed verbatim,
-// never honored (never minted).
-func nodeKey(idKey string) ResultNodeKey {
-	return ResultNodeKey{Strategy: "path", Key: idKey, Honored: false}
-}
-
 // WhereClause is the optional property predicate for the pattern verb: an exact
 // match of a real node property (prop ∈ {type, tier, stale}) against eq. For
 // stale, eq compares against "true"/"false".
@@ -199,7 +193,7 @@ type Index struct {
 // NewIndex builds the adjacency index over an already-built *Model. It is O(N+E)
 // and allocates only maps; it never mutates the model.
 func NewIndex(m *Model) *Index {
-	idx := &Index{
+	ix := &Index{
 		model:   m,
 		byID:    make(map[string]*Node, len(m.Nodes)),
 		byLabel: make(map[string][]string),
@@ -208,15 +202,15 @@ func NewIndex(m *Model) *Index {
 	}
 	for i := range m.Nodes {
 		n := &m.Nodes[i]
-		idx.byID[n.ID] = n
-		idx.byLabel[n.Type] = append(idx.byLabel[n.Type], n.ID) // sorted: Nodes is sorted by ID
+		ix.byID[n.ID] = n
+		ix.byLabel[n.Type] = append(ix.byLabel[n.Type], n.ID) // sorted: Nodes is sorted by ID
 	}
 	for i := range m.Edges {
 		e := m.Edges[i]
-		idx.out[e.From] = append(idx.out[e.From], i) // sorted: Edges is sorted by From,To,Text
-		idx.in[e.To] = append(idx.in[e.To], i)
+		ix.out[e.From] = append(ix.out[e.From], i) // sorted: Edges is sorted by From,To,Text
+		ix.in[e.To] = append(ix.in[e.To], i)
 	}
-	return idx
+	return ix
 }
 
 // step is one adjacency hop: the edge index taken and the neighbor reached.
@@ -230,10 +224,10 @@ type step struct {
 // sorted-edge order (rule 1), so expansion — and therefore every BFS tie-break —
 // is deterministic. For "both", the union of out/in edge indices is de-duplicated
 // (a self-loop touches both) and sorted ascending.
-func (idx *Index) steps(id, direction, rel string) []step {
-	res := []step{}
+func (ix *Index) steps(id, direction, rel string) []step {
+	var res []step
 	match := func(ei int) (Edge, bool) {
-		e := idx.model.Edges[ei]
+		e := ix.model.Edges[ei]
 		if rel != "" && e.Text != rel {
 			return e, false
 		}
@@ -241,7 +235,7 @@ func (idx *Index) steps(id, direction, rel string) []step {
 	}
 	switch direction {
 	case "in":
-		for _, ei := range idx.in[id] {
+		for _, ei := range ix.in[id] {
 			if e, ok := match(ei); ok {
 				res = append(res, step{ei, e.From})
 			}
@@ -249,13 +243,13 @@ func (idx *Index) steps(id, direction, rel string) []step {
 	case "both":
 		seen := make(map[int]bool)
 		var idxs []int
-		for _, ei := range idx.out[id] {
+		for _, ei := range ix.out[id] {
 			if !seen[ei] {
 				seen[ei] = true
 				idxs = append(idxs, ei)
 			}
 		}
-		for _, ei := range idx.in[id] {
+		for _, ei := range ix.in[id] {
 			if !seen[ei] {
 				seen[ei] = true
 				idxs = append(idxs, ei)
@@ -274,7 +268,7 @@ func (idx *Index) steps(id, direction, rel string) []step {
 			res = append(res, step{ei, nb})
 		}
 	default: // "out"
-		for _, ei := range idx.out[id] {
+		for _, ei := range ix.out[id] {
 			if e, ok := match(ei); ok {
 				res = append(res, step{ei, e.To})
 			}
@@ -287,12 +281,12 @@ func (idx *Index) steps(id, direction, rel string) []step {
 // nodes of the given concept type (label). Exactly one of id/label is expected
 // (the handler enforces the one-of); by-id sets not_found when absent, by-label
 // is capped/truncated. Nodes are sorted by ID.
-func (idx *Index) Lookup(idKey, id, label string) *LookupResult {
-	r := &LookupResult{Op: "lookup", NodeKey: nodeKey(idKey), Nodes: []Node{}, Unparsed: idx.model.Unparsed}
+func (ix *Index) Lookup(idKey, id, label string) *LookupResult {
+	r := &LookupResult{Op: "lookup", NodeKey: nodeKey(idKey), Nodes: []Node{}, Unparsed: ix.model.Unparsed}
 	if id != "" {
 		r.Query = LookupQuery{ID: id}
 		nf := true
-		if n, ok := idx.byID[id]; ok {
+		if n, ok := ix.byID[id]; ok {
 			r.Nodes = append(r.Nodes, *n)
 			nf = false
 		}
@@ -300,8 +294,8 @@ func (idx *Index) Lookup(idKey, id, label string) *LookupResult {
 		return r
 	}
 	r.Query = LookupQuery{Label: label}
-	for _, nid := range idx.byLabel[label] {
-		r.Nodes = append(r.Nodes, *idx.byID[nid])
+	for _, nid := range ix.byLabel[label] {
+		r.Nodes = append(r.Nodes, *ix.byID[nid])
 	}
 	// Sort explicitly rather than assuming byLabel's insertion order, so this path
 	// matches the other four verbs and determinism does not rest on an upstream
@@ -319,27 +313,27 @@ func (idx *Index) Lookup(idKey, id, label string) *LookupResult {
 // direction, optionally filtered by edge rel (Edge.Text). Nodes are the distinct
 // neighbors; edges are the traversed edges. Both are sorted then the node set is
 // truncated, with edges filtered to retained endpoints.
-func (idx *Index) Neighbors(idKey, id, direction, rel string) *NeighborsResult {
+func (ix *Index) Neighbors(idKey, id, direction, rel string) *NeighborsResult {
 	r := &NeighborsResult{
 		Op:       "neighbors",
 		Query:    NeighborsQuery{ID: id, Direction: direction, Rel: rel},
 		NodeKey:  nodeKey(idKey),
 		Nodes:    []Node{},
 		Edges:    []Edge{},
-		Unparsed: idx.model.Unparsed,
+		Unparsed: ix.model.Unparsed,
 	}
-	if _, ok := idx.byID[id]; !ok {
+	if _, ok := ix.byID[id]; !ok {
 		r.NotFound = true
 		return r
 	}
-	edges := []Edge{}
+	var edges []Edge
 	nodes := []Node{}
 	seen := make(map[string]bool)
-	for _, s := range idx.steps(id, direction, rel) {
-		edges = append(edges, idx.model.Edges[s.edge])
+	for _, s := range ix.steps(id, direction, rel) {
+		edges = append(edges, ix.model.Edges[s.edge])
 		if !seen[s.to] {
 			seen[s.to] = true
-			if n, ok := idx.byID[s.to]; ok {
+			if n, ok := ix.byID[s.to]; ok {
 				nodes = append(nodes, *n)
 			}
 		}
@@ -363,7 +357,7 @@ func (idx *Index) Neighbors(idKey, id, direction, rel string) *NeighborsResult {
 // the start at depth 0) with its minimum depth. Edges are the subgraph induced on
 // the retained nodes (matching rel). The BFS distance map doubles as the visited
 // set, so cycles terminate and each node is emitted once at its minimum depth.
-func (idx *Index) Neighborhood(idKey, id string, depth int, direction, rel string) *NeighborhoodResult {
+func (ix *Index) Neighborhood(idKey, id string, depth int, direction, rel string) *NeighborhoodResult {
 	r := &NeighborhoodResult{
 		Op:       "neighborhood",
 		Query:    NeighborhoodQuery{ID: id, Depth: depth, Direction: direction, Rel: rel},
@@ -371,9 +365,9 @@ func (idx *Index) Neighborhood(idKey, id string, depth int, direction, rel strin
 		Nodes:    []Node{},
 		Edges:    []Edge{},
 		Depths:   []Depth{},
-		Unparsed: idx.model.Unparsed,
+		Unparsed: ix.model.Unparsed,
 	}
-	if _, ok := idx.byID[id]; !ok {
+	if _, ok := ix.byID[id]; !ok {
 		r.NotFound = true
 		return r
 	}
@@ -386,7 +380,7 @@ func (idx *Index) Neighborhood(idKey, id string, depth int, direction, rel strin
 		if d == depth { // depth bound: do not expand past it
 			continue
 		}
-		for _, s := range idx.steps(cur, direction, rel) {
+		for _, s := range ix.steps(cur, direction, rel) {
 			if _, ok := dist[s.to]; !ok { // visited guard (min-depth is BFS-first)
 				dist[s.to] = d + 1
 				queue = append(queue, s.to)
@@ -395,7 +389,7 @@ func (idx *Index) Neighborhood(idKey, id string, depth int, direction, rel strin
 	}
 	nodes := []Node{}
 	for nid := range dist {
-		if n, ok := idx.byID[nid]; ok {
+		if n, ok := ix.byID[nid]; ok {
 			nodes = append(nodes, *n)
 		}
 	}
@@ -406,7 +400,7 @@ func (idx *Index) Neighborhood(idKey, id string, depth int, direction, rel strin
 		keep[n.ID] = true
 	}
 	edges := []Edge{}
-	for _, e := range idx.model.Edges { // Model.Edges is already sorted
+	for _, e := range ix.model.Edges { // Model.Edges is already sorted
 		if rel != "" && e.Text != rel {
 			continue
 		}
@@ -438,25 +432,25 @@ func (idx *Index) Neighborhood(idKey, id string, depth int, direction, rel strin
 // where predicate over type/tier/stale. Returns the matching SOURCE nodes and the
 // satisfying edges. The handler enforces that at least one of to_label/where is
 // present.
-func (idx *Index) Pattern(idKey, label, toLabel, rel string, where *WhereClause) *PatternResult {
+func (ix *Index) Pattern(idKey, label, toLabel, rel string, where *WhereClause) *PatternResult {
 	r := &PatternResult{
 		Op:       "pattern",
 		Query:    PatternQuery{Label: label, ToLabel: toLabel, Rel: rel, Where: where},
 		NodeKey:  nodeKey(idKey),
 		Nodes:    []Node{},
 		Edges:    []Edge{},
-		Unparsed: idx.model.Unparsed,
+		Unparsed: ix.model.Unparsed,
 	}
 	nodes := []Node{}
-	edges := []Edge{}
-	for _, sid := range idx.byLabel[label] { // sorted by ID
+	var edges []Edge
+	for _, sid := range ix.byLabel[label] { // sorted by ID
 		matched := false
-		for _, ei := range idx.out[sid] {
-			e := idx.model.Edges[ei]
+		for _, ei := range ix.out[sid] {
+			e := ix.model.Edges[ei]
 			if rel != "" && e.Text != rel {
 				continue
 			}
-			tgt, ok := idx.byID[e.To]
+			tgt, ok := ix.byID[e.To]
 			if !ok {
 				continue
 			}
@@ -470,7 +464,7 @@ func (idx *Index) Pattern(idKey, label, toLabel, rel string, where *WhereClause)
 			matched = true
 		}
 		if matched {
-			nodes = append(nodes, *idx.byID[sid])
+			nodes = append(nodes, *ix.byID[sid])
 		}
 	}
 	sortNodes(nodes)
@@ -491,16 +485,16 @@ func (idx *Index) Pattern(idKey, label, toLabel, rel string, where *WhereClause)
 // the shortest hop-path. A missing endpoint is a finding (not_found), not an
 // error (never-reject). Ties are broken by the sorted-edge expansion order, so
 // the returned path is unique and stable (design §5, rule 5).
-func (idx *Index) Path(idKey, from, to, direction string, maxDepth int) *PathResult {
+func (ix *Index) Path(idKey, from, to, direction string, maxDepth int) *PathResult {
 	r := &PathResult{
 		Op:       "path",
 		Query:    PathQuery{From: from, To: to, MaxDepth: maxDepth, Direction: direction},
 		NodeKey:  nodeKey(idKey),
 		Path:     []string{},
-		Unparsed: idx.model.Unparsed,
+		Unparsed: ix.model.Unparsed,
 	}
-	_, fromOK := idx.byID[from]
-	_, toOK := idx.byID[to]
+	_, fromOK := ix.byID[from]
+	_, toOK := ix.byID[to]
 	if !fromOK || !toOK {
 		r.NotFound = true
 		return r
@@ -524,7 +518,7 @@ func (idx *Index) Path(idKey, from, to, direction string, maxDepth int) *PathRes
 		if cur.depth == maxDepth {
 			continue
 		}
-		for _, s := range idx.steps(cur.id, direction, "") {
+		for _, s := range ix.steps(cur.id, direction, "") {
 			if s.to == to {
 				prev[to] = cur.id
 				path := reconstructPath(prev, from, to)
@@ -541,6 +535,12 @@ func (idx *Index) Path(idKey, from, to, direction string, maxDepth int) *PathRes
 		}
 	}
 	return r // exists:false, length:0, path:[]
+}
+
+// nodeKey builds the v1 node-key echo: path strategy, the id_key echoed verbatim,
+// never honored (never minted).
+func nodeKey(idKey string) ResultNodeKey {
+	return ResultNodeKey{Strategy: "path", Key: idKey, Honored: false}
 }
 
 // matchWhere evaluates a pattern where-predicate against a target node's real
@@ -561,7 +561,7 @@ func matchWhere(n *Node, w *WhereClause) bool {
 // reconstructPath walks the predecessor map from `to` back to `from` and returns
 // the node ids in forward order.
 func reconstructPath(prev map[string]string, from, to string) []string {
-	rev := []string{}
+	var rev []string
 	for cur := to; ; cur = prev[cur] {
 		rev = append(rev, cur)
 		if cur == from {

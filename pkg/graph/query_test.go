@@ -1,7 +1,7 @@
 package graph
 
 import (
-	"reflect"
+	"slices"
 	"testing"
 
 	"github.com/ghchinoy/binder/pkg/bundle"
@@ -15,34 +15,6 @@ const (
 	fixedToday = "2026-08-15"
 )
 
-// acmeIndex loads the acme_retail bundle and builds the query index over the
-// deterministic Build model. Any query in these tests runs against the same
-// nine-node / fifteen-edge graph the `graph`/`list_graphs` tests use.
-func acmeIndex(t *testing.T) *Index {
-	t.Helper()
-	b, err := bundle.Load(acmeBundle, native.New())
-	if err != nil {
-		t.Fatalf("load %s: %v", acmeBundle, err)
-	}
-	return NewIndex(Build(b, fixedToday))
-}
-
-func nodeIDs(ns []Node) []string {
-	ids := []string{}
-	for _, n := range ns {
-		ids = append(ids, n.ID)
-	}
-	return ids
-}
-
-func edgeTriples(es []Edge) [][3]string {
-	out := [][3]string{}
-	for _, e := range es {
-		out = append(out, [3]string{e.From, e.To, e.Text})
-	}
-	return out
-}
-
 func TestLookupByID(t *testing.T) {
 	idx := acmeIndex(t)
 
@@ -50,7 +22,7 @@ func TestLookupByID(t *testing.T) {
 	if got.NotFound == nil || *got.NotFound {
 		t.Fatalf("not_found = %v, want false", got.NotFound)
 	}
-	if ids := nodeIDs(got.Nodes); !reflect.DeepEqual(ids, []string{"tables/orders"}) {
+	if ids := nodeIDs(got.Nodes); !slices.Equal(ids, []string{"tables/orders"}) {
 		t.Fatalf("nodes = %v, want [tables/orders]", ids)
 	}
 	if got.Truncated != nil {
@@ -71,7 +43,7 @@ func TestLookupByLabel(t *testing.T) {
 	idx := acmeIndex(t)
 	got := idx.Lookup("", "", "Metric")
 	want := []string{"metrics/gross-margin", "metrics/gross-margin-legacy", "metrics/revenue"}
-	if ids := nodeIDs(got.Nodes); !reflect.DeepEqual(ids, want) {
+	if ids := nodeIDs(got.Nodes); !slices.Equal(ids, want) {
 		t.Fatalf("Metric nodes = %v, want %v", ids, want)
 	}
 	if got.Truncated == nil || *got.Truncated {
@@ -94,7 +66,7 @@ func TestNeighborsDirections(t *testing.T) {
 
 	out := idx.Neighbors("", gm, "out", "")
 	wantOut := []string{"computations/gross-margin-period", "metrics/gross-margin-legacy", "metrics/revenue"}
-	if ids := nodeIDs(out.Nodes); !reflect.DeepEqual(ids, wantOut) {
+	if ids := nodeIDs(out.Nodes); !slices.Equal(ids, wantOut) {
 		t.Fatalf("out neighbors = %v, want %v", ids, wantOut)
 	}
 	// The two parallel gross-margin -> gross-margin-legacy edges both appear.
@@ -107,7 +79,7 @@ func TestNeighborsDirections(t *testing.T) {
 
 	in := idx.Neighbors("", gm, "in", "")
 	wantIn := []string{"metrics/gross-margin-legacy", "policies/margin-standard", "policies/revenue-recognition"}
-	if ids := nodeIDs(in.Nodes); !reflect.DeepEqual(ids, wantIn) {
+	if ids := nodeIDs(in.Nodes); !slices.Equal(ids, wantIn) {
 		t.Fatalf("in neighbors = %v, want %v", ids, wantIn)
 	}
 
@@ -116,7 +88,7 @@ func TestNeighborsDirections(t *testing.T) {
 		"computations/gross-margin-period", "metrics/gross-margin-legacy",
 		"metrics/revenue", "policies/margin-standard", "policies/revenue-recognition",
 	}
-	if ids := nodeIDs(both.Nodes); !reflect.DeepEqual(ids, wantBoth) {
+	if ids := nodeIDs(both.Nodes); !slices.Equal(ids, wantBoth) {
 		t.Fatalf("both neighbors = %v, want %v", ids, wantBoth)
 	}
 }
@@ -124,11 +96,11 @@ func TestNeighborsDirections(t *testing.T) {
 func TestNeighborsRelFilter(t *testing.T) {
 	idx := acmeIndex(t)
 	got := idx.Neighbors("", "metrics/gross-margin", "out", "Revenue")
-	if ids := nodeIDs(got.Nodes); !reflect.DeepEqual(ids, []string{"metrics/revenue"}) {
+	if ids := nodeIDs(got.Nodes); !slices.Equal(ids, []string{"metrics/revenue"}) {
 		t.Fatalf("rel-filtered neighbors = %v, want [metrics/revenue]", ids)
 	}
 	want := [][3]string{{"metrics/gross-margin", "metrics/revenue", "Revenue"}}
-	if tr := edgeTriples(got.Edges); !reflect.DeepEqual(tr, want) {
+	if tr := edgeTriples(got.Edges); !slices.Equal(tr, want) {
 		t.Fatalf("rel-filtered edges = %v, want %v", tr, want)
 	}
 }
@@ -152,7 +124,7 @@ func TestNeighborhoodDepths(t *testing.T) {
 		"computations/gross-margin-period", "computations/revenue-ytd",
 		"metrics/gross-margin", "metrics/gross-margin-legacy", "metrics/revenue",
 	}
-	if ids := nodeIDs(got.Nodes); !reflect.DeepEqual(ids, wantNodes) {
+	if ids := nodeIDs(got.Nodes); !slices.Equal(ids, wantNodes) {
 		t.Fatalf("neighborhood nodes = %v, want %v", ids, wantNodes)
 	}
 
@@ -163,7 +135,7 @@ func TestNeighborhoodDepths(t *testing.T) {
 		{"metrics/revenue", 1},
 		{"computations/revenue-ytd", 2},
 	}
-	if !reflect.DeepEqual(got.Depths, wantDepths) {
+	if !slices.Equal(got.Depths, wantDepths) {
 		t.Fatalf("depths = %v, want %v", got.Depths, wantDepths)
 	}
 
@@ -187,7 +159,7 @@ func TestNeighborhoodCycleTerminates(t *testing.T) {
 	}
 	// gross-margin and its cycle partner are both present, each once.
 	if !seen["metrics/gross-margin"] || !seen["metrics/gross-margin-legacy"] {
-		t.Fatalf("expected both cycle members present, got %v", got.Depths)
+		t.Fatalf("Neighborhood(%q, %d) depths = %v, want both cycle members present", "metrics/gross-margin", MaxDepth, got.Depths)
 	}
 }
 
@@ -195,7 +167,7 @@ func TestPatternToLabel(t *testing.T) {
 	idx := acmeIndex(t)
 	got := idx.Pattern("", "Policy", "Metric", "", nil)
 	wantNodes := []string{"policies/margin-standard", "policies/revenue-recognition"}
-	if ids := nodeIDs(got.Nodes); !reflect.DeepEqual(ids, wantNodes) {
+	if ids := nodeIDs(got.Nodes); !slices.Equal(ids, wantNodes) {
 		t.Fatalf("pattern nodes = %v, want %v", ids, wantNodes)
 	}
 	wantEdges := [][3]string{
@@ -204,7 +176,7 @@ func TestPatternToLabel(t *testing.T) {
 		{"policies/revenue-recognition", "metrics/gross-margin", "metrics/gross-margin"},
 		{"policies/revenue-recognition", "metrics/revenue", "metrics/revenue"},
 	}
-	if tr := edgeTriples(got.Edges); !reflect.DeepEqual(tr, wantEdges) {
+	if tr := edgeTriples(got.Edges); !slices.Equal(tr, wantEdges) {
 		t.Fatalf("pattern edges = %v, want %v", tr, wantEdges)
 	}
 }
@@ -212,11 +184,11 @@ func TestPatternToLabel(t *testing.T) {
 func TestPatternWhereType(t *testing.T) {
 	idx := acmeIndex(t)
 	got := idx.Pattern("", "Policy", "", "", &WhereClause{Prop: "type", Eq: "BigQuery Table"})
-	if ids := nodeIDs(got.Nodes); !reflect.DeepEqual(ids, []string{"policies/revenue-recognition"}) {
+	if ids := nodeIDs(got.Nodes); !slices.Equal(ids, []string{"policies/revenue-recognition"}) {
 		t.Fatalf("pattern-where nodes = %v, want [policies/revenue-recognition]", ids)
 	}
 	want := [][3]string{{"policies/revenue-recognition", "tables/orders", "tables/orders"}}
-	if tr := edgeTriples(got.Edges); !reflect.DeepEqual(tr, want) {
+	if tr := edgeTriples(got.Edges); !slices.Equal(tr, want) {
 		t.Fatalf("pattern-where edges = %v, want %v", tr, want)
 	}
 }
@@ -238,7 +210,7 @@ func TestPathShortest(t *testing.T) {
 		t.Fatal("path should exist")
 	}
 	want := []string{"metrics/gross-margin", "computations/gross-margin-period", "computations/revenue-ytd"}
-	if !reflect.DeepEqual(got.Path, want) {
+	if !slices.Equal(got.Path, want) {
 		t.Fatalf("path = %v, want %v", got.Path, want)
 	}
 	if got.Length != 2 {
@@ -278,7 +250,7 @@ func TestPathSelf(t *testing.T) {
 	if !got.Exists || got.Length != 0 {
 		t.Fatalf("self path exists=%v length=%d, want true/0", got.Exists, got.Length)
 	}
-	if !reflect.DeepEqual(got.Path, []string{"tables/orders"}) {
+	if !slices.Equal(got.Path, []string{"tables/orders"}) {
 		t.Fatalf("self path = %v, want [tables/orders]", got.Path)
 	}
 }
@@ -378,9 +350,37 @@ func TestLookupByLabelSortsUnsortedInput(t *testing.T) {
 	idx := NewIndex(m) // deliberately NOT sorted; byLabel["T"] = [n/c, n/a, n/b]
 	got := idx.Lookup("", "", "T")
 	want := []string{"n/a", "n/b", "n/c"}
-	if ids := nodeIDs(got.Nodes); !reflect.DeepEqual(ids, want) {
+	if ids := nodeIDs(got.Nodes); !slices.Equal(ids, want) {
 		t.Fatalf("by-label lookup on unsorted input = %v, want %v (must sort by ID)", ids, want)
 	}
+}
+
+// acmeIndex loads the acme_retail bundle and builds the query index over the
+// deterministic Build model. Any query in these tests runs against the same
+// nine-node / fifteen-edge graph the `graph`/`list_graphs` tests use.
+func acmeIndex(t *testing.T) *Index {
+	t.Helper()
+	b, err := bundle.Load(acmeBundle, native.New())
+	if err != nil {
+		t.Fatalf("load %s: %v", acmeBundle, err)
+	}
+	return NewIndex(Build(b, fixedToday))
+}
+
+func nodeIDs(ns []Node) []string {
+	var ids []string
+	for _, n := range ns {
+		ids = append(ids, n.ID)
+	}
+	return ids
+}
+
+func edgeTriples(es []Edge) [][3]string {
+	var out [][3]string
+	for _, e := range es {
+		out = append(out, [3]string{e.From, e.To, e.Text})
+	}
+	return out
 }
 
 // idFor produces a zero-padded id so lexical order matches numeric order.

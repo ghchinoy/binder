@@ -3,7 +3,7 @@ package graph
 import (
 	"bytes"
 	"encoding/csv"
-	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -51,7 +51,7 @@ func TestProjectEdgeParity(t *testing.T) {
 	b := projBundle()
 	p := Project(b, ProjectOptions{Today: projToday})
 	want := EdgesFromConcepts(b.Concepts)
-	if !reflect.DeepEqual(p.Edges, want) {
+	if !slices.Equal(p.Edges, want) {
 		t.Fatalf("projected edges = %+v, want EdgesFromConcepts %+v", p.Edges, want)
 	}
 	if p.Counts.Edges != len(want) {

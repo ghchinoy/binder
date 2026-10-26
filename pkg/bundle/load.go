@@ -6,10 +6,8 @@
 package bundle
 
 import (
-	"io/fs"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/ghchinoy/binder/internal/okfrules"
@@ -39,31 +37,10 @@ func Load(root string, codec okf.Codec) (*okf.Bundle, error) {
 		return nil, &os.PathError{Op: "load", Path: root, Err: os.ErrInvalid}
 	}
 
-	var rels []string
-	err = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			if p != root && strings.HasPrefix(d.Name(), ".") {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if !strings.EqualFold(filepath.Ext(d.Name()), ".md") {
-			return nil
-		}
-		rel, err := filepath.Rel(root, p)
-		if err != nil {
-			return err
-		}
-		rels = append(rels, filepath.ToSlash(rel))
-		return nil
-	})
+	rels, err := okfrules.WalkMarkdownFiles(root)
 	if err != nil {
 		return nil, err
 	}
-	sort.Strings(rels)
 
 	lg, _ := codec.(okfrules.LinkGraph)
 	b := &okf.Bundle{Root: root, OKFVersion: okf.DefaultSpecVersion}

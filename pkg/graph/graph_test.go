@@ -11,24 +11,6 @@ import (
 	"github.com/ghchinoy/binder/pkg/okf"
 )
 
-func concept(id, typ, title string, links ...okf.Link) *okf.Concept {
-	fm := okfrules.NewOrderedMap()
-	if title != "" {
-		fm.Set("title", title)
-	}
-	return &okf.Concept{ID: id, RelPath: id + ".md", Type: typ, Frontmatter: fm, Links: links}
-}
-
-func sampleBundle() *okf.Bundle {
-	intro := concept("intro", "Note", "Intro",
-		okf.Link{TargetID: "guide", RawTarget: "guide", Text: "related", Resolved: true},
-		okf.Link{RawTarget: "missing.md", Resolved: false}, // unresolved: not an edge
-	)
-	guide := concept("guide", "Guide", "Guide")
-	guide.Trust = okf.TrustSignals{StaleAfter: "2020-01-01"} // stale
-	return &okf.Bundle{Root: "/b", Concepts: []*okf.Concept{guide, intro}}
-}
-
 func TestBuildEdgesAreResolvedOnlyAndSorted(t *testing.T) {
 	m := Build(sampleBundle(), "2026-08-15")
 	if len(m.Nodes) != 2 {
@@ -109,7 +91,7 @@ func TestExportAllFormatsRenderAndParse(t *testing.T) {
 	}
 
 	if _, err := Export(b, "svg", "2026-08-15"); err == nil {
-		t.Error("expected error for unknown format")
+		t.Error("Export(b, \"svg\", \"2026-08-15\") = nil, want error for unknown format")
 	}
 }
 
@@ -129,6 +111,24 @@ func TestDOTEscapesQuotes(t *testing.T) {
 	m := Build(&okf.Bundle{Concepts: []*okf.Concept{c}}, "2026-08-15")
 	dot := string(m.DOT())
 	if !strings.Contains(dot, `\"`) {
-		t.Errorf("expected escaped quotes in dot:\n%s", dot)
+		t.Errorf("m.DOT() = %s, want escaped quotes", dot)
 	}
+}
+
+func concept(id, typ, title string, links ...okf.Link) *okf.Concept {
+	fm := okfrules.NewOrderedMap()
+	if title != "" {
+		fm.Set("title", title)
+	}
+	return &okf.Concept{ID: id, RelPath: id + ".md", Type: typ, Frontmatter: fm, Links: links}
+}
+
+func sampleBundle() *okf.Bundle {
+	intro := concept("intro", "Note", "Intro",
+		okf.Link{TargetID: "guide", RawTarget: "guide", Text: "related", Resolved: true},
+		okf.Link{RawTarget: "missing.md", Resolved: false}, // unresolved: not an edge
+	)
+	guide := concept("guide", "Guide", "Guide")
+	guide.Trust = okf.TrustSignals{StaleAfter: "2020-01-01"} // stale
+	return &okf.Bundle{Root: "/b", Concepts: []*okf.Concept{guide, intro}}
 }
