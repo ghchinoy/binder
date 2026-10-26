@@ -23,7 +23,8 @@ var wikilinkRE = regexp.MustCompile(`\[\[([^\[\]]+)\]\]`)
 
 // IsBrokenConceptRef reports whether a raw, unresolved link target is an internal
 // CONCEPT reference — i.e. a bundle-relative .md target that names no concept.
-// External URLs, same-document anchors, and links to non-concept files (assets,
+// External URLs, same-document anchors, reserved navigation/history files
+// (index.md, log.md; issue #251), and links to non-concept files (assets,
 // scripts, directories) are not concept references and so are never "broken"
 // edges, matching what `binder convert` tracks.
 func IsBrokenConceptRef(raw string) bool {
@@ -43,7 +44,18 @@ func IsBrokenConceptRef(raw string) bool {
 	if i := strings.IndexByte(t, '#'); i >= 0 {
 		t = t[:i]
 	}
-	return strings.HasSuffix(strings.ToLower(strings.TrimSpace(t)), ".md")
+	t = strings.ToLower(strings.TrimSpace(strings.ReplaceAll(t, "\\", "/")))
+	if !strings.HasSuffix(t, ".md") {
+		return false
+	}
+	base := t
+	if slash := strings.LastIndexByte(base, '/'); slash >= 0 {
+		base = base[slash+1:]
+	}
+	if base == "index.md" || base == "log.md" {
+		return false
+	}
+	return true
 }
 
 // rootEntrypointNames are the conventional corpus-root entrypoint documents: a

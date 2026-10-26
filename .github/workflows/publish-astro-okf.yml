@@ -54,6 +54,7 @@ jobs:
           # .npmrc that expects NODE_AUTH_TOKEN, which is exactly the stored-token
           # path trusted publishing replaces. npm defaults to registry.npmjs.org.
           node-version: 22
+          check-latest: true
           cache: npm
           cache-dependency-path: package-lock.json
 

@@ -258,6 +258,11 @@ func TestExtractAndResolveLinks(t *testing.T) {
 	if _, ok := c.ResolveLink("intro", "pic.png"); ok {
 		t.Fatal("non-.md link must not resolve")
 	}
+	for _, reserved := range []string{"index.md", "../index.md", "/index.md", "sub/index.md", "log.md", "../log.md#2026"} {
+		if id, ok := c.ResolveLink("tables/orders", reserved); ok {
+			t.Fatalf("reserved file link %q must not resolve as a concept ID, got %q", reserved, id)
+		}
+	}
 }
 
 func equalStrings(a, b []string) bool {

@@ -67,6 +67,7 @@ export default defineConfig({
           items: [
             { label: "CI usage", slug: "guides/ci" },
             { label: "Strict mode", slug: "guides/strict-mode" },
+            { label: "Public-domain OKF bundles", slug: "guides/public-bundles" },
           ],
         },
         {

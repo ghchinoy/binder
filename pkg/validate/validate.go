@@ -82,7 +82,13 @@ func Bundle(root string, codec okf.Codec, spec okf.SpecVersion) (*Result, error)
 		if err != nil {
 			return err
 		}
-		if d.IsDir() || !strings.EqualFold(filepath.Ext(d.Name()), ".md") {
+		if d.IsDir() {
+			if p != root && strings.HasPrefix(d.Name(), ".") {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.EqualFold(filepath.Ext(d.Name()), ".md") {
 			return nil
 		}
 		rel, err := filepath.Rel(root, p)

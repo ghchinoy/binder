@@ -326,6 +326,9 @@ func walkCorpus(root string) ([]sourceFile, error) {
 			return err
 		}
 		if d.IsDir() {
+			if p != root && strings.HasPrefix(d.Name(), ".") {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 		if !strings.EqualFold(filepath.Ext(d.Name()), ".md") {

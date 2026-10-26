@@ -68,9 +68,10 @@ const pages = [
   { src: "docs/concepts/project.md", out: "concepts/project.md", slug: "concepts/project", title: "Graph projection (project)" },
   { src: "docs/lpg-inmemory-primer.md", out: "concepts/lpg-primer.md", slug: "concepts/lpg-primer", title: "In-memory LPG primer" },
 
-  // ── Guides (extracted user_guide sections) ───────────────────────────────
+  // ── Guides (extracted user_guide sections + dedicated guides) ────────────
   { src: "docs/user_guide.md", out: "guides/ci.md", slug: "guides/ci", title: "CI usage", section: "CI usage" },
   { src: "docs/user_guide.md", out: "guides/strict-mode.md", slug: "guides/strict-mode", title: "Strict mode", section: "Strict mode" },
+  { src: "docs/guides/public-bundles.md", out: "guides/public-bundles.md", slug: "guides/public-bundles", title: "Public-domain OKF bundles" },
 
   // ── Reference (user guide as ONE page; command reference omitted — Phase 3) ─
   { src: "docs/user_guide.md", out: "reference/user-guide.md", slug: "reference/user-guide", title: "User guide" },
@@ -118,12 +119,14 @@ const SLUG_BY_BASENAME = {
   "concepts/graph.md": `${BASE}/concepts/graph/`,
   "concepts/okf-output.md": `${BASE}/concepts/okf-output/`,
   "concepts/project.md": `${BASE}/concepts/project/`,
+  "guides/public-bundles.md": `${BASE}/guides/public-bundles/`,
   // bare names, for sibling links inside docs/concepts/*.md
   "byte-faithful.md": `${BASE}/concepts/byte-faithfulness/`,
   "trust.md": `${BASE}/concepts/trust/`,
   "graph.md": `${BASE}/concepts/graph/`,
   "okf-output.md": `${BASE}/concepts/okf-output/`,
   "project.md": `${BASE}/concepts/project/`,
+  "public-bundles.md": `${BASE}/guides/public-bundles/`,
 };
 
 // YAML-escape a scalar we control (titles are ours, not user input) so the
