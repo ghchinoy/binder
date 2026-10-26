@@ -120,7 +120,7 @@ reject the flag.) Of those, **six** print the deterministic `binder.report/v1`
 envelope (`convert`, `enrich`, `validate`, `review`, `lint`, and `infer`):
 
 ```json
-{ "binder": "binder/0.8.0", "command": "convert",
+{ "binder": "binder/0.9.0", "command": "convert",
   "schema": "binder.report/v1", "result": { } }
 ```
 
