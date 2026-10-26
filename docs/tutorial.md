@@ -38,14 +38,14 @@ binder --version
 binder/<version>
 ```
 
-A Homebrew or direct-download install of v0.8.0 prints `binder/0.8.0`.
+A Homebrew or direct-download install of v0.9.0 prints `binder/0.9.0`.
 The banner is always `binder/<version>` and **never** carries a leading `v`.
 That banner string is the exact one binder stamps into every concept's
 `generated.by`, so the value you see here is the value that will show up in your
 bundles.
 
 A source build prints something longer, like
-`binder/0.8.0-0.20260816074947-7f4ca6b4c816`. That is the Go module
+`binder/0.9.0-0.20260816074947-7f4ca6b4c816`. That is the Go module
 pseudo-version, and the reason is the build command, not the clone: `make build`
 runs a plain `go build` with **no `-ldflags`**, so nothing injects the release
 version and binder falls back to what the module graph knows. A fully tagged
@@ -590,7 +590,7 @@ verified:
     by: human:alice
 generated:
   at: "2023-11-14T22:13:20Z"
-  by: binder/0.8.0
+  by: binder/0.9.0
 ---
 
 # Loyalty program idea
@@ -866,7 +866,7 @@ flags exist on `convert` as well. See
 
 Attest with a real actor. `--verified-by` requires the actor convention:
 `human:<id>`, `process:<id>`, `team:<id>`, or `<producer>/<version>` such as
-`binder/0.8.0`. There is no `agent:` form. An invalid actor is a usage error and
+`binder/0.9.0`. There is no `agent:` form. An invalid actor is a usage error and
 exits `2`:
 
 ```bash
@@ -875,7 +875,7 @@ echo "exit=$?"
 ```
 
 ```text
-binder: invalid actor "agent:bot"; valid forms: human:<id>, process:<id>, team:<id>, or <producer>/<version> (e.g. binder/0.8.0)
+binder: invalid actor "agent:bot"; valid forms: human:<id>, process:<id>, team:<id>, or <producer>/<version> (e.g. binder/0.9.0)
 exit=2
 ```
 
