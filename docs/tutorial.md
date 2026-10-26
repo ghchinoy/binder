@@ -38,14 +38,14 @@ binder --version
 binder/<version>
 ```
 
-A Homebrew or direct-download install of v0.3.0 prints exactly `binder/0.3.0`.
+A Homebrew or direct-download install of v0.8.0 prints `binder/0.8.0`.
 The banner is always `binder/<version>` and **never** carries a leading `v`.
 That banner string is the exact one binder stamps into every concept's
 `generated.by`, so the value you see here is the value that will show up in your
 bundles.
 
 A source build prints something longer, like
-`binder/0.2.2-0.20260816074947-7f4ca6b4c816`. That is the Go module
+`binder/0.8.0-0.20260816074947-7f4ca6b4c816`. That is the Go module
 pseudo-version, and the reason is the build command, not the clone: `make build`
 runs a plain `go build` with **no `-ldflags`**, so nothing injects the release
 version and binder falls back to what the module graph knows. A fully tagged
@@ -59,14 +59,13 @@ Two habits make every run in this tutorial reproducible:
   (`generated.at`, a resolved `stale_after`, a `verified.at`) is byte-stable.
 - Read the structured `--json` output, not the prose, when you script or gate.
 
-Throughout, keep binder's central design goal in mind — the commitment its
-design is built to hold: not to fabricate trust. Binder derives trust tiers from
-the frontmatter you provide, stamps an honest `generated` provenance for content
-it produced, and requires an explicit verifier you supply — the `--verified-by`
-flag or a `verified_by` default in your own global config — before it will write a
-`verified` attestation, so it never auto-stamps one and never invents a source. A
-`verified` attestation is something you asked for, and Part 2 shows exactly what
-counts as asking.
+Throughout, keep binder's central design goal in mind: never fabricate trust.
+Binder derives trust tiers from the frontmatter you provide, stamps an honest
+`generated` provenance for content it produced, and requires an explicit
+verifier you supply (`--verified-by` or a `verified_by` default in your own
+global config) before it writes a `verified` attestation. It never auto-stamps
+one and never invents a source. A `verified` attestation is something you asked
+for, and Part 2 shows what counts as asking.
 
 ## Part 1: brownfield, ingesting a corpus you already have
 
@@ -163,15 +162,15 @@ title: Multi-View: Tabs and Windows
 is not the string it looks like: YAML reads the second colon as a nested mapping
 indicator, so the value is wrong at best and the whole frontmatter block stops
 parsing at worst (`convert` then recovers the file as plain markdown rather than
-dropping it). The rule applies to **any** key, not a fixed list — the instance
+dropping it). The rule applies to **any** key, not a fixed list: the instance
 measured in the wild was a `title:`, not a `description:`. Quoting the value
 (`title: "Multi-View: Tabs and Windows"`) is the entire fix.
 
 Only *unquoted plain scalars* count. A URL (`https://example.com`), a timestamp
 (`12:30`), a ratio (`16:9`), an already-quoted value, and the interior of a
-`|`/`>` block scalar are all left alone — the detector looks for exactly one
+`|`/`>` block scalar are all left alone. The detector looks for one specific
 spelling: a colon followed by a space or a tab inside an unquoted plain scalar.
-That is deliberately narrower than YAML's own rule. This bucket is advisory
+That check is narrower than YAML's own rule. This bucket is advisory
 even by lint's standards: like entrypoints, it is **never** counted as a
 finding, so it cannot gate `--strict`. It names the key to quote in a file
 whose broken frontmatter is already reported as a schema violation.
@@ -373,7 +372,7 @@ something you did not mean. That applies to the config file too: a bad
 `--json` wraps the report in a deterministic envelope (schema
 `binder.report/v1`) with a stable field order and a trailing newline, so two runs
 on the same input are byte-identical. The order is declaration order, not
-alphabetical — only map-valued objects such as `by_type` have their keys sorted.
+alphabetical; only map-valued objects such as `by_type` have their keys sorted.
 Gate on the source corpus before conversion with `lint --strict`, which turns
 advisories into a non-zero exit:
 
@@ -591,7 +590,7 @@ verified:
     by: human:alice
 generated:
   at: "2023-11-14T22:13:20Z"
-  by: binder/0.3.0
+  by: binder/0.8.0
 ---
 
 # Loyalty program idea
@@ -628,7 +627,7 @@ asked for a stamp and binder is telling you none was needed. Stamps de-duplicate
 by actor (`by`), so the stamp your first run wrote for `human:alice` satisfies
 every repeat run for that actor even if the wall clock advances.
 
-### Step 5: stop retyping the actor — `binder config`
+### Step 5: stop retyping the actor (`binder config`)
 
 You have now typed `--verified-by "human:alice"` twice. `binder config set`
 persists a default, but **where** you persist it decides whether binder will
@@ -695,12 +694,12 @@ Trust (verified stamps):
 ```
 
 `pricing.md` got its `type`, `title` and `generated`. It got **no** `verified`
-stamp. Slow down here, because this is the shape of the whole trust model: a
-`.binder.yaml` lives inside a repository, so it travels. Clone somebody's corpus
-and their config file comes with it. A file that arrived in a clone you did not
-write cannot evidence a decision *you* made, so binder will not attest documents
-in your name on its say-so. It does not ignore the value without warning either: the
-disclosure names it, and names what would honour it.
+stamp. A `.binder.yaml` lives inside a repository, so it travels with the clone.
+Clone somebody's corpus and their config file comes with it. A file that arrived
+in a clone you did not write cannot evidence a decision *you* made, so binder
+will not attest documents in your name on its say-so. It does not ignore the
+value without warning either: the disclosure names it, and names what would
+honour it.
 
 The place that does count is your own home directory, because nothing but you
 puts a file there:
@@ -711,7 +710,7 @@ binder config set --global verified_by "human:alice"
 ```
 
 The first prints `Unset verified_by in .binder.yaml (reverted to default)` and,
-with no keys left in it, deletes `.binder.yaml` altogether. The second writes
+with no keys left in it, deletes `.binder.yaml`. The second writes
 `$XDG_CONFIG_HOME/binder/config.yaml` (`~/.config/binder/config.yaml` by default)
 and prints the absolute path it wrote. Now run the identical enrich again:
 
@@ -730,15 +729,15 @@ Trust (verified stamps):
     - pricing.md
 ```
 
-Same command, same corpus, different answer — and `source: config` is how you
+Same command, same corpus, different answer. The `source: config` label is how you
 tell a stamp you asked for on the command line from one your own default
 supplied. This does **not** weaken never-fabricate-trust: binder stamped
 `verified` only because *you* recorded that actor as your default. With no flag
 and no global `verified_by`, nothing is written.
 
 > One more thing worth knowing before you commit a `.binder.yaml`: binder loads
-> exactly **one** config file, and `./.binder.yaml` wins the search. A
-> repo-local file therefore hides your global one entirely, which is why the
+> **one** config file, and `./.binder.yaml` wins the search. A
+> repo-local file therefore hides your global one, which is why the
 > unset above was needed before the global default could take effect.
 
 `config get` prints one resolved value (handy in scripts):
@@ -867,7 +866,7 @@ flags exist on `convert` as well. See
 
 Attest with a real actor. `--verified-by` requires the actor convention:
 `human:<id>`, `process:<id>`, `team:<id>`, or `<producer>/<version>` such as
-`binder/0.3.0`. There is no `agent:` form. An invalid actor is a usage error and
+`binder/0.8.0`. There is no `agent:` form. An invalid actor is a usage error and
 exits `2`:
 
 ```bash
@@ -895,7 +894,7 @@ parts:
 
 - **No flag, no stamp.** A `verified` stamp needs `--verified-by` on the run, or
   a `verified_by` default in your own global config.
-- **A repo-local `.binder.yaml` does not authorize one** — it can arrive inside
+- **A repo-local `.binder.yaml` does not authorize one.** It can arrive inside
   somebody else's clone, and binder reports the value rather than acting on it.
 - **binder does not co-sign.** Against a document a different identity has
   already attested, a stamp from a default is skipped and disclosed as skipped;
@@ -908,7 +907,7 @@ assert.
 
 One case this part did not exercise: `BINDER_VERIFIED_BY` in the environment does
 **not** authorize a stamp either. It is refused for the same reason the
-repo-local file is, and refused the same way — the run writes no `verified` key
+repo-local file is, and refused the same way: the run writes no `verified` key
 and discloses the value it declined:
 
 ```text
@@ -925,7 +924,7 @@ disclosure fields.
 Everything so far used binder. Once binder has produced or enriched an OKF
 bundle, you can hand that bundle to a second, independent tool for a fresh
 opinion. [okf](https://github.com/okfcli/okf) is a vendor-neutral Go CLI for the
-Open Knowledge Format — a different implementation of the same OKF v0.2 spec
+Open Knowledge Format: a different implementation of the same OKF v0.2 spec
 binder targets. It reads a bundle, validates it, and prints structured JSON on
 stdout, which makes it a good post-enrichment check: two independent tools
 agreeing your bundle is conformant is worth more than either tool agreeing with
@@ -933,10 +932,10 @@ itself.
 
 Install it with Go: one static binary, no runtime dependencies. Pin the version
 so what you see below is what your binary prints: the JSON output in this section
-was generated with okf v0.3.0, so install exactly that version.
+was generated with okf v0.5.0, so install that version.
 
 ```bash
-go install github.com/okfcli/okf/cmd/okf@v0.3.0
+go install github.com/okfcli/okf/cmd/okf@v0.5.0
 ```
 
 Point it at the greenfield bundle you just enriched. Because `okf validate` emits
@@ -1008,8 +1007,8 @@ okf list /tmp/kb | jq '[.concepts[] | {id, trust_tier}]'
 
 Every concept is `human-reviewed` because you enriched it with
 `--verified-by "human:alice"`. okf reads the `verified` stamp binder wrote and
-derives the same tier binder would — no credibility score, no fabricated trust,
-the same guarantee restated by a different tool. For the full command set, run
+derives the same tier binder would: no credibility score, no fabricated trust,
+and the same guarantee restated by a different tool. For the full command set, run
 `okf --help` or see the [okf README](https://github.com/okfcli/okf).
 
 ## Part 3: exploring and projecting public-domain knowledge graphs (`okf-bundles`)

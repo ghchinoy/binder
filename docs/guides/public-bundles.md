@@ -1,10 +1,10 @@
 # Public-domain OKF bundles
 
-To explore `binder` against multi-type, provenance-attested knowledge graphs
-without preparing a corpus first, use the companion
+You can test `binder` against real knowledge graphs right away without building a
+corpus from scratch. Clone the companion
 [`ghchinoy/okf-bundles`](https://github.com/ghchinoy/okf-bundles) repository
-(published under CC0-1.0) or the four official Google Cloud reference bundles
-vendored under `testdata/okf-bundles/`.
+(CC0-1.0 public domain) or inspect the four Google Cloud reference bundles in
+`testdata/okf-bundles/`.
 
 ## The `ghchinoy/okf-bundles` collection
 
@@ -14,24 +14,24 @@ Clone the repository anywhere on disk:
 git clone --depth 1 https://github.com/ghchinoy/okf-bundles.git /tmp/okf-bundles
 ```
 
-It contains four source corpora (`corpora/`), their converted OKF v0.2 bundles
-(`bundles/`), and their pre-computed Spanner SQL/PGQ and graph projections
+The checkout holds four source corpora (`corpora/`), their converted OKF v0.2
+bundles (`bundles/`), and their Spanner SQL/PGQ and graph exports
 (`projections/`):
 
 | Bundle | Concepts | Edges | Trust Tiers | OKF v0.2 Features Exercised |
 |---|:---:|:---:|---|---|
-| **`nist-ai-rmf`** | 26 | 104 | 26 `human-reviewed` | NIST AI RMF 1.0 (`Function`, `Category`, `Trustworthiness Characteristic`), 2 `Attested Computation` SQL fairness/drift metrics, `parent`/`related` frontmatter edges |
-| **`ietf-rfcs`** | 17 | 51 | 17 `machine-confirmed` | Core Web/Security RFCs (`RFC`, `Internet-Draft`), full `status` lifecycle (`stable`, `draft`, `deprecated`), `stale_after` dates |
+| **`nist-ai-rmf`** | 26 | 104 | 26 `human-reviewed` | NIST AI RMF 1.0 (`Function`, `Category`, `Trustworthiness Characteristic`), 2 `Attested Computation` SQL metrics, `parent`/`related` edges |
+| **`ietf-rfcs`** | 17 | 51 | 17 `machine-confirmed` | Core Web/Security RFCs (`RFC`, `Internet-Draft`), `status` lifecycle (`stable`, `draft`, `deprecated`), `stale_after` dates |
 | **`cybersecurity-cwe-attack`** | 18 | 60 | 1 `human-reviewed`, 17 `machine-confirmed` | MITRE CWE (`Weakness`), ATT&CK (`Technique`), OWASP/MITRE (`Mitigation`), and an `Attested Computation` SIEM SQL detection |
-| **`classical-mythology`** | 24 | 151 | 24 `human-reviewed` | Bulfinch's Mythology (Project Gutenberg #4928): 5-type entity graph (`Deity`, `Hero`, `Place`, `Quest`, `Artifact`) for multi-hop graph traversal |
+| **`classical-mythology`** | 24 | 151 | 24 `human-reviewed` | Bulfinch's Mythology (Project Gutenberg #4928): 5-type entity graph (`Deity`, `Hero`, `Place`, `Quest`, `Artifact`) |
 
-For a step-by-step walkthrough running `review`, `graph`, and `project` on these
+For a step-by-step walkthrough of `review`, `graph`, and `project` on these
 bundles, see [Part 3 of the tutorial](../tutorial.md#part-3-exploring-and-projecting-public-domain-knowledge-graphs-okf-bundles).
 
 ## Reproducible corpus-to-bundle pipeline
 
-`ghchinoy/okf-bundles` uses a deterministic six-step `binder` pipeline
-(`scripts/build.sh`) that you can adapt for your own knowledge repositories:
+`ghchinoy/okf-bundles` uses a six-step `binder` script (`scripts/build.sh`).
+You can adapt this pipeline for your own knowledge repositories:
 
 ```bash
 export SOURCE_DATE_EPOCH=1785456000 # 2026-07-31T00:00:00Z for byte-identical builds
@@ -64,34 +64,31 @@ binder graph --format dot  bundles/nist-ai-rmf > projections/nist-ai-rmf/graph.d
 binder graph --format html bundles/nist-ai-rmf > projections/nist-ai-rmf/viz.html
 ```
 
-Keep non-Markdown artifacts (`graph.json`, `graph.dot`, `viz.html`, `schema.ddl`,
-`*.csv`) in a sibling directory (`projections/`) rather than inside `bundles/` so
-the bundle directory remains a pure OKF v0.2 Markdown tree.
+Write non-Markdown outputs (`graph.json`, `graph.dot`, `viz.html`, `schema.ddl`,
+`*.csv`) to a sibling directory (`projections/`), not inside `bundles/`. That
+keeps the bundle directory a pure OKF v0.2 Markdown tree.
 
 ## Querying bundles over MCP (`binder mcp`)
 
-When `binder mcp` is registered in your agent host (see [MCP server](/binder/agent/mcp/)),
-your agent can inspect a bundle's graph schema with `list_graphs` and run bounded
-traversals with `query_graph` without loading all concept files into the context
-window:
+Register `binder mcp` in your agent host (see [MCP server](/binder/agent/mcp/)).
+Your agent can then inspect a bundle's schema with `list_graphs` and run bounded
+traversals with `query_graph` without reading every Markdown file into context:
 
-1. **Schema introspection (`list_graphs`):** Call `list_graphs` with
-   `{"bundle": "/tmp/okf-bundles/bundles/classical-mythology"}` to discover the
-   node labels (`Artifact`, `Deity`, `Hero`, `Place`, `Quest`), node/edge counts
-   (24 nodes, 151 edges), and node properties (`id`, `title`, `type`, `tier`,
-   `stale`).
-2. **Neighborhood & path queries (`query_graph`):**
-   - `op: "neighbors"` on `id: "heroes/odysseus"` returns every directly linked
-     deity, hero, place, and quest.
-   - `op: "bfs"` with `id: "functions/measure"` and `depth: 2` on
-     `bundles/nist-ai-rmf` traverses from the `MEASURE` function into its
-     categories (`measure-1`, `measure-2`, `measure-3`) and out to the
-     sanctioned `Attested Computation` metrics (`demographic-parity-ratio`,
-     `calibration-drift-score`).
-   - `op: "path"` between `id: "weaknesses/cwe-89"` and
-     `to: "mitigations/parameterized-queries"` on
-     `bundles/cybersecurity-cwe-attack` verifies the defensive path in the
-     concept graph.
+1. **Schema introspection (`list_graphs`):** Pass
+   `{"bundle": "/tmp/okf-bundles/bundles/classical-mythology"}`. The tool
+   returns the node labels (`Artifact`, `Deity`, `Hero`, `Place`, `Quest`),
+   node and edge counts (24 nodes, 151 edges), and node properties (`id`,
+   `title`, `type`, `tier`, `stale`).
+2. **One-hop neighbors (`query_graph`):** Run `op: "neighbors"` on
+   `id: "heroes/odysseus"` to list every linked deity, hero, place, and quest.
+3. **Bounded BFS (`query_graph`):** Run `op: "neighborhood"` with
+   `id: "functions/measure"` and `depth: 2` on `bundles/nist-ai-rmf`. It steps
+   from `MEASURE` into its categories (`measure-1`, `measure-2`, `measure-3`)
+   and reaches the two `Attested Computation` metrics (`demographic-parity-ratio`,
+   `calibration-drift-score`).
+4. **Shortest path (`query_graph`):** Run `op: "path"` from
+   `from: "weaknesses/cwe-89"` to `to: "mitigations/parameterized-queries"` on
+   `bundles/cybersecurity-cwe-attack` to verify the mitigation chain.
 
 See the [user guide](../user_guide.md#the-graph-surface) for the complete
-`list_graphs` and `query_graph` input/output schemas.
+`list_graphs` and `query_graph` schemas.
