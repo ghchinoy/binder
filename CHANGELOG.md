@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.9.0](https://github.com/ghchinoy/binder/compare/v0.8.0...v0.9.0) (2026-10-26)
+
+
+### Features
+
+* **review:** accept spec tiers and report shortfall reasons ([#248](https://github.com/ghchinoy/binder/issues/248)) ([2c145af](https://github.com/ghchinoy/binder/commit/2c145af9f5e44d3dad822def16e366821984f253))
+
+
+### Bug Fixes
+
+* resolve reserved links, dot-dirs, duplicate edges & add docs ([#254](https://github.com/ghchinoy/binder/issues/254)) ([2da2d61](https://github.com/ghchinoy/binder/commit/2da2d614836934df51ea69c793ce8a8068402b3d)), closes [#251](https://github.com/ghchinoy/binder/issues/251) [#252](https://github.com/ghchinoy/binder/issues/252) [#253](https://github.com/ghchinoy/binder/issues/253)
+
+
+### Code Refactoring
+
+* apply go-readability across walk, graph & tests ([#255](https://github.com/ghchinoy/binder/issues/255)) ([a3d01e6](https://github.com/ghchinoy/binder/commit/a3d01e6f3fc0edd2959fd53e06da6328f67f8cfa))
+
+
+### Build System
+
+* bump vite from 8.2.2 to 8.3.5 ([#249](https://github.com/ghchinoy/binder/issues/249)) ([68275a3](https://github.com/ghchinoy/binder/commit/68275a3b985cb83ecea4c475e71a4ab89396891c))
+
+
+### Documentation
+
+* apply technical-post-editorial polish & update versions ([#256](https://github.com/ghchinoy/binder/issues/256)) ([73fa4d5](https://github.com/ghchinoy/binder/commit/73fa4d5213842dcac6045e596f6e59734b92a6fd))
+* **readme:** refine pitch, deduplicate normalization bounds, and align with editorial & README rubrics ([0876fe1](https://github.com/ghchinoy/binder/commit/0876fe193a41fb8161db04e7a13a1137373f428c))
+* refresh version transcripts for v0.8.0 ([cbcb468](https://github.com/ghchinoy/binder/commit/cbcb4685aab737eb97b8a4420f72f846194cd8f1))
+* update tutorial, concepts, and okf-convert plugin (v1.1.0) for v0.8.0 and editorial house style ([1c0dfb7](https://github.com/ghchinoy/binder/commit/1c0dfb7c1274809d18796dfec2316416cef6a073))
+
 ## [0.8.0](https://github.com/ghchinoy/binder/compare/v0.7.0...v0.8.0) (2026-10-18)
 
 
