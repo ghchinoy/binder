@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.1](https://github.com/ghchinoy/binder/compare/v0.9.0...v0.9.1) (2026-10-28)
+
+
+### Documentation
+
+* refresh version transcripts for v0.9.0 ([#257](https://github.com/ghchinoy/binder/issues/257)) ([cf45fd4](https://github.com/ghchinoy/binder/commit/cf45fd42704c4c9e4f0b33ec43953135ebf17d8d))
+
 ## [0.9.0](https://github.com/ghchinoy/binder/compare/v0.8.0...v0.9.0) (2026-10-26)
 
 
