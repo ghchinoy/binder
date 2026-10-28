@@ -1570,7 +1570,7 @@ is field-ordered):
 
 ```json
 {
-  "binder": "binder/0.9.0",
+  "binder": "binder/0.9.1",
   "command": "config",
   "schema": "binder.config/v1",
   "result": {
@@ -1614,7 +1614,7 @@ the resolved `key` (always the snake_case spelling), its `source`, and its
 
 ```json
 {
-  "binder": "binder/0.9.0",
+  "binder": "binder/0.9.1",
   "command": "config get",
   "schema": "binder.config/v1",
   "result": {
@@ -1630,7 +1630,7 @@ names the `file` written, the `key`, the `value`, and a `status`:
 
 ```json
 {
-  "binder": "binder/0.9.0",
+  "binder": "binder/0.9.1",
   "command": "config set",
   "schema": "binder.config/v1",
   "result": {
@@ -1648,7 +1648,7 @@ the same minus `value`. `status` is `removed` when the key was present and
 
 ```json
 {
-  "binder": "binder/0.9.0",
+  "binder": "binder/0.9.1",
   "command": "config unset",
   "schema": "binder.config/v1",
   "result": {
@@ -1680,7 +1680,7 @@ invalid actor can never be persisted:
 
 ```console
 $ binder config set verified_by "bogus actor!"; echo $?
-binder: invalid actor "bogus actor!"; valid forms: human:<id>, process:<id>, team:<id>, or <producer>/<version> (e.g. binder/0.9.0)
+binder: invalid actor "bogus actor!"; valid forms: human:<id>, process:<id>, team:<id>, or <producer>/<version> (e.g. binder/0.9.1)
 2
 ```
 
@@ -1705,7 +1705,7 @@ consumer needs to parse it safely:
 
 ```json
 {
-  "binder": "binder/0.9.0",
+  "binder": "binder/0.9.1",
   "command": "convert",
   "schema": "binder.report/v1",
   "result": { }
@@ -1821,7 +1821,7 @@ binder enrich src --overwrite-keys status --status-map "archive=stable" --json
 
 ```json
 {
-  "binder": "binder/0.9.0",
+  "binder": "binder/0.9.1",
   "command": "enrich",
   "schema": "binder.report/v1",
   "result": {
@@ -2431,7 +2431,7 @@ binder projects a **labeled property graph**:
 
 ```json
 {
-  "binder": "binder/0.9.0",
+  "binder": "binder/0.9.1",
   "command": "list_graphs",
   "schema": "binder.report/v1",
   "result": {
@@ -2623,7 +2623,7 @@ examples below run against `testdata/okf-bundles/acme_retail`.
 
 ```json
 {
-  "binder": "binder/0.9.0",
+  "binder": "binder/0.9.1",
   "command": "query_graph",
   "schema": "binder.report/v1",
   "result": {

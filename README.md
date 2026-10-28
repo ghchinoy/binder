@@ -270,7 +270,7 @@ binder validate path/to/bundle --json
 
 ```json
 {
-  "binder": "binder/0.9.0",
+  "binder": "binder/0.9.1",
   "command": "validate",
   "schema": "binder.report/v1",
   "result": {
