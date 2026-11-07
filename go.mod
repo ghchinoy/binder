@@ -7,10 +7,10 @@ require (
 	github.com/google/go-cmp v0.7.0
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/spf13/cobra v1.10.2
-	github.com/spf13/pflag v1.0.10
+	github.com/spf13/pflag v1.1.0
 	github.com/spf13/viper v1.21.0
-	github.com/yuin/goldmark v1.8.6
-	google.golang.org/genai v1.76.0
+	github.com/yuin/goldmark v1.8.7
+	google.golang.org/genai v1.77.0
 	google.golang.org/protobuf v1.36.12
 	gopkg.in/yaml.v3 v3.0.1
 )
